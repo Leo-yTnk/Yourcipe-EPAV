@@ -13,6 +13,7 @@ export const LS_KEYS = {
   sections: 'yourcipe_sections_v1',
   proteins: 'yourcipe_proteins_v1',
   navRailSide: 'yourcipe_nav_rail_side_v1',
+  fontSize: 'yourcipe_font_size_v1',
 };
 
 export const SECTION_DEFS = [

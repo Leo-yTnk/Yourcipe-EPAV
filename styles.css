@@ -30,6 +30,9 @@ body { margin: 0; font-family: var(--font-sans); }
   --tabbar-bg: rgba(33, 28, 26, 0.72); --overlay-strong: rgba(33, 28, 26, 0.85); --tabbar-border: rgba(0, 0, 0, 0.4);
 }
 
+.yc-font-sm { zoom: 0.875; }
+.yc-font-lg { zoom: 1.15; }
+
 :focus { outline: 2px solid var(--focus-orange); outline-offset: 2px; }
 
 .yc-scroll::-webkit-scrollbar { width: 0; height: 0; }
