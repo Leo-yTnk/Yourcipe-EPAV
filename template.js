@@ -33,6 +33,8 @@ export function renderApp(app) {
         ${v.showRecipeForm && renderRecipeFormModal(app, v)}
         ${v.showProductForm && renderProductFormModal(app, v)}
         ${v.showImportModal && renderImportModal(app, v)}
+        ${v.showLoginModal && renderLoginModal(app, v)}
+        ${v.showSignupModal && renderSignupModal(app, v)}
         ${v.showSplash && renderSplash(app, v)}
       </div>
     </div>
@@ -538,6 +540,19 @@ function renderProfile(app, v) {
         </div>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2"><path d="M9 6l6 6-6 6"></path></svg>
       </div>
+      ${v.hasAdminDeniedFlash && html`<div style="margin-top:12px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600">${v.adminDeniedFlash}</div>`}
+      ${v.hasSession && html`
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;margin-top:12px">
+          <div style="display:flex;align-items:center;gap:14px">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M16 17l5-5-5-5M21 12H9M13 21H7a2 2 0 01-2-2V5a2 2 0 012-2h6"></path></svg>
+            <div>
+              <div style="font-size:16px;font-weight:600">Conta Conectada</div>
+              <div style="font-size:13px;color:var(--neutral-600)">${v.connectedCredentialLabel}</div>
+            </div>
+          </div>
+          <div onClick=${v.onLogout} style="font-size:13px;font-weight:700;color:var(--red-600);cursor:pointer;border:1.5px solid var(--red-600);padding:8px 14px;border-radius:var(--radius-full)">Sair</div>
+        </div>
+      `}
     </div>
   `;
 }
@@ -680,6 +695,63 @@ function renderProfileSetupModal(app, v) {
           <input type="text" placeholder="Cargo (ex: Dono de Açougue, Chef, Comprador)" value=${f.cargo} onInput=${v.onProfileCargoChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
         </div>
         <div onClick=${v.onSaveProfile} style="margin-top:24px;background:var(--brand-700);color:#F4F2F1;text-align:center;padding:16px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer">Salvar</div>
+      </div>
+    </div>
+  `;
+}
+
+const AUTH_INPUT_STYLE = "background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans);box-sizing:border-box";
+
+function renderLoginModal(app, v) {
+  const submitStyle = `flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitLogin ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:22px;font-weight:700;margin-bottom:6px">Acesso Administrativo</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Informe sua credencial e senha para continuar.</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <input type="text" placeholder="Credencial (YCP-XXXX-XXXX)" autocomplete="off" value=${v.loginCredential} onInput=${v.onLoginCredentialChange} style=${AUTH_INPUT_STYLE}/>
+          <input type="password" placeholder="Senha" autocomplete="current-password" value=${v.loginPassword} onInput=${v.onLoginPasswordChange} style=${AUTH_INPUT_STYLE}/>
+          <div ref=${v.turnstileLoginRef}></div>
+          ${v.hasLoginError && html`<div style="font-size:13px;color:var(--red-600);font-weight:600">${v.loginError}</div>`}
+        </div>
+        <div style="display:flex;gap:10px;margin-top:22px">
+          <div onClick=${v.onCloseLoginModal} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.canSubmitLogin ? v.onLoginSubmit : null} style=${submitStyle}>${v.loginSubmitting ? 'Entrando...' : 'Entrar'}</div>
+        </div>
+        <div onClick=${v.onGoSignupFromLogin} style="text-align:center;margin-top:18px;font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ainda não tem uma credencial? Criar agora</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSignupModal(app, v) {
+  const submitStyle = `flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitSignup ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        ${!v.signupResult ? html`
+          <div style="font-size:22px;font-weight:700;margin-bottom:6px">Criar Credencial</div>
+          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Defina uma senha. Sua credencial de acesso é gerada automaticamente.</div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <input type="password" placeholder="Senha" autocomplete="new-password" value=${v.signupPassword} onInput=${v.onSignupPasswordChange} style=${AUTH_INPUT_STYLE}/>
+            <input type="password" placeholder="Confirmar senha" autocomplete="new-password" value=${v.signupConfirmPassword} onInput=${v.onSignupConfirmChange} style=${AUTH_INPUT_STYLE}/>
+            <div ref=${v.turnstileSignupRef}></div>
+            ${v.hasSignupError && html`<div style="font-size:13px;color:var(--red-600);font-weight:600">${v.signupError}</div>`}
+          </div>
+          <div style="display:flex;gap:10px;margin-top:22px">
+            <div onClick=${v.onCloseSignupModal} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+            <div onClick=${v.canSubmitSignup ? v.onSignupSubmit : null} style=${submitStyle}>${v.signupSubmitting ? 'Criando...' : 'Criar Credencial'}</div>
+          </div>
+          <div onClick=${v.onBackToLoginFromSignup} style="text-align:center;margin-top:18px;font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Já tenho uma credencial</div>
+        ` : html`
+          <div style="font-size:22px;font-weight:700;margin-bottom:6px">Credencial Criada</div>
+          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Esta é a sua credencial de acesso.</div>
+          <div style="background:var(--neutral-50);border:1.5px dashed var(--brand-500);border-radius:var(--radius-md);padding:20px;text-align:center;font-size:24px;font-weight:700;letter-spacing:0.04em;color:var(--brand-700);margin-bottom:14px">${v.signupResult.credential}</div>
+          <div onClick=${v.onCopyCredential} style="text-align:center;font-size:14px;font-weight:600;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-700);padding:12px;border-radius:var(--radius-full);margin-bottom:18px;transition:transform 0.15s ease">${v.credentialCopied ? 'Copiado!' : 'Copiar credencial'}</div>
+          <div style="background:rgba(207,176,23,0.14);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:14px 16px;font-size:13px;font-weight:600;line-height:1.5;margin-bottom:20px">Guarde sua credencial e sua senha. Sem elas, não será possível recuperar o acesso.</div>
+          <div onClick=${v.onFinishSignup} style="text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Concluir</div>
+        `}
       </div>
     </div>
   `;

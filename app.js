@@ -5,6 +5,12 @@ import {
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
 } from './data.js';
+import { normalizeCredential } from './credential.js';
+import { supabase } from './supabase-client.js';
+import { signUpWithCredential, signInWithCredential, fetchProfileRole, signOut, AUTH_GENERIC_ERROR } from './auth.js';
+
+const TURNSTILE_SITE_KEY = '0x4AAAAAAED4OOkYJr1mKBgo';
+const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente novamente.';
 
 function ref() { return { current: null }; }
 
@@ -124,6 +130,14 @@ class App extends Component {
       importNewSections: [],
       importMode: 'merge',
       adminFlash: '',
+      session: null,
+      authRole: null,
+      adminDeniedFlash: '',
+      showLoginModal: false,
+      loginCredential: '', loginPassword: '', loginError: '', loginSubmitting: false, loginTurnstileToken: '',
+      showSignupModal: false,
+      signupPassword: '', signupConfirmPassword: '', signupError: '', signupSubmitting: false, signupTurnstileToken: '',
+      signupResult: null, credentialCopied: false,
     };
   })();
 
@@ -155,12 +169,26 @@ class App extends Component {
     document.addEventListener('fullscreenchange', this._onFsChange);
     this.onRefreshIndicators();
     this.onRefreshWeather();
+    this.initAuth();
   }
   componentWillUnmount() {
     if (this._ro) this._ro.disconnect();
     if (this._onResize) { window.removeEventListener('resize', this._onResize); window.removeEventListener('orientationchange', this._onResize); }
     if (this._onFsChange) document.removeEventListener('fullscreenchange', this._onFsChange);
+    if (this._authSub) this._authSub.data.subscription.unsubscribe();
   }
+
+  initAuth = async () => {
+    const { data } = await supabase.auth.getSession();
+    const session = data.session || null;
+    const authRole = session ? await fetchProfileRole(session.user.id) : null;
+    this.setState({ session, authRole });
+    this._authSub = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session) { this.setState({ session: null, authRole: null }); return; }
+      const authRole = await fetchProfileRole(session.user.id);
+      this.setState({ session, authRole });
+    });
+  };
   updateDeviceMode = (w, h) => {
     h = h || window.innerHeight;
     const landscape = w > h;
@@ -380,7 +408,125 @@ class App extends Component {
     this.persist(LS_KEYS.profile, profile);
   };
 
-  onOpenAdminAttempt = () => { this.animateTo('admin'); this.setState({ screen: 'admin' }); };
+  mountTurnstileWidget = (el, kind) => {
+    const attempt = () => {
+      if (!el.isConnected) return;
+      if (!window.turnstile) { setTimeout(attempt, 150); return; }
+      const widgetId = window.turnstile.render(el, {
+        sitekey: TURNSTILE_SITE_KEY,
+        language: 'pt-BR',
+        theme: 'auto',
+        callback: (token) => this.setState(kind === 'login' ? { loginTurnstileToken: token, loginError: '' } : { signupTurnstileToken: token, signupError: '' }),
+        'expired-callback': () => this.resetTurnstileWidget(kind),
+        'error-callback': () => this.setState(kind === 'login' ? { loginTurnstileToken: '', loginError: CAPTCHA_FRIENDLY_ERROR } : { signupTurnstileToken: '', signupError: CAPTCHA_FRIENDLY_ERROR }),
+      });
+      if (kind === 'login') this._loginTurnstileId = widgetId; else this._signupTurnstileId = widgetId;
+    };
+    attempt();
+  };
+  resetTurnstileWidget = (kind) => {
+    const id = kind === 'login' ? this._loginTurnstileId : this._signupTurnstileId;
+    if (window.turnstile && id != null) window.turnstile.reset(id);
+    this.setState(kind === 'login' ? { loginTurnstileToken: '' } : { signupTurnstileToken: '' });
+  };
+  removeTurnstileWidget = (kind) => {
+    const id = kind === 'login' ? this._loginTurnstileId : this._signupTurnstileId;
+    if (window.turnstile && id != null) { try { window.turnstile.remove(id); } catch (e) {} }
+    if (kind === 'login') this._loginTurnstileId = null; else this._signupTurnstileId = null;
+  };
+  turnstileLoginRef = (el) => {
+    if (el && this._loginTurnstileId == null) this.mountTurnstileWidget(el, 'login');
+    else if (!el && this._loginTurnstileId != null) this.removeTurnstileWidget('login');
+  };
+  turnstileSignupRef = (el) => {
+    if (el && this._signupTurnstileId == null) this.mountTurnstileWidget(el, 'signup');
+    else if (!el && this._signupTurnstileId != null) this.removeTurnstileWidget('signup');
+  };
+
+  onOpenAdminAttempt = () => {
+    if (this.state.session && this.state.authRole === 'admin') { this.animateTo('admin'); this.setState({ screen: 'admin' }); return; }
+    if (this.state.session) {
+      this.setState({ adminDeniedFlash: 'Esta credencial não possui acesso administrativo.' });
+      setTimeout(() => this.setState({ adminDeniedFlash: '' }), 4000);
+      return;
+    }
+    this.openLoginModal();
+  };
+  openLoginModal = () => this.setState({ showLoginModal: true, loginCredential: '', loginPassword: '', loginError: '', loginTurnstileToken: '', loginSubmitting: false });
+  closeLoginModal = () => { this.removeTurnstileWidget('login'); this.setState({ showLoginModal: false }); };
+  openSignupModal = () => {
+    this.removeTurnstileWidget('login');
+    this.setState({ showLoginModal: false, showSignupModal: true, signupPassword: '', signupConfirmPassword: '', signupError: '', signupTurnstileToken: '', signupSubmitting: false, signupResult: null });
+  };
+  backToLoginFromSignup = () => {
+    this.removeTurnstileWidget('signup');
+    this.setState({ showSignupModal: false, showLoginModal: true, loginError: '', loginCredential: '', loginPassword: '', loginTurnstileToken: '' });
+  };
+  closeSignupModal = () => { this.removeTurnstileWidget('signup'); this.setState({ showSignupModal: false, signupResult: null }); };
+  onFinishSignup = () => { this.removeTurnstileWidget('signup'); this.setState({ showSignupModal: false, signupResult: null }); };
+
+  onLoginCredentialChange = (e) => this.setState({ loginCredential: e.target.value });
+  onLoginPasswordChange = (e) => this.setState({ loginPassword: e.target.value });
+  onLoginSubmit = async () => {
+    const { loginCredential, loginPassword, loginTurnstileToken, loginSubmitting } = this.state;
+    if (loginSubmitting) return;
+    if (!loginTurnstileToken) { this.setState({ loginError: 'Confirme o CAPTCHA para continuar.' }); return; }
+    if (!normalizeCredential(loginCredential) || !loginPassword) {
+      this.setState({ loginError: AUTH_GENERIC_ERROR });
+      this.resetTurnstileWidget('login');
+      return;
+    }
+    this.setState({ loginSubmitting: true, loginError: '' });
+    const result = await signInWithCredential(loginCredential, loginPassword, loginTurnstileToken);
+    this.resetTurnstileWidget('login');
+    if (result.error) {
+      this.setState({ loginSubmitting: false, loginError: AUTH_GENERIC_ERROR, loginPassword: '' });
+      return;
+    }
+    const authRole = await fetchProfileRole(result.user.id);
+    this.setState({ loginSubmitting: false, showLoginModal: false, session: result.session, authRole, loginCredential: '', loginPassword: '' });
+    if (authRole === 'admin') { this.animateTo('admin'); this.setState({ screen: 'admin' }); }
+    else {
+      this.setState({ adminDeniedFlash: 'Esta credencial não possui acesso administrativo.' });
+      setTimeout(() => this.setState({ adminDeniedFlash: '' }), 4000);
+    }
+  };
+
+  onSignupPasswordChange = (e) => this.setState({ signupPassword: e.target.value });
+  onSignupConfirmChange = (e) => this.setState({ signupConfirmPassword: e.target.value });
+  onSignupSubmit = async () => {
+    const { signupPassword, signupConfirmPassword, signupTurnstileToken, signupSubmitting } = this.state;
+    if (signupSubmitting) return;
+    if (!signupTurnstileToken) { this.setState({ signupError: 'Confirme o CAPTCHA para continuar.' }); return; }
+    if (!signupPassword || signupPassword.length < 6) { this.setState({ signupError: 'A senha deve ter pelo menos 6 caracteres.' }); return; }
+    if (signupPassword !== signupConfirmPassword) { this.setState({ signupError: 'As senhas não coincidem.' }); return; }
+    this.setState({ signupSubmitting: true, signupError: '' });
+    const result = await signUpWithCredential(signupPassword, signupTurnstileToken);
+    this.resetTurnstileWidget('signup');
+    if (result.error) {
+      this.setState({ signupSubmitting: false, signupError: 'Não foi possível concluir o cadastro. Tente novamente.' });
+      return;
+    }
+    const authRole = result.session ? await fetchProfileRole(result.user.id) : null;
+    this.setState({
+      signupSubmitting: false, signupResult: { credential: result.credential },
+      session: result.session, authRole,
+      signupPassword: '', signupConfirmPassword: '',
+    });
+  };
+  onCopyCredential = () => {
+    const cred = this.state.signupResult && this.state.signupResult.credential;
+    if (!cred || !navigator.clipboard) return;
+    navigator.clipboard.writeText(cred).then(() => {
+      this.setState({ credentialCopied: true });
+      setTimeout(() => this.setState({ credentialCopied: false }), 2000);
+    }).catch(() => {});
+  };
+  onLogout = async () => {
+    await signOut();
+    this.setState({ session: null, authRole: null });
+    if (this.state.screen === 'admin') { this.animateTo('profile'); this.setState({ screen: 'profile' }); }
+  };
   onSetWeekStartDay = (v) => { this.setState({ weekStartDay: Number(v) }); this.persist(LS_KEYS.weekStartDay, Number(v)); };
   onBackFromAdmin = () => { this.animateTo('profile'); this.setState({ screen: 'profile' }); };
   setAdminTabRecipes = () => this.setState({ adminTab: 'recipes' });
@@ -1221,8 +1367,24 @@ class App extends Component {
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
-      adminStatusLabel: 'Toque para abrir o painel',
+      adminStatusLabel: !s.session ? 'Toque para fazer login' : (s.authRole === 'admin' ? 'Toque para abrir o painel' : 'Sem acesso administrativo'),
+      hasAdminDeniedFlash: !!s.adminDeniedFlash, adminDeniedFlash: s.adminDeniedFlash,
+      hasSession: !!s.session, onLogout: this.onLogout,
+      connectedCredentialLabel: (s.session && s.session.user && s.session.user.user_metadata && s.session.user.user_metadata.credential) || 'Sessão ativa',
       onOpenAdminAttempt: this.onOpenAdminAttempt, onEditProfile: this.onEditProfile,
+      showLoginModal: s.showLoginModal, loginCredential: s.loginCredential, loginPassword: s.loginPassword,
+      hasLoginError: !!s.loginError, loginError: s.loginError, loginSubmitting: s.loginSubmitting,
+      canSubmitLogin: !!(s.loginTurnstileToken && s.loginCredential.trim() && s.loginPassword && !s.loginSubmitting),
+      turnstileLoginRef: this.turnstileLoginRef,
+      onLoginCredentialChange: this.onLoginCredentialChange, onLoginPasswordChange: this.onLoginPasswordChange,
+      onLoginSubmit: this.onLoginSubmit, onCloseLoginModal: this.closeLoginModal, onGoSignupFromLogin: this.openSignupModal,
+      showSignupModal: s.showSignupModal, signupPassword: s.signupPassword, signupConfirmPassword: s.signupConfirmPassword,
+      hasSignupError: !!s.signupError, signupError: s.signupError, signupSubmitting: s.signupSubmitting,
+      canSubmitSignup: !!(s.signupTurnstileToken && s.signupPassword && s.signupConfirmPassword && !s.signupSubmitting),
+      turnstileSignupRef: this.turnstileSignupRef,
+      onSignupPasswordChange: this.onSignupPasswordChange, onSignupConfirmChange: this.onSignupConfirmChange,
+      onSignupSubmit: this.onSignupSubmit, onCloseSignupModal: this.closeSignupModal, onBackToLoginFromSignup: this.backToLoginFromSignup,
+      signupResult: s.signupResult, credentialCopied: s.credentialCopied, onCopyCredential: this.onCopyCredential, onFinishSignup: this.onFinishSignup,
       showProfileSetup: s.showProfileSetup, profileForm: s.profileForm,
       onProfileNomeChange: this.onProfileNomeChange, onProfileIdadeChange: this.onProfileIdadeChange, onProfileCargoChange: this.onProfileCargoChange,
       onSaveProfile: this.onSaveProfile, generoOptions: ['Feminino', 'Masculino', 'Outro', 'Prefiro não informar'], onProfileGeneroSet: this.setFormField('profileForm', 'genero'),
