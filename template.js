@@ -225,7 +225,7 @@ function indicatorCard(icon, label, value, item) {
 
 function statsCards(stats) {
   return html`
-    <div style=${`display:grid;grid-template-columns:repeat(2,1fr);gap:12px`}>
+    <div className="yc-indicators-grid">
       <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:14px 16px;box-sizing:border-box">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="2"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M19 5L5 19"></path></svg>
@@ -314,14 +314,14 @@ function renderDados(app, v) {
 
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--neutral-100)">
           <div style="font-size:13px;font-weight:600;color:var(--neutral-600);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:14px">Indicadores de Hoje</div>
-          <div style=${`display:grid;grid-template-columns:${v.indicatorsGridCols};gap:12px`}>
+          <div className="yc-indicators-container">
             ${statsCards(v.dailyStats)}
           </div>
         </div>
 
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--neutral-100)">
           <div style="font-size:13px;font-weight:600;color:var(--neutral-600);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:14px">Indicadores Mensais</div>
-          <div style=${`display:grid;grid-template-columns:${v.indicatorsGridCols};gap:12px`}>
+          <div className="yc-indicators-container">
             ${statsCards(v.monthlyStats)}
           </div>
         </div>
@@ -397,11 +397,13 @@ function renderDados(app, v) {
       </div>
     </div>
 
-    <div style=${`padding:16px 40px 8px;display:grid;grid-template-columns:${v.indicatorsGridCols};gap:16px`}>
-      ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="2"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M19 5L5 19"></path></svg>`, 'Inflação (IPCA)', null, v.economicData.ipca)}
-      ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M4 17V9a2 2 0 012-2h2M20 7v8a2 2 0 01-2 2h-2M8 21h8M9 3h6"></path><path d="M9 12h6"></path></svg>`, 'Taxa Selic', null, v.economicData.selic)}
-      ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"></path></svg>`, 'Dólar (USD)', null, v.economicData.dolar)}
-      ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M18 6a7 7 0 100 12M4 10h9M4 14h9"></path></svg>`, 'Euro (EUR)', null, v.economicData.euro)}
+    <div className="yc-indicators-container" style="padding:16px 40px 8px">
+      <div className="yc-indicators-grid" style="--yc-indicators-gap:16px">
+        ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="2"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M19 5L5 19"></path></svg>`, 'Inflação (IPCA)', null, v.economicData.ipca)}
+        ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M4 17V9a2 2 0 012-2h2M20 7v8a2 2 0 01-2 2h-2M8 21h8M9 3h6"></path><path d="M9 12h6"></path></svg>`, 'Taxa Selic', null, v.economicData.selic)}
+        ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"></path></svg>`, 'Dólar (USD)', null, v.economicData.dolar)}
+        ${indicatorCard(html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M18 6a7 7 0 100 12M4 10h9M4 14h9"></path></svg>`, 'Euro (EUR)', null, v.economicData.euro)}
+      </div>
     </div>
 
     <div style="padding:8px 40px 32px;display:flex;align-items:center;justify-content:flex-end;gap:10px">

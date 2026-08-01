@@ -1202,7 +1202,6 @@ class App extends Component {
       isHome: s.dataLoaded && screen === 'home', isSearch: s.dataLoaded && screen === 'search', isFavorites: s.dataLoaded && screen === 'favorites', isDados: s.dataLoaded && screen === 'dados', isProfile: s.dataLoaded && screen === 'profile', isDetail: s.dataLoaded && screen === 'detail', isAdmin: s.dataLoaded && screen === 'admin', isSalesHistory: s.dataLoaded && screen === 'salesHistory',
       hasSelectedRecipe: !!selectedRecipe,
       deviceMode, isCompact, isWide, navRailWidth, frameMaxWidth, frameMaxHeight, stagePadLeft, stagePadRight, scrollBottomPad, navRailSideStyle, navRailBorderStyle,
-      indicatorsGridCols: (s.frameW || 1200) >= 940 ? 'repeat(4,1fr)' : ((s.frameW || 1200) >= 580 ? 'repeat(2,1fr)' : 'repeat(1,1fr)'),
       detailPadX: isWide ? 92 : 40, detailTitleInset: isWide ? 92 : 32,
       showBottomTabBar: (screen === 'home' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile') && isCompact,
       showSideNavRail: (screen === 'home' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile') && isWide,
