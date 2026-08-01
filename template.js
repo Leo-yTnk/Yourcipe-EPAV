@@ -514,6 +514,20 @@ function renderProfile(app, v) {
           </div>
         </div>
       `}
+      <div style=${`display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;margin-bottom:12px;border-color:${v.settingsBorderColor};flex-wrap:wrap;gap:12px`}>
+        <div style="display:flex;align-items:center;gap:14px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M4 7V4h16v3"></path><path d="M9 20h6"></path><path d="M12 4v16"></path></svg>
+          <div>
+            <div style="font-size:16px;font-weight:600">Tamanho da Fonte</div>
+            <div style="font-size:13px;color:var(--neutral-600)">Ajusta o tamanho do texto e dos cartões no app</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;background:var(--neutral-50);border-radius:var(--radius-full);padding:3px">
+          <div onClick=${v.onSetFontSizeSmall} style=${v.fontSizeSmBtnStyle}>Pequeno</div>
+          <div onClick=${v.onSetFontSizeNormal} style=${v.fontSizeNormalBtnStyle}>Normal</div>
+          <div onClick=${v.onSetFontSizeLarge} style=${v.fontSizeLgBtnStyle}>Grande</div>
+        </div>
+      </div>
       <div onClick=${v.onOpenAdminAttempt} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;cursor:pointer;transition:transform 0.15s ease">
         <div style="display:flex;align-items:center;gap:14px">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="1.8"><path d="M12 2l7 3v6c0 5-3 8-7 9-4-1-7-4-7-9V5l7-3z"></path><path d="M9 12l2 2 4-4"></path></svg>

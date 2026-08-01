@@ -48,10 +48,12 @@ class App extends Component {
     try { navRailSide = localStorage.getItem(LS_KEYS.navRailSide) || 'right'; } catch (e) {}
     let weekStartDay = 1;
     try { const sw = localStorage.getItem(LS_KEYS.weekStartDay); if (sw !== null) weekStartDay = Number(sw); } catch (e) {}
+    let fontSize = 'normal';
+    try { const sfz = localStorage.getItem(LS_KEYS.fontSize); if (sfz === 'small' || sfz === 'large' || sfz === 'normal') fontSize = sfz; } catch (e) {}
     return {
       frameW: (typeof window !== 'undefined') ? window.innerWidth : 1200,
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
-      darkMode, hiddenRecipeIds, homeSections, productCategories, newSectionLabel: '', newProteinLabel: '', navRailSide, weekStartDay,
+      darkMode, hiddenRecipeIds, homeSections, productCategories, newSectionLabel: '', newProteinLabel: '', navRailSide, weekStartDay, fontSize,
       selectionMode: false, selectedRecipeIds: [], recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
       productSelectionMode: false, selectedProductIds: [],
@@ -387,6 +389,7 @@ class App extends Component {
 
   setNavRailLeft = () => { this.setState({ navRailSide: 'left' }); this.persist(LS_KEYS.navRailSide, 'left'); };
   setNavRailRight = () => { this.setState({ navRailSide: 'right' }); this.persist(LS_KEYS.navRailSide, 'right'); };
+  onSetFontSize = (fontSize) => { this.setState({ fontSize }); this.persist(LS_KEYS.fontSize, fontSize); };
   toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       const el = document.documentElement;
@@ -1238,11 +1241,15 @@ class App extends Component {
       productSelectionMode: s.productSelectionMode, selectedProductCountLabel: `${s.selectedProductIds.length} selecionado(s)`, onBulkDeleteProductsAsk: this.askBulkDeleteProducts, onCancelProductSelection: this.onCancelProductSelection,
       sectionSelectionMode: s.sectionSelectionMode, selectedSectionCountLabel: `${s.selectedSectionKeys.length} selecionada(s)`, onBulkDeleteSectionsAsk: this.askBulkDeleteSections, onCancelSectionSelection: this.onCancelSectionSelection,
       proteinSelectionMode: s.proteinSelectionMode, selectedProteinCountLabel: `${s.selectedProteinKeys.length} selecionada(s)`, onBulkDeleteProteinsAsk: this.askBulkDeleteProteins, onCancelProteinSelection: this.onCancelProteinSelection,
-      appThemeClass: s.darkMode ? 'yc-dark' : '', onToggleDarkMode: this.toggleDarkMode,
+      appThemeClass: `${s.darkMode ? 'yc-dark' : ''} ${s.fontSize === 'small' ? 'yc-font-sm' : s.fontSize === 'large' ? 'yc-font-lg' : ''}`.trim(), onToggleDarkMode: this.toggleDarkMode,
       onToggleFullscreen: this.toggleFullscreen, fullscreenLabel: s.isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia',
       onSetNavRailLeft: this.setNavRailLeft, onSetNavRailRight: this.setNavRailRight,
       navRailLeftBtnStyle: `padding:8px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s ease;background:${s.navRailSide !== 'right' ? 'var(--brand-700)' : 'transparent'};color:${s.navRailSide !== 'right' ? '#F4F2F1' : 'var(--neutral-600)'}`,
       navRailRightBtnStyle: `padding:8px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s ease;background:${s.navRailSide === 'right' ? 'var(--brand-700)' : 'transparent'};color:${s.navRailSide === 'right' ? '#F4F2F1' : 'var(--neutral-600)'}`,
+      onSetFontSizeSmall: () => this.onSetFontSize('small'), onSetFontSizeNormal: () => this.onSetFontSize('normal'), onSetFontSizeLarge: () => this.onSetFontSize('large'),
+      fontSizeSmBtnStyle: `padding:8px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s ease;background:${s.fontSize === 'small' ? 'var(--brand-700)' : 'transparent'};color:${s.fontSize === 'small' ? '#F4F2F1' : 'var(--neutral-600)'}`,
+      fontSizeNormalBtnStyle: `padding:8px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s ease;background:${(s.fontSize || 'normal') === 'normal' ? 'var(--brand-700)' : 'transparent'};color:${(s.fontSize || 'normal') === 'normal' ? '#F4F2F1' : 'var(--neutral-600)'}`,
+      fontSizeLgBtnStyle: `padding:8px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;transition:background 0.15s ease;background:${s.fontSize === 'large' ? 'var(--brand-700)' : 'transparent'};color:${s.fontSize === 'large' ? '#F4F2F1' : 'var(--neutral-600)'}`,
       settingsBorderColor: s.darkMode ? '#3A322D' : 'var(--neutral-100)',
       detailButtonBorderColor: s.darkMode ? '#3A322DE6' : 'var(--tabbar-border)',
       navBarBorderColor: s.darkMode ? '#3A322DE6' : 'var(--tabbar-border)',
