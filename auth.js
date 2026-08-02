@@ -1,10 +1,9 @@
 // Centralized Supabase Auth flows for the credential system. Never log
 // credentials, passwords, sessions or captcha tokens from this module.
 import { supabase } from './supabase-client.js';
-import { generateCredential, normalizeCredential, credentialToInternalEmail } from './credential.js';
+import { normalizeCredential, credentialToInternalEmail } from './credential.js';
 
-const MAX_SIGNUP_ATTEMPTS = 5;
-
+export const MAX_SIGNUP_ATTEMPTS = 5;
 export const AUTH_GENERIC_ERROR = 'Credencial ou senha incorreta.';
 
 function isDuplicateIdentifier(data, error) {
@@ -17,21 +16,22 @@ function isDuplicateIdentifier(data, error) {
   return !!(data && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0);
 }
 
-/** Generates a fresh credential, registers it with Supabase Auth, and retries on collision. */
-export async function signUpWithCredential(password, captchaToken) {
-  for (let attempt = 0; attempt < MAX_SIGNUP_ATTEMPTS; attempt++) {
-    const credential = generateCredential();
-    const email = credentialToInternalEmail(credential);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { captchaToken, data: { credential } },
-    });
-    if (isDuplicateIdentifier(data, error)) continue;
-    if (error) return { error };
-    return { credential, session: data.session || null, user: data.user || null };
-  }
-  return { error: new Error('signup-attempts-exhausted') };
+/**
+ * Performs exactly one signUp attempt for the given credential — never loops.
+ * Every Turnstile token is single-use, so the caller (app.js, where the
+ * Turnstile widget lives) owns the collision-retry loop and must obtain a
+ * fresh captchaToken before each retry; see signup-retry.js.
+ */
+export async function signUpAttempt(password, captchaToken, credential) {
+  const email = credentialToInternalEmail(credential);
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { captchaToken, data: { credential } },
+  });
+  if (isDuplicateIdentifier(data, error)) return { duplicate: true };
+  if (error) return { error };
+  return { credential, session: data.session || null, user: data.user || null };
 }
 
 /** Normalizes the credential, converts it to the internal email, and signs in. */
