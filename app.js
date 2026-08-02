@@ -5,9 +5,9 @@ import {
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
 } from './data.js';
-import { normalizeCredential } from './credential.js';
+import { generateCredential, normalizeCredential } from './credential.js';
 import { supabase } from './supabase-client.js';
-import { signUpWithCredential, signInWithCredential, fetchProfileRole, signOut, AUTH_GENERIC_ERROR } from './auth.js';
+import { signUpAttempt, signInWithCredential, fetchProfileRole, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js';
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAAED4OOkYJr1mKBgo';
 const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente novamente.';
@@ -416,7 +416,12 @@ class App extends Component {
         sitekey: TURNSTILE_SITE_KEY,
         language: 'pt-BR',
         theme: 'auto',
-        callback: (token) => this.setState(kind === 'login' ? { loginTurnstileToken: token, loginError: '' } : { signupTurnstileToken: token, signupError: '' }),
+        callback: (token) => {
+          this.setState(kind === 'login' ? { loginTurnstileToken: token, loginError: '' } : { signupTurnstileToken: token, signupError: '' });
+          // Resolve a pending nextTurnstileToken() wait, if one is in flight (used by the signup collision-retry loop).
+          const resolverKey = kind === 'login' ? '_loginTokenResolve' : '_signupTokenResolve';
+          if (this[resolverKey]) { const resolve = this[resolverKey]; this[resolverKey] = null; resolve(token); }
+        },
         'expired-callback': () => this.resetTurnstileWidget(kind),
         'error-callback': () => this.setState(kind === 'login' ? { loginTurnstileToken: '', loginError: CAPTCHA_FRIENDLY_ERROR } : { signupTurnstileToken: '', signupError: CAPTCHA_FRIENDLY_ERROR }),
       });
@@ -429,6 +434,17 @@ class App extends Component {
     if (window.turnstile && id != null) window.turnstile.reset(id);
     this.setState(kind === 'login' ? { loginTurnstileToken: '' } : { signupTurnstileToken: '' });
   };
+  // Resets the widget and waits for the next solved token (or null after an 8s timeout).
+  // Used only by the signup collision-retry loop, since each Turnstile token is single-use.
+  nextTurnstileToken = (kind) => new Promise((resolve) => {
+    const resolverKey = kind === 'login' ? '_loginTokenResolve' : '_signupTokenResolve';
+    const id = kind === 'login' ? this._loginTurnstileId : this._signupTurnstileId;
+    if (!window.turnstile || id == null) { resolve(null); return; }
+    let settled = false;
+    this[resolverKey] = (token) => { settled = true; resolve(token); };
+    window.turnstile.reset(id);
+    setTimeout(() => { if (!settled) { this[resolverKey] = null; resolve(null); } }, 8000);
+  });
   removeTurnstileWidget = (kind) => {
     const id = kind === 'login' ? this._loginTurnstileId : this._signupTurnstileId;
     if (window.turnstile && id != null) { try { window.turnstile.remove(id); } catch (e) {} }
@@ -501,16 +517,27 @@ class App extends Component {
     if (!signupPassword || signupPassword.length < 6) { this.setState({ signupError: 'A senha deve ter pelo menos 6 caracteres.' }); return; }
     if (signupPassword !== signupConfirmPassword) { this.setState({ signupError: 'As senhas não coincidem.' }); return; }
     this.setState({ signupSubmitting: true, signupError: '' });
-    const result = await signUpWithCredential(signupPassword, signupTurnstileToken);
+
+    let token = signupTurnstileToken;
+    let outcome = null;
+    for (let attempt = 0; attempt < MAX_SIGNUP_ATTEMPTS; attempt++) {
+      if (!token) { outcome = { error: new Error('captcha-unavailable') }; break; }
+      // Each credential attempt gets its own single-use Turnstile token; never reuse one across retries.
+      const credential = generateCredential();
+      const attemptResult = await signUpAttempt(credential, signupPassword, token);
+      if (!attemptResult.duplicate) { outcome = attemptResult; break; }
+      token = await this.nextTurnstileToken('signup');
+    }
     this.resetTurnstileWidget('signup');
-    if (result.error) {
+
+    if (!outcome || outcome.error) {
       this.setState({ signupSubmitting: false, signupError: 'Não foi possível concluir o cadastro. Tente novamente.' });
       return;
     }
-    const authRole = result.session ? await fetchProfileRole(result.user.id) : null;
+    const authRole = outcome.session ? await fetchProfileRole(outcome.user.id) : null;
     this.setState({
-      signupSubmitting: false, signupResult: { credential: result.credential },
-      session: result.session, authRole,
+      signupSubmitting: false, signupResult: { credential: outcome.credential },
+      session: outcome.session, authRole,
       signupPassword: '', signupConfirmPassword: '',
     });
   };
