@@ -40,6 +40,14 @@ Editor. Each is idempotent (safe to re-run). Do **not** run
    was bootstrapped from a dump that already includes it).
 2. `supabase/002_profiles_display_name_phase1.sql`
 3. `supabase/004_catalog_schema.sql`
+4. `supabase/005_creation_mode_sharing.sql` — added by the "Modo de Criação"
+   PR (recipe sharing, personal copies, safe authorship lookup). Depends on
+   004 already being applied. Does not touch `supabase/schema.sql`,
+   `002`/`003`, or any row already in `categories`/`products`/`recipes` —
+   it only adds two new tables (`recipe_shares`, `recipe_access_grants`),
+   new functions/RPCs, and additional (widening-only) SELECT policies. Safe
+   to run immediately after 004 in staging; nothing here requires a human
+   decision the way phase 2 of the display_name migration does.
 
 Do **not** run `supabase/003_profiles_display_name_phase2_not_null.sql`
 yet — see "Phase 2 checkpoint" below. It refuses to run early on its own
@@ -105,10 +113,25 @@ psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/te
 psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/schema.sql
 psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/002_profiles_display_name_phase1.sql
 psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/004_catalog_schema.sql
+psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/005_creation_mode_sharing.sql
 
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/001_profiles_display_name.pg.sql
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/002_catalog_schema.pg.sql
+pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/003_creation_mode_sharing.pg.sql
 ```
+
+`supabase/tests/003_creation_mode_sharing.pg.sql` (44 assertions, all
+passing against local Postgres 16 + pgTAP) covers: isolation before
+redemption, the generic `invalid_share_code` error for both a
+never-existed code and a rotated-away one, refusing to redeem your own
+recipe's code, live sync of an owner's product price to a grantee, the
+safe `get_recipe_author_name` RPC (including returning `null` for a
+non-visible recipe — no leak), `create_recipe_copy` refusing to finalize
+with an unresolved foreign reference, the "add"/"map"/"remove" resolution
+actions (clone vs. reuse vs. drop), refusing to "remove" the recipe's own
+primary category, and that revoking access removes the grantee's read
+access to the original while leaving their independent copy (and its own
+ingredients) completely untouched.
 
 `supabase/tests/000_local_harness.sql` stubs the minimum Supabase-specific
 surface (`auth.users`, `auth.uid()`, `auth.role()`, the
@@ -175,6 +198,40 @@ needs a live project to run against):
 - Promote one staging account to `admin` via
   `supabase/promote_admin_example.sql` (staging only!) and confirm
   `is_admin()` behaves as expected from the client.
+
+## 7. Modo de Criação (recipe sharing / personal copies) — **[HUMAN]**, not click-tested here
+
+Same sandbox network limitation as above (no route to `esm.sh` or a real
+Supabase project — see section 5) means none of this PR's front-end
+(`catalog.js`, and the new "Minhas Receitas/Meus Produtos/Minhas
+Categorias" tabs, sharing controls, "Cadastrar Receita por ID", and the
+copy/reference-resolution modal in `app.js`/`template.js`) could be
+click-tested in a browser here. What was verified instead: `node --check`
+on every changed/added `.js` file, a full manual read-through cross-checking
+every view-model field the templates reference against what
+`computeViewModel()` actually returns, and the full pgTAP suite above
+(which is what actually proves the RLS/RPC security properties — the UI is
+just a client of that). **[HUMAN]** should, once staging has this
+migration applied and the app is pointed at it (step 3 above), verify by
+hand:
+
+- As a plain (non-admin) user: open "Modo de Criação" from Perfil — it
+  should open directly (no "sem acesso administrativo" message), showing
+  only the "Minhas Receitas / Meus Produtos / Minhas Categorias" tabs (the
+  catalog-editing tabs stay admin-only).
+- Create a personal category, a personal product, and a personal recipe
+  end-to-end; confirm each gets a `YCT-`/`YPR-`/`YCR-` code.
+- On a recipe's detail: activate sharing, copy the `YSH-` ID, and confirm
+  a second staging account can add it via "Cadastrar Receita por ID" — and
+  that an invalid ID shows the generic error, not a stack trace.
+- With the second account: confirm the shared recipe is read-only (no
+  edit/delete affordance), the ingredient price matches the owner's
+  current price, and "Criar cópia própria" surfaces the reference-resolution
+  popup only when the recipe actually uses the owner's personal
+  products/categories.
+- Back on the owner's account: "Gerar novo ID" and confirm the old ID no
+  longer works; "Revogar acessos" and confirm the second account loses
+  access to the original but keeps its own copy.
 
 ## Secrets policy
 
