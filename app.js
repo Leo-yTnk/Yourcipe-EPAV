@@ -17,6 +17,10 @@ const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente nova
 const TURNSTILE_TOKEN_WAIT_MS = 20000;
 const TURNSTILE_MOUNT_POLL_MS = 100;
 const TURNSTILE_MOUNT_TIMEOUT_MS = 5000;
+// adminTab values that require role==='admin'. Never inferred from
+// "has a session"/"creationMode is open"/etc — see applySessionProfile and
+// renderAdmin's tab dispatch in template.js, both of which gate on this.
+const ADMIN_ONLY_TABS = ['recipes', 'products', 'categories', 'requestsInbox'];
 
 function ref() { return { current: null }; }
 
@@ -112,7 +116,18 @@ class App extends Component {
       checklists: {},
       ingredientOverrides: {},
       altModal: null,
-      adminTab: 'recipes',
+      // Bug #3 fix: this used to default to 'recipes' (the admin-only
+      // public-catalog tab) — since PR8 hid the TAB BUTTONS for non-admins
+      // but never changed this default or gated the tab *content* dispatch,
+      // every non-admin landed on the admin catalog editor's content (full
+      // edit/delete controls) the instant they opened "Modo de Criação",
+      // even though they could never see a button to get there on purpose.
+      // 'myRecipes' is available to every authenticated user, so it is safe
+      // as the universal default. See renderAdmin's dispatch in
+      // template.js for the second, defense-in-depth half of this fix
+      // (gating admin-tab content on isAdminRole too, not just the tab
+      // buttons).
+      adminTab: 'myRecipes',
       showRecipeForm: false,
       recipeFormMode: 'new',
       recipeForm: null,
@@ -172,6 +187,37 @@ class App extends Component {
       redeemCode: '', redeemBusy: false, redeemMessage: '', redeemMessageKind: '',
       // "Criar cópia própria" + resolução de referências.
       copyModalOpen: false, copyRefs: [], copyDecisions: {}, copyCandidateCategories: [], copyCandidateProducts: [], copyBusy: false, copyError: '',
+
+      // ---- Public catalog (Home/Search data source) — bug #1 fix.
+      // 'loading' until the first Supabase attempt resolves; 'supabase' once
+      // real published/active data is showing (even if empty — an empty
+      // public catalog is a valid state, never treated as an error);
+      // 'demo-fallback' ONLY when the Supabase fetch itself genuinely
+      // failed, and always shown with a visible banner (see
+      // renderHome/publicCatalogSource in template.js) — never silently.
+      publicCatalogSource: 'loading', publicCatalogError: '',
+
+      // ---- Modo de Criação: "Catálogo Público" (admin-only direct authoring
+      // of scope='site' rows — supabase/006_admin_catalog_publishing.sql).
+      siteCatalogLoading: false, siteCatalogError: '',
+      siteCategories: [], siteProducts: [], siteRecipes: [],
+      showSiteCategoryForm: false, siteCategoryFormMode: 'new', siteCategoryForm: null,
+      showSiteProductForm: false, siteProductFormMode: 'new', siteProductForm: null,
+      showSiteRecipeForm: false, siteRecipeFormMode: 'new', siteRecipeForm: null,
+      siteFormError: '',
+
+      // ---- Change requests (publicação): submission, "Meus Pedidos",
+      // "Solicitações Recebidas" — supabase/007_change_requests.sql.
+      myRequests: [], myRequestsLoading: false, myRequestsError: '',
+      allRequests: [], allRequestsLoading: false, allRequestsError: '',
+      requestFilterStatus: 'all',
+      selectedRequestId: null, selectedRequestRevisions: [], requestDetailLoading: false, requestDetailError: '',
+      requestActionBusy: false, requestActionError: '',
+      showReturnRequestModal: false, returnNoteValue: '',
+      showRejectRequestModal: false, rejectNoteValue: '',
+      resubmitBusyRequestId: null,
+      // Generic "Solicitar publicação" modal, reused for recipe/product/category.
+      publishRequest: null, publishRequestBusy: false, publishRequestError: '',
     };
   })();
 
@@ -201,6 +247,7 @@ class App extends Component {
     window.addEventListener('orientationchange', this._onResize);
     this._onFsChange = () => this.setState({ isFullscreen: !!document.fullscreenElement });
     document.addEventListener('fullscreenchange', this._onFsChange);
+    this.loadPublicCatalog();
     this.onRefreshIndicators();
     this.onRefreshWeather();
     this.initAuth();
@@ -224,6 +271,17 @@ class App extends Component {
     this.setState({ session, authRole: profile.role, authDisplayName: profile.displayName });
     if (session && !profile.displayName) {
       this.setState({ showCompleteProfileModal: true, completeProfileName: '', completeProfileError: '' });
+    }
+    // Bug #3 defense in depth: if the resolved role isn't admin (including
+    // profile.role === null while it's still loading, or a fetchProfile
+    // failure — auth.js's fetchProfile always defaults to 'user' on error,
+    // never 'admin', so this is the restrictive-by-default path required),
+    // never leave adminTab pointed at an admin-only tab. This matters most
+    // right after a role *downgrade* mid-session is impossible today, but
+    // also covers the ordinary case where adminTab was left on an
+    // admin-only value from a previous admin session on the same device.
+    if (profile.role !== 'admin' && ADMIN_ONLY_TABS.includes(this.state.adminTab)) {
+      this.setState({ adminTab: 'myRecipes' });
     }
   };
 
@@ -564,7 +622,14 @@ class App extends Component {
   // this screen entirely — see supabase/005_creation_mode_sharing.sql's
   // header comment.
   onOpenAdminAttempt = () => {
-    if (this.state.session) { this.animateTo('admin'); this.setState({ screen: 'admin' }); this.loadMyCreationData(); return; }
+    if (this.state.session) {
+      this.animateTo('admin'); this.setState({ screen: 'admin' });
+      this.loadMyCreationData(this.state.session.user.id);
+      this.loadMyRequests(this.state.session.user.id);
+      this.loadSiteCatalogData();
+      this.loadAllRequests();
+      return;
+    }
     this.openLoginModal();
   };
   openLoginModal = () => this.setState({ showLoginModal: true, loginCredential: '', loginPassword: '', loginError: '', loginTurnstileToken: '', loginSubmitting: false });
@@ -603,7 +668,14 @@ class App extends Component {
     this.setState({ loginSubmitting: false, showLoginModal: false, loginCredential: '', loginPassword: '' });
     this.animateTo('admin');
     this.setState({ screen: 'admin' });
-    this.loadMyCreationData();
+    // Pass result.user.id / profile.role directly (not this.state) — see
+    // the bug #2 fix comment on loadMyCreationData's definition. session/
+    // authRole were just setState()'d above via applySessionProfile in this
+    // same tick, so this.state would still be stale here.
+    this.loadMyCreationData(result.user.id);
+    this.loadMyRequests(result.user.id);
+    this.loadSiteCatalogData(profile.role);
+    this.loadAllRequests(profile.role);
   };
 
   onSignupDisplayNameChange = (e) => this.setState({ signupDisplayName: e.target.value });
@@ -722,15 +794,35 @@ class App extends Component {
   // Categorias" + the shared-with-me library, all scoped to the caller's own
   // rows by RLS (supabase/004_catalog_schema.sql, supabase/005_creation_mode_sharing.sql)
   // — never filtered client-side, since RLS is the actual boundary.
-  loadMyCreationData = async () => {
-    const uid = this.state.session && this.state.session.user.id;
+  //
+  // Bug #2 fix: this used to read `this.state.session.user.id` instead of
+  // taking it as a parameter. Preact's setState is asynchronous — it merges
+  // into a pending buffer and only flushes into `this.state` on the next
+  // microtask-scheduled render (see vendor/htm-preact-standalone.js,
+  // Component.prototype.setState) — so calling this synchronously right
+  // after applySessionProfile()'s own setState (e.g. straight after login,
+  // in onLoginSubmit) read a *stale* `this.state.session`, which was still
+  // null at that point in the same tick. That made `uid` fall through to
+  // undefined and this function return silently with nothing loaded and no
+  // error surfaced — "doesn't load" with no visible cause. Every caller
+  // below now passes the uid it already has in hand from a resolved value
+  // (session.user.id it just received, or the current session it already
+  // confirmed truthy), never from a just-set piece of state.
+  loadMyCreationData = async (uid) => {
     if (!uid) return;
     this.setState({ myCreationLoading: true, myCreationError: '' });
     const [cats, prods, recs, shared] = await Promise.all([
       catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid), catalog.fetchSharedLibrary(uid),
     ]);
-    if (cats.error || prods.error || recs.error || shared.error) {
-      this.setState({ myCreationLoading: false, myCreationError: 'Não foi possível carregar seus dados. Tente novamente.' });
+    const failed = cats.error || prods.error || recs.error || shared.error;
+    if (failed) {
+      // catalog.js already logged the full { code, message, details, hint }
+      // to the console (see logSupabaseError) — this is the same real
+      // message, just also surfaced in the UI instead of only a generic
+      // string, per the explicit "não manter somente a mensagem genérica"
+      // requirement.
+      const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
+      this.setState({ myCreationLoading: false, myCreationError: `Não foi possível carregar seus dados: ${detail}` });
       return;
     }
     this.setState({
@@ -752,7 +844,7 @@ class App extends Component {
     const res = f.id ? await catalog.updateCategoryName(f.id, f.name.trim()) : await catalog.createCategory(uid, { type: f.type, name: f.name.trim() });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar a categoria.' }); return; }
     this.setState({ showMyCategoryForm: false, myCategoryForm: null });
-    this.loadMyCreationData();
+    this.loadMyCreationData(this.state.session.user.id);
   };
   askDeleteMyCategory = (id, name) => this.setState({ confirmDelete: { type: 'myCategory', id, message: `Excluir a categoria "${name}"? Produtos ou receitas que a usam podem deixar de funcionar corretamente.` } });
 
@@ -771,7 +863,7 @@ class App extends Component {
       : await catalog.createProduct(uid, { name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar o produto.' }); return; }
     this.setState({ showMyProductForm: false, myProductForm: null });
-    this.loadMyCreationData();
+    this.loadMyCreationData(this.state.session.user.id);
   };
   askDeleteMyProduct = (id, name) => this.setState({ confirmDelete: { type: 'myProduct', id, message: `Excluir o produto "${name}"? Ele será removido também das receitas que o usam.` } });
 
@@ -845,7 +937,7 @@ class App extends Component {
     ]);
     if (ingRes.error || catRes.error) this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
     this.setState({ showMyRecipeForm: false, myRecipeForm: null });
-    this.loadMyCreationData();
+    this.loadMyCreationData(this.state.session.user.id);
   };
   askDeleteMyRecipe = (id, name) => this.setState({ confirmDelete: { type: 'myRecipe', id, message: `Excluir a receita "${name}"? Esta ação não pode ser desfeita.` } });
 
@@ -915,7 +1007,7 @@ class App extends Component {
     const { error } = await catalog.redeemShareCode(code);
     if (error) { this.setState({ redeemBusy: false, redeemMessage: error.friendly || 'Código inválido.', redeemMessageKind: 'error' }); return; }
     this.setState({ redeemBusy: false, redeemMessage: 'Receita adicionada à sua biblioteca, em modo somente leitura.', redeemMessageKind: 'success', redeemCode: '' });
-    this.loadMyCreationData();
+    this.loadMyCreationData(this.state.session.user.id);
   };
 
   // ---- "Criar cópia própria" + resolução de referências ----
@@ -930,7 +1022,7 @@ class App extends Component {
       this.setState({ copyBusy: false });
       if (error) { this.setState({ copyError: 'Não foi possível criar a cópia.' }); return; }
       this.flashAdmin('Cópia própria criada em Minhas Receitas.');
-      this.loadMyCreationData();
+      this.loadMyCreationData(this.state.session.user.id);
       this.onCloseMyRecipeDetail();
       return;
     }
@@ -961,8 +1053,385 @@ class App extends Component {
     if (error) { this.setState({ copyError: 'Não foi possível criar a cópia. Verifique as associações escolhidas.' }); return; }
     this.setState({ copyModalOpen: false, copyRefs: [], copyDecisions: {} });
     this.flashAdmin('Cópia própria criada em Minhas Receitas.');
-    this.loadMyCreationData();
+    this.loadMyCreationData(this.state.session.user.id);
     this.onCloseMyRecipeDetail();
+  };
+
+  // =========================================================================
+  // Public catalog (Home/Search data source) — bug #1 fix. Before this, the
+  // app ALWAYS rendered Home/Search from data.js's DEFAULT_RECIPES/
+  // DEFAULT_PRODUCTS (plus any localStorage overrides), and separately the
+  // "admin catalog" screen only ever mutated that SAME local state — never
+  // called Supabase at all. So nothing an admin created there could ever
+  // reach another user or a visitor, regardless of role or RLS: the write
+  // path to Supabase's scope='site' rows didn't exist in the UI, and even
+  // if it had, nothing ever read scope='site' rows back for the public
+  // pages either. This is the actual fix for both halves of that gap.
+  // =========================================================================
+  loadPublicCatalog = async () => {
+    const [catsRes, prodsRes, recsRes] = await Promise.all([
+      catalog.fetchPublicCategories(), catalog.fetchPublicProducts(), catalog.fetchPublicRecipes(),
+    ]);
+    const firstError = catsRes.error || prodsRes.error || recsRes.error;
+    if (firstError) {
+      // Fallback is explicit and visible (see hasPublicCatalogFallback/
+      // publicCatalogError in computeViewModel + the banner in
+      // renderHome) — never a silent substitution, and the real Supabase
+      // error is both logged (catalog.js) and kept here for the banner.
+      this.setState({
+        publicCatalogSource: 'demo-fallback',
+        publicCatalogError: `${firstError.message || 'erro desconhecido'}${firstError.code ? ` (${firstError.code})` : ''}`,
+        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+      });
+      return;
+    }
+    const recipeIds = (recsRes.data || []).map(r => r.id);
+    const [ingRes, secRes] = await Promise.all([
+      catalog.fetchRecipeIngredientsBulk(recipeIds), catalog.fetchRecipeSectionsBulk(recipeIds),
+    ]);
+    const secondError = ingRes.error || secRes.error;
+    if (secondError) {
+      this.setState({
+        publicCatalogSource: 'demo-fallback',
+        publicCatalogError: `${secondError.message || 'erro desconhecido'}${secondError.code ? ` (${secondError.code})` : ''}`,
+        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+      });
+      return;
+    }
+    const ingByRecipe = {};
+    (ingRes.data || []).forEach(i => { (ingByRecipe[i.recipe_id] = ingByRecipe[i.recipe_id] || []).push(i); });
+    const secByRecipe = {};
+    (secRes.data || []).forEach(s => { (secByRecipe[s.recipe_id] = secByRecipe[s.recipe_id] || []).push(s); });
+
+    // Mapped into the exact same shape data.js's DEFAULT_PRODUCTS/
+    // DEFAULT_RECIPES already used, so the rest of the (already extensive)
+    // Home/Search/Detail rendering pipeline needs no changes at all — only
+    // the data source changes, from a local seed to live Supabase data.
+    const products = (prodsRes.data || []).map(p => ({
+      id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
+    }));
+    const recipes = (recsRes.data || []).map(r => {
+      const tags = (secByRecipe[r.id] || []).map(s => s.category && s.category.slug).filter(Boolean);
+      if (r.featured) tags.push('destaque');
+      return {
+        id: r.id, nome: r.name, categoria: (r.category && r.category.name) || '', tempo: r.prep_time, porcoes: r.servings,
+        dificuldade: r.difficulty, imagem: r.image_url || FALLBACK_IMG, tags,
+        ingredientes: (ingByRecipe[r.id] || []).map(i => ({ produtoId: i.product_id, qtd: Number(i.quantity) || 0 })),
+        extras: r.extras || [], modoPreparo: r.instructions || [], dicas: r.tips || [],
+      };
+    });
+    this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes });
+  };
+
+  // =========================================================================
+  // Modo de Criação: "Catálogo Público" — admin-only direct authoring of
+  // scope='site' rows (supabase/006_admin_catalog_publishing.sql). Mirrors
+  // the "Minhas Receitas/Produtos/Categorias" CRUD above, parametrized for
+  // the public catalog instead of personal data.
+  // =========================================================================
+  siteRecipeCategories = () => this.state.siteCategories.filter(c => c.type === 'receita');
+  siteSectionCategories = () => this.state.siteCategories.filter(c => c.type === 'secao');
+  siteProteinCategories = () => this.state.siteCategories.filter(c => c.type === 'proteina');
+
+  // `role` is optional and defaults to reading this.state.authRole — pass
+  // it explicitly when calling synchronously right after applySessionProfile
+  // in the same tick (e.g. onLoginSubmit), for the same reason
+  // loadMyCreationData takes an explicit uid: this.state.authRole would
+  // still be stale there (Preact setState hasn't flushed yet).
+  loadSiteCatalogData = async (role) => {
+    const effectiveRole = role !== undefined ? role : this.state.authRole;
+    if (effectiveRole !== 'admin') return;
+    this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
+    const [cats, prods, recs] = await Promise.all([
+      catalog.fetchAdminCategories(), catalog.fetchAdminProducts(), catalog.fetchAdminRecipes(),
+    ]);
+    const failed = cats.error || prods.error || recs.error;
+    if (failed) {
+      const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
+      this.setState({ siteCatalogLoading: false, siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
+      return;
+    }
+    this.setState({ siteCatalogLoading: false, siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
+  };
+
+  onNewSiteCategory = () => this.setState({ showSiteCategoryForm: true, siteCategoryFormMode: 'new', siteFormError: '', siteCategoryForm: { id: null, type: 'receita', name: '', active: true } });
+  onEditSiteCategory = (c) => this.setState({ showSiteCategoryForm: true, siteCategoryFormMode: 'edit', siteFormError: '', siteCategoryForm: { id: c.id, type: c.type, name: c.name, active: c.active } });
+  onCancelSiteCategoryForm = () => this.setState({ showSiteCategoryForm: false, siteCategoryForm: null, siteFormError: '' });
+  siteCategoryFormField = (field) => (e) => this.setState(s => ({ siteCategoryForm: { ...s.siteCategoryForm, [field]: e.target.value } }));
+  toggleSiteCategoryFormActive = (e) => this.setState(s => ({ siteCategoryForm: { ...s.siteCategoryForm, active: e.target.checked } }));
+  onSaveSiteCategoryForm = async () => {
+    const f = this.state.siteCategoryForm;
+    if (!f.name || !f.name.trim()) { this.setState({ siteFormError: 'Informe o nome da categoria.' }); return; }
+    const res = f.id
+      ? await catalog.updateSiteCategory(f.id, { name: f.name.trim(), active: !!f.active })
+      : await catalog.createSiteCategory({ type: f.type, name: f.name.trim(), active: !!f.active });
+    if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
+    this.setState({ showSiteCategoryForm: false, siteCategoryForm: null });
+    this.loadSiteCatalogData();
+  };
+  onToggleSiteCategoryActive = async (c) => {
+    const res = await catalog.updateSiteCategory(c.id, { active: !c.active });
+    if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
+    this.loadSiteCatalogData();
+  };
+
+  onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true } });
+  onEditSiteProduct = (p) => this.setState({ showSiteProductForm: true, siteProductFormMode: 'edit', siteFormError: '', siteProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, active: p.active } });
+  onCancelSiteProductForm = () => this.setState({ showSiteProductForm: false, siteProductForm: null, siteFormError: '' });
+  siteProductFormField = (field) => (e) => this.setState(s => ({ siteProductForm: { ...s.siteProductForm, [field]: e.target.value } }));
+  toggleSiteProductFormActive = (e) => this.setState(s => ({ siteProductForm: { ...s.siteProductForm, active: e.target.checked } }));
+  onSaveSiteProductForm = async () => {
+    const f = this.state.siteProductForm;
+    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ siteFormError: 'Informe o nome e a categoria do produto.' }); return; }
+    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0, active: !!f.active };
+    const res = f.id
+      ? await catalog.updateSiteProduct(f.id, patch)
+      : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active });
+    if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
+    this.setState({ showSiteProductForm: false, siteProductForm: null });
+    this.loadSiteCatalogData();
+  };
+  onToggleSiteProductActive = async (p) => {
+    const res = await catalog.updateSiteProduct(p.id, { active: !p.active });
+    if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
+    this.loadSiteCatalogData();
+  };
+
+  onNewSiteRecipe = () => this.setState({
+    showSiteRecipeForm: true, siteRecipeFormMode: 'new', siteFormError: '',
+    siteRecipeForm: {
+      id: null, name: '', categoryId: (this.siteRecipeCategories()[0] && this.siteRecipeCategories()[0].id) || '',
+      prepTime: 30, servings: 4, difficulty: 'Fácil', imageUrl: '', featured: false, status: 'draft',
+      ingredients: [{ productId: this.state.siteProducts[0] ? this.state.siteProducts[0].id : '', quantity: 1 }],
+      sectionCategoryIds: [], extrasText: '', instructionsText: '', tipsText: '',
+    },
+  });
+  onEditSiteRecipe = async (row) => {
+    this.setState({ myRecipeDetailLoading: true, siteFormError: '' });
+    const { data, error } = await catalog.fetchRecipeDetail(row.id);
+    this.setState({ myRecipeDetailLoading: false });
+    if (error || !data) { this.flashAdmin('Não foi possível carregar a receita.'); return; }
+    this.setState({
+      showSiteRecipeForm: true, siteRecipeFormMode: 'edit', siteFormError: '',
+      siteRecipeForm: {
+        id: data.recipe.id, name: data.recipe.name, categoryId: data.recipe.category_id,
+        prepTime: data.recipe.prep_time, servings: data.recipe.servings, difficulty: data.recipe.difficulty,
+        imageUrl: data.recipe.image_url || '', featured: !!data.recipe.featured, status: data.recipe.status,
+        ingredients: data.ingredients.map(i => ({ productId: i.product_id, quantity: i.quantity })),
+        sectionCategoryIds: data.sections.map(s => s.category_id),
+        extrasText: (data.recipe.extras || []).join('\n'),
+        instructionsText: (data.recipe.instructions || []).join('\n'),
+        tipsText: (data.recipe.tips || []).join('\n'),
+      },
+    });
+  };
+  onCancelSiteRecipeForm = () => this.setState({ showSiteRecipeForm: false, siteRecipeForm: null, siteFormError: '' });
+  siteRecipeFormField = (field) => (e) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, [field]: e.target.value } }));
+  toggleSiteRecipeFormFeatured = (e) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, featured: e.target.checked } }));
+  onSiteRecipeIngredientChange = (idx, field, value) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, ingredients: s.siteRecipeForm.ingredients.map((row, i) => i === idx ? { ...row, [field]: value } : row) } }));
+  addSiteRecipeIngredient = () => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, ingredients: [...s.siteRecipeForm.ingredients, { productId: this.state.siteProducts[0] ? this.state.siteProducts[0].id : '', quantity: 1 }] } }));
+  removeSiteRecipeIngredient = (idx) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, ingredients: s.siteRecipeForm.ingredients.filter((_, i) => i !== idx) } }));
+  toggleSiteRecipeSection = (categoryId) => this.setState(s => {
+    const cur = s.siteRecipeForm.sectionCategoryIds;
+    const sectionCategoryIds = cur.includes(categoryId) ? cur.filter(id => id !== categoryId) : [...cur, categoryId];
+    return { siteRecipeForm: { ...s.siteRecipeForm, sectionCategoryIds } };
+  });
+  onSaveSiteRecipeForm = async () => {
+    const f = this.state.siteRecipeForm;
+    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ siteFormError: 'Informe o nome e a categoria da receita.' }); return; }
+    if (f.status !== 'draft' && f.status !== 'published') { this.setState({ siteFormError: 'Escolha "Rascunho" ou "Publicada".' }); return; }
+    const validIngredients = f.ingredients.filter(i => i.productId);
+    const fields = {
+      name: f.name.trim(), categoryId: f.categoryId, prepTime: parseInt(f.prepTime, 10) || 0, servings: parseInt(f.servings, 10) || 0,
+      difficulty: f.difficulty, imageUrl: f.imageUrl.trim() || null, featured: !!f.featured, status: f.status,
+      extras: f.extrasText.split('\n').map(s => s.trim()).filter(Boolean),
+      instructions: f.instructionsText.split('\n').map(s => s.trim()).filter(Boolean),
+      tips: f.tipsText.split('\n').map(s => s.trim()).filter(Boolean),
+    };
+    this.setState({ siteFormError: '' });
+    let recipeId = f.id;
+    if (f.id) {
+      const { error } = await catalog.updateSiteRecipe(f.id, {
+        name: fields.name, category_id: fields.categoryId, prep_time: fields.prepTime, servings: fields.servings,
+        difficulty: fields.difficulty, image_url: fields.imageUrl, featured: fields.featured, status: fields.status,
+        extras: fields.extras, instructions: fields.instructions, tips: fields.tips,
+      });
+      if (error) { this.setState({ siteFormError: `Não foi possível salvar: ${error.message || 'erro desconhecido'}` }); return; }
+    } else {
+      const { data, error } = await catalog.createSiteRecipe(fields);
+      if (error || !data) { this.setState({ siteFormError: `Não foi possível criar: ${(error && error.message) || 'erro desconhecido'}` }); return; }
+      recipeId = data.id;
+    }
+    const [ingRes, catRes] = await Promise.all([
+      catalog.replaceRecipeIngredients(recipeId, validIngredients.map(i => ({ productId: i.productId, quantity: parseFloat(String(i.quantity).replace(',', '.')) || 0 }))),
+      catalog.replaceRecipeCategories(recipeId, f.sectionCategoryIds),
+    ]);
+    if (ingRes.error || catRes.error) this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
+    this.setState({ showSiteRecipeForm: false, siteRecipeForm: null });
+    this.loadSiteCatalogData();
+    this.loadPublicCatalog();
+  };
+  onToggleSiteRecipeStatus = async (r) => {
+    const nextStatus = r.status === 'published' ? 'draft' : 'published';
+    const res = await catalog.updateSiteRecipe(r.id, { status: nextStatus });
+    if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
+    this.loadSiteCatalogData();
+    this.loadPublicCatalog();
+  };
+
+  // =========================================================================
+  // Change requests (fluxo de solicitações de publicação) —
+  // supabase/007_change_requests.sql.
+  // =========================================================================
+  friendlyPublishError = (error) => {
+    const msg = (error && error.message) || '';
+    if (msg.includes('request_already_pending')) return 'Já existe uma solicitação em andamento para este item.';
+    if (msg.includes('recipe_has_personal_dependencies')) return 'Esta receita ainda possui referências pessoais não publicadas.';
+    if (msg.includes('product_has_personal_dependencies')) return 'A categoria deste produto ainda não é pública. Publique a categoria primeiro.';
+    if (msg.includes('display_name_required')) return 'Complete seu perfil (nome) antes de enviar solicitações.';
+    if (msg.includes('not_found_or_not_owned')) return 'Item não encontrado ou não pertence a você.';
+    return `Não foi possível enviar a solicitação: ${msg || 'erro desconhecido'}`;
+  };
+
+  // "Solicitar publicação" — one generic modal reused for recipe/product/category.
+  onOpenPublishRequest = async (entityType, sourceId, sourceName) => {
+    this.setState({ publishRequest: { entityType, sourceId, sourceName, blockers: null, reasonValue: '' }, publishRequestError: '' });
+    if (entityType === 'recipe') {
+      this.setState({ publishRequestBusy: true });
+      const { data, error } = await catalog.checkRecipePublishDependencies(sourceId);
+      this.setState({ publishRequestBusy: false });
+      if (error) { this.setState({ publishRequestError: `Não foi possível verificar dependências: ${error.message || 'erro desconhecido'}` }); return; }
+      if (data && data.blocked) this.setState(s => ({ publishRequest: s.publishRequest ? { ...s.publishRequest, blockers: data } : s.publishRequest }));
+    }
+  };
+  onClosePublishRequest = () => this.setState({ publishRequest: null, publishRequestError: '', publishRequestBusy: false });
+  onPublishReasonChange = (e) => this.setState(s => ({ publishRequest: { ...s.publishRequest, reasonValue: e.target.value } }));
+  onConfirmPublishRequest = async () => {
+    const pr = this.state.publishRequest;
+    if (!pr) return;
+    this.setState({ publishRequestBusy: true, publishRequestError: '' });
+    const fn = pr.entityType === 'recipe' ? catalog.submitRecipeRequest : pr.entityType === 'product' ? catalog.submitProductRequest : catalog.submitCategoryRequest;
+    const { error } = await fn(pr.sourceId, pr.reasonValue.trim() || null);
+    this.setState({ publishRequestBusy: false });
+    if (error) { this.setState({ publishRequestError: this.friendlyPublishError(error) }); return; }
+    this.setState({ publishRequest: null });
+    this.flashAdmin('Solicitação de publicação enviada.');
+    if (this.state.session) this.loadMyRequests(this.state.session.user.id);
+  };
+
+  // ---- "Meus Pedidos" (any authenticated user) ----
+  loadMyRequests = async (uid) => {
+    if (!uid) return;
+    this.setState({ myRequestsLoading: true, myRequestsError: '' });
+    const { data, error } = await catalog.fetchMyChangeRequests(uid);
+    if (error) {
+      this.setState({ myRequestsLoading: false, myRequestsError: `Não foi possível carregar seus pedidos: ${error.message || 'erro desconhecido'}` });
+      return;
+    }
+    this.setState({ myRequestsLoading: false, myRequests: data || [] });
+  };
+  setAdminTabMyRequests = () => { this.setState({ adminTab: 'myRequests' }); if (this.state.session) this.loadMyRequests(this.state.session.user.id); };
+  setRequestFilterStatus = (status) => this.setState({ requestFilterStatus: status });
+  onCancelMyRequest = async (id) => {
+    const { error } = await catalog.cancelChangeRequest(id);
+    if (error) { this.flashAdmin(`Não foi possível cancelar: ${error.message || 'erro desconhecido'}`); return; }
+    this.flashAdmin('Solicitação cancelada.');
+    this.loadMyRequests(this.state.session.user.id);
+  };
+  onResubmitMyRequest = async (req) => {
+    this.setState({ resubmitBusyRequestId: req.id });
+    const fn = req.entity_type === 'recipe' ? catalog.resubmitRecipeRequest : req.entity_type === 'product' ? catalog.resubmitProductRequest : catalog.resubmitCategoryRequest;
+    const { error } = await fn(req.id, null);
+    this.setState({ resubmitBusyRequestId: null });
+    if (error) { this.flashAdmin(this.friendlyPublishError(error)); return; }
+    this.flashAdmin('Solicitação reenviada.');
+    this.loadMyRequests(this.state.session.user.id);
+  };
+  // "Editar item" for a changes_requested recipe/product/category request:
+  // reuses the ordinary personal edit forms already built above — editing
+  // there is exactly "corrija e reenvie", and onResubmitMyRequest reloads
+  // the item fresh from the server regardless, per spec ("carregar
+  // novamente o item pessoal do servidor").
+  onEditRequestedItem = (req) => {
+    if (req.entity_type === 'recipe') { this.onEditMyRecipe({ id: req.source_id }); return; }
+    if (req.entity_type === 'product') { const p = this.state.myProducts.find(x => x.id === req.source_id); if (p) this.onEditMyProduct(p); return; }
+    if (req.entity_type === 'category') { const c = this.state.myCategories.find(x => x.id === req.source_id); if (c) this.onEditMyCategory(c); }
+  };
+
+  // ---- Request detail (shared by "Meus Pedidos" and "Solicitações Recebidas") ----
+  onOpenRequestDetail = async (id) => {
+    this.setState({ selectedRequestId: id, requestDetailLoading: true, requestDetailError: '', selectedRequestRevisions: [], requestActionError: '' });
+    const { data, error } = await catalog.fetchChangeRequestRevisions(id);
+    this.setState({ requestDetailLoading: false });
+    if (error) { this.setState({ requestDetailError: `Não foi possível carregar o histórico: ${error.message || 'erro desconhecido'}` }); return; }
+    this.setState({ selectedRequestRevisions: data || [] });
+  };
+  onCloseRequestDetail = () => this.setState({ selectedRequestId: null, selectedRequestRevisions: [], requestDetailError: '' });
+
+  // ---- "Solicitações Recebidas" (admin only) ----
+  loadAllRequests = async (role) => {
+    const effectiveRole = role !== undefined ? role : this.state.authRole;
+    if (effectiveRole !== 'admin') return;
+    this.setState({ allRequestsLoading: true, allRequestsError: '' });
+    const { data, error } = await catalog.fetchAllChangeRequests();
+    if (error) {
+      this.setState({ allRequestsLoading: false, allRequestsError: `Não foi possível carregar as solicitações: ${error.message || 'erro desconhecido'}` });
+      return;
+    }
+    this.setState({ allRequestsLoading: false, allRequests: data || [] });
+  };
+  setAdminTabRequestsInbox = () => { this.setState({ adminTab: 'requestsInbox' }); this.loadAllRequests(); };
+
+  onOpenReturnRequestModal = () => this.setState({ showReturnRequestModal: true, returnNoteValue: '', requestActionError: '' });
+  onCloseReturnRequestModal = () => this.setState({ showReturnRequestModal: false });
+  onReturnNoteChange = (e) => this.setState({ returnNoteValue: e.target.value });
+  onConfirmReturnRequest = async () => {
+    const id = this.state.selectedRequestId;
+    const note = this.state.returnNoteValue.trim();
+    if (!note) { this.setState({ requestActionError: 'A nota é obrigatória para devolver.' }); return; }
+    this.setState({ requestActionBusy: true, requestActionError: '' });
+    const { error } = await catalog.returnChangeRequest(id, note);
+    this.setState({ requestActionBusy: false });
+    if (error) { this.setState({ requestActionError: `Não foi possível devolver: ${error.message || 'erro desconhecido'}` }); return; }
+    this.setState({ showReturnRequestModal: false, selectedRequestId: null });
+    this.flashAdmin('Solicitação devolvida para edição.');
+    this.loadAllRequests();
+  };
+
+  onOpenRejectRequestModal = () => this.setState({ showRejectRequestModal: true, rejectNoteValue: '', requestActionError: '' });
+  onCloseRejectRequestModal = () => this.setState({ showRejectRequestModal: false });
+  onRejectNoteChange = (e) => this.setState({ rejectNoteValue: e.target.value });
+  onConfirmRejectRequest = async () => {
+    const id = this.state.selectedRequestId;
+    const note = this.state.rejectNoteValue.trim();
+    if (!note) { this.setState({ requestActionError: 'A nota é obrigatória para rejeitar.' }); return; }
+    this.setState({ requestActionBusy: true, requestActionError: '' });
+    const { error } = await catalog.reviewChangeRequest(id, 'reject', note, null);
+    this.setState({ requestActionBusy: false });
+    if (error) { this.setState({ requestActionError: `Não foi possível rejeitar: ${error.message || 'erro desconhecido'}` }); return; }
+    this.setState({ showRejectRequestModal: false, selectedRequestId: null });
+    this.flashAdmin('Solicitação rejeitada.');
+    this.loadAllRequests();
+  };
+
+  friendlyReviewError = (error) => {
+    const msg = (error && error.message) || '';
+    if (msg.includes('version_conflict')) return 'O item público foi alterado desde o envio da solicitação (conflito de versão). Recuse ou peça reenvio.';
+    if (msg.includes('stale_dependency')) return 'Uma das referências desta solicitação não está mais pública/ativa.';
+    if (msg.includes('target_no_longer_exists')) return 'O item público de destino não existe mais.';
+    return `Não foi possível aprovar: ${msg || 'erro desconhecido'}`;
+  };
+  onApproveRequest = async (publishMode) => {
+    const id = this.state.selectedRequestId;
+    this.setState({ requestActionBusy: true, requestActionError: '' });
+    const { error } = await catalog.reviewChangeRequest(id, 'approve', null, publishMode);
+    this.setState({ requestActionBusy: false });
+    if (error) { this.setState({ requestActionError: this.friendlyReviewError(error) }); return; }
+    this.setState({ selectedRequestId: null });
+    this.flashAdmin(publishMode === 'published' ? 'Solicitação aprovada e publicada.' : 'Solicitação aprovada como rascunho.');
+    this.loadAllRequests();
+    this.loadPublicCatalog();
+    this.loadSiteCatalogData();
   };
 
   setNavRailLeft = () => { this.setState({ navRailSide: 'left' }); this.persist(LS_KEYS.navRailSide, 'left'); };
@@ -1131,7 +1600,7 @@ class App extends Component {
       const { error } = await fn(cd.id);
       this.setState({ confirmDelete: null });
       if (error) { this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.'); }
-      this.loadMyCreationData();
+      this.loadMyCreationData(this.state.session.user.id);
       return;
     }
     if (cd.type === 'recipe') {
@@ -1770,11 +2239,13 @@ class App extends Component {
     const myProductRows = s.myProducts.map(p => ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
       onEdit: () => this.onEditMyProduct(p), onDelete: () => this.askDeleteMyProduct(p.id, p.name),
+      onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
     }));
     const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : 'Proteína/Produto';
     const myCategoryRows = s.myCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       onEdit: () => this.onEditMyCategory(c), onDelete: () => this.askDeleteMyCategory(c.id, c.name),
+      onRequestPublish: () => this.onOpenPublishRequest('category', c.id, c.name),
     }));
     const sharedLibraryRows = s.sharedLibrary.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
@@ -1812,6 +2283,7 @@ class App extends Component {
         sectionNames: d.sections.map(sc => sc.category && sc.category.name).filter(Boolean).join(', '),
         instructions: d.recipe.instructions || [], tips: d.recipe.tips || [], extras: d.recipe.extras || [],
         isOwner: d.isOwner,
+        onOpenPublishRequest: () => this.onOpenPublishRequest('recipe', d.id, d.recipe.name),
       };
     }
     const shareActive = !!(s.shareStatus && s.shareStatus.active);
@@ -1834,6 +2306,108 @@ class App extends Component {
         onSetAction: this.onSetCopyDecisionAction(r.refType, r.refId), onSetTarget: this.onSetCopyDecisionTarget(r.refType, r.refId),
       };
     });
+
+    // ---- Catálogo Público (admin) ----
+    const statusBadge = (label, color) => `font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${color}22;color:${color}`;
+    const siteRecipeRows = s.siteRecipes.map(r => {
+      const isPublished = r.status === 'published';
+      return {
+        id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '', featured: !!r.featured,
+        statusLabel: isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada',
+        statusBadgeStyle: statusBadge(isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada', isPublished ? '#34B23E' : r.status === 'draft' ? '#CFB017' : '#8A8580'),
+        toggleStatusLabel: isPublished ? 'Despublicar' : 'Publicar',
+        onToggleStatus: () => this.onToggleSiteRecipeStatus(r), onEdit: () => this.onEditSiteRecipe(r),
+      };
+    });
+    const siteProductRows = s.siteProducts.map(p => ({
+      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
+      statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
+      toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
+      onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
+    }));
+    const siteCategoryRows = s.siteCategories.map(c => ({
+      id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
+      statusLabel: c.active ? 'Ativa' : 'Inativa', statusBadgeStyle: statusBadge('', c.active ? '#34B23E' : '#8A8580'),
+      toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
+      onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
+    }));
+    const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
+    const siteProteinCategoryOptions = this.siteProteinCategories().map(c => ({ value: c.id, label: c.name }));
+    const siteRecipeSectionRows = this.siteSectionCategories().map(c => ({
+      key: c.id, label: c.name,
+      checked: !!(s.siteRecipeForm && s.siteRecipeForm.sectionCategoryIds.includes(c.id)),
+      onToggle: () => this.toggleSiteRecipeSection(c.id),
+    }));
+    const siteProductOptionsForIngredients = s.siteProducts.map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
+    const siteRecipeIngredientRows = s.siteRecipeForm ? s.siteRecipeForm.ingredients.map((row, idx) => ({
+      idx, productId: row.productId, quantity: row.quantity,
+      onProductSet: (val) => this.onSiteRecipeIngredientChange(idx, 'productId', val),
+      onQuantityChange: (e) => this.onSiteRecipeIngredientChange(idx, 'quantity', e.target.value),
+      onRemove: () => this.removeSiteRecipeIngredient(idx),
+    })) : [];
+
+    // ---- Solicitações (change_requests) ----
+    const requestStatusLabel = (st) => ({
+      submitted: 'Enviado', changes_requested: 'Devolvido', resubmitted: 'Reenviado',
+      approved: 'Aprovado', rejected: 'Rejeitado', cancelled: 'Cancelado',
+    }[st] || st);
+    const requestStatusColor = (st) => ({
+      submitted: '#CFB017', changes_requested: '#C33D22', resubmitted: '#CFB017',
+      approved: '#34B23E', rejected: '#C33D22', cancelled: '#8A8580',
+    }[st] || '#8A8580');
+    const requestEntityLabel = (t) => ({ recipe: 'Receita', product: 'Produto', category: 'Categoria' }[t] || t);
+    const requestActionLabel = (t) => ({ publish: 'Publicação', create: 'Criação', update: 'Alteração', deactivate: 'Desativação' }[t] || t);
+    const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+
+    const requestFilterOptions = [
+      { value: 'all', label: 'Todos' }, { value: 'submitted', label: 'Enviados' },
+      { value: 'changes_requested', label: 'Devolvidos' }, { value: 'resubmitted', label: 'Reenviados' },
+      { value: 'approved', label: 'Aprovados' }, { value: 'rejected', label: 'Rejeitados' }, { value: 'cancelled', label: 'Cancelados' },
+    ];
+    const filterRequests = (list) => s.requestFilterStatus === 'all' ? list : list.filter(r => r.status === s.requestFilterStatus);
+
+    const myRequestRows = filterRequests(s.myRequests).map(r => ({
+      id: r.id, code: r.request_code, entityLabel: requestEntityLabel(r.entity_type), actionLabel: requestActionLabel(r.action_type),
+      itemCode: r.source_code || r.target_code || '', dateLabel: fmtDate(r.created_at),
+      statusLabel: requestStatusLabel(r.status), statusBadgeStyle: statusBadge('', requestStatusColor(r.status)),
+      revision: r.current_revision, hasAdminNote: !!r.admin_note, adminNote: r.admin_note || '',
+      canCancel: ['submitted', 'resubmitted', 'changes_requested'].includes(r.status),
+      canEdit: r.status === 'changes_requested', canResubmit: r.status === 'changes_requested',
+      isResubmitBusy: s.resubmitBusyRequestId === r.id,
+      onOpenDetail: () => this.onOpenRequestDetail(r.id), onCancel: () => this.onCancelMyRequest(r.id),
+      onEditItem: () => this.onEditRequestedItem(r), onResubmit: () => this.onResubmitMyRequest(r),
+    }));
+
+    const allRequestRows = filterRequests(s.allRequests).map(r => ({
+      id: r.id, code: r.request_code, requesterName: r.requester_display_name_snapshot,
+      entityLabel: requestEntityLabel(r.entity_type), actionLabel: requestActionLabel(r.action_type),
+      itemCode: r.source_code || r.target_code || '', dateLabel: fmtDate(r.created_at),
+      statusLabel: requestStatusLabel(r.status), statusBadgeStyle: statusBadge('', requestStatusColor(r.status)),
+      revision: r.current_revision, canReview: ['submitted', 'resubmitted'].includes(r.status),
+      onOpenDetail: () => this.onOpenRequestDetail(r.id),
+    }));
+    const pendingRequestsCount = s.allRequests.filter(r => r.status === 'submitted' || r.status === 'resubmitted').length;
+
+    let requestDetail = null;
+    const selectedRequestRow = s.selectedRequestId
+      ? (s.allRequests.find(r => r.id === s.selectedRequestId) || s.myRequests.find(r => r.id === s.selectedRequestId))
+      : null;
+    if (selectedRequestRow) {
+      const latestRevision = s.selectedRequestRevisions[s.selectedRequestRevisions.length - 1];
+      requestDetail = {
+        code: selectedRequestRow.request_code, entityLabel: requestEntityLabel(selectedRequestRow.entity_type),
+        actionLabel: requestActionLabel(selectedRequestRow.action_type), statusLabel: requestStatusLabel(selectedRequestRow.status),
+        requesterName: selectedRequestRow.requester_display_name_snapshot, reason: selectedRequestRow.reason || '',
+        hasReason: !!selectedRequestRow.reason, adminNote: selectedRequestRow.admin_note || '', hasAdminNote: !!selectedRequestRow.admin_note,
+        sourceCode: selectedRequestRow.source_code || '', targetCode: selectedRequestRow.target_code || '', hasTargetCode: !!selectedRequestRow.target_code,
+        canReview: this.state.authRole === 'admin' && ['submitted', 'resubmitted'].includes(selectedRequestRow.status),
+        payloadPretty: latestRevision ? JSON.stringify(latestRevision.payload, null, 2) : '',
+        revisionRows: s.selectedRequestRevisions.map(rv => ({
+          key: rv.id, number: rv.revision_number, dateLabel: fmtDate(rv.created_at), message: rv.message || '',
+          namePreview: rv.payload && rv.payload.name,
+        })),
+      };
+    }
 
     return {
       weeklySales, weeklyTrendPoints, weeklyAreaPoints, weekdayOptions, weekStartDayValue, onWeekStartDaySet: this.onSetWeekStartDay, dailyStats, monthlyStats, weatherNow, weatherTabs, hourly, hourlyLinePoints, hourlyAreaPoints, weatherForecast, economicData, updatedAtLabel,
@@ -1927,7 +2501,60 @@ class App extends Component {
       adminTabMyRecipesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myRecipes' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myRecipes' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabMyProductsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myProducts' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myProducts' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabMyCategoriesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myCategories' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myCategories' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      isAdminSharedRecipesTab: s.adminTab === 'sharedRecipes', isAdminMyRequestsTab: s.adminTab === 'myRequests', isAdminRequestsInboxTab: s.adminTab === 'requestsInbox',
+      onSetAdminTabSharedRecipes: () => this.setState({ adminTab: 'sharedRecipes' }), onSetAdminTabMyRequests: this.setAdminTabMyRequests, onSetAdminTabRequestsInbox: this.setAdminTabRequestsInbox,
+      adminTabSharedRecipesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'sharedRecipes' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'sharedRecipes' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      adminTabMyRequestsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myRequests' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myRequests' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      adminTabRequestsInboxStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'requestsInbox' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'requestsInbox' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      hasPendingRequestsBadge: pendingRequestsCount > 0, pendingRequestsCount,
       myCreationLoading: s.myCreationLoading, hasMyCreationError: !!s.myCreationError, myCreationError: s.myCreationError,
+      // Catálogo Público (admin)
+      siteCatalogLoading: s.siteCatalogLoading, hasSiteCatalogErrorBanner: !!s.siteCatalogError, siteCatalogError: s.siteCatalogError,
+      siteRecipeRows, siteProductRows, siteCategoryRows,
+      hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0,
+      hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
+      onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onNewSiteCategory: this.onNewSiteCategory,
+      showSiteRecipeForm: s.showSiteRecipeForm, siteRecipeFormTitle: s.siteRecipeFormMode === 'new' ? 'Nova Receita do Catálogo' : 'Editar Receita do Catálogo', siteRecipeForm: s.siteRecipeForm || {},
+      hasSiteFormError: !!s.siteFormError, siteFormError: s.siteFormError,
+      siteRecipeFormOnName: this.siteRecipeFormField('name'), siteRecipeFormOnCategorySet: this.setFormField('siteRecipeForm', 'categoryId'),
+      siteRecipeFormOnDifficultySet: this.setFormField('siteRecipeForm', 'difficulty'), siteRecipeFormOnPrepTime: this.siteRecipeFormField('prepTime'),
+      siteRecipeFormOnServings: this.siteRecipeFormField('servings'), siteRecipeFormOnImageUrl: this.siteRecipeFormField('imageUrl'),
+      siteRecipeFormOnExtras: this.siteRecipeFormField('extrasText'), siteRecipeFormOnInstructions: this.siteRecipeFormField('instructionsText'), siteRecipeFormOnTips: this.siteRecipeFormField('tipsText'),
+      siteRecipeFormOnFeatured: this.toggleSiteRecipeFormFeatured, siteRecipeFormOnStatusSet: this.setFormField('siteRecipeForm', 'status'),
+      siteRecipeStatusOptions: [{ value: 'draft', label: 'Rascunho' }, { value: 'published', label: 'Publicada' }],
+      siteRecipeCategoryOptions, siteRecipeSectionRows, siteRecipeIngredientRows, siteProductOptionsForIngredients,
+      onAddSiteRecipeIngredient: this.addSiteRecipeIngredient, onCancelSiteRecipeForm: this.onCancelSiteRecipeForm, onSaveSiteRecipeForm: this.onSaveSiteRecipeForm,
+      showSiteProductForm: s.showSiteProductForm, siteProductFormTitle: s.siteProductFormMode === 'new' ? 'Novo Produto do Catálogo' : 'Editar Produto do Catálogo', siteProductForm: s.siteProductForm || {},
+      siteProductFormOnName: this.siteProductFormField('name'), siteProductFormOnCategorySet: this.setFormField('siteProductForm', 'categoryId'),
+      siteProductFormOnUnitSet: this.setFormField('siteProductForm', 'unit'), siteProductFormOnPrice: this.siteProductFormField('price'), siteProductFormOnActive: this.toggleSiteProductFormActive,
+      siteProteinCategoryOptions, unidadeOptionsSite: this.unidades,
+      onCancelSiteProductForm: this.onCancelSiteProductForm, onSaveSiteProductForm: this.onSaveSiteProductForm,
+      showSiteCategoryForm: s.showSiteCategoryForm, siteCategoryFormTitle: s.siteCategoryFormMode === 'new' ? 'Nova Categoria do Catálogo' : 'Editar Categoria do Catálogo', siteCategoryForm: s.siteCategoryForm || {},
+      siteCategoryFormOnName: this.siteCategoryFormField('name'), siteCategoryFormOnTypeSet: this.setFormField('siteCategoryForm', 'type'), siteCategoryFormOnActive: this.toggleSiteCategoryFormActive,
+      siteCategoryTypeOptions: [{ value: 'receita', label: 'Receita' }, { value: 'secao', label: 'Seção' }, { value: 'proteina', label: 'Proteína/Produto' }],
+      onCancelSiteCategoryForm: this.onCancelSiteCategoryForm, onSaveSiteCategoryForm: this.onSaveSiteCategoryForm,
+      // "Solicitar publicação"
+      publishRequestOpen: !!s.publishRequest, publishRequest: s.publishRequest || {}, publishRequestBusy: s.publishRequestBusy,
+      hasPublishRequestError: !!s.publishRequestError, publishRequestError: s.publishRequestError,
+      onClosePublishRequest: this.onClosePublishRequest, onPublishReasonChange: this.onPublishReasonChange, onConfirmPublishRequest: this.onConfirmPublishRequest,
+      onOpenPublishRequestForBlocker: (refType, id, name) => this.onOpenPublishRequest(refType, id, name),
+      // "Meus Pedidos"
+      myRequestsLoading: s.myRequestsLoading, hasMyRequestsError: !!s.myRequestsError, myRequestsError: s.myRequestsError,
+      myRequestRows, hasMyRequestRows: myRequestRows.length > 0,
+      // "Solicitações Recebidas"
+      allRequestsLoading: s.allRequestsLoading, hasAllRequestsError: !!s.allRequestsError, allRequestsError: s.allRequestsError,
+      allRequestRows, hasAllRequestRows: allRequestRows.length > 0,
+      requestFilterOptions, requestFilterStatus: s.requestFilterStatus, onSetRequestFilterStatus: (v) => this.setRequestFilterStatus(v),
+      // Request detail modal (shared)
+      requestDetailOpen: !!s.selectedRequestId, requestDetailLoading: s.requestDetailLoading, hasRequestDetailError: !!s.requestDetailError, requestDetailError: s.requestDetailError,
+      requestDetail, hasRequestDetail: !!requestDetail, onCloseRequestDetail: this.onCloseRequestDetail,
+      requestActionBusy: s.requestActionBusy, hasRequestActionError: !!s.requestActionError, requestActionError: s.requestActionError,
+      onOpenReturnRequestModal: this.onOpenReturnRequestModal, onOpenRejectRequestModal: this.onOpenRejectRequestModal,
+      onApproveDraft: () => this.onApproveRequest('draft'), onApproveAndPublish: () => this.onApproveRequest('published'),
+      showReturnRequestModal: s.showReturnRequestModal, returnNoteValue: s.returnNoteValue, onReturnNoteChange: this.onReturnNoteChange,
+      onCloseReturnRequestModal: this.onCloseReturnRequestModal, onConfirmReturnRequest: this.onConfirmReturnRequest,
+      showRejectRequestModal: s.showRejectRequestModal, rejectNoteValue: s.rejectNoteValue, onRejectNoteChange: this.onRejectNoteChange,
+      onCloseRejectRequestModal: this.onCloseRejectRequestModal, onConfirmRejectRequest: this.onConfirmRejectRequest,
       myRecipeRows, myProductRows, myCategoryRows, sharedLibraryRows,
       hasMyRecipeRows: myRecipeRows.length > 0, hasMyProductRows: myProductRows.length > 0, hasMyCategoryRows: myCategoryRows.length > 0, hasSharedLibraryRows: sharedLibraryRows.length > 0,
       onNewMyRecipe: this.onNewMyRecipe, onNewMyProduct: this.onNewMyProduct, onNewMyCategory: this.onNewMyCategory,
