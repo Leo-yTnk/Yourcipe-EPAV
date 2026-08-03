@@ -53,6 +53,15 @@ describe('shared select constants always specify an explicit FK hint', () => {
       .filter(({ value }) => BARE_EMBED_RE.test(value));
     expect(offenders).toEqual([]);
   });
+
+  // fetchPublicRecipes (the exact call the bug report's console error pointed
+  // at) uses RECIPE_WITH_CATEGORY_SELECT — this pins it to the real,
+  // pg_constraint-verified FK name (see supabase/STAGING.md section 2) so a
+  // future edit can't silently swap in a different/wrong constraint name
+  // (or drop the hint back to a bare `categories(`) without failing CI.
+  it('RECIPE_WITH_CATEGORY_SELECT names the real recipes_category_id_fkey constraint', () => {
+    expect(catalogModule.RECIPE_WITH_CATEGORY_SELECT).toContain('recipes_category_id_fkey');
+  });
 });
 
 const OWNER_ID = '10000000-0000-0000-0000-000000000001';

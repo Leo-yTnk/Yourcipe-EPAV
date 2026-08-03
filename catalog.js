@@ -133,7 +133,12 @@ export async function fetchMyRecipes(userId) {
 export async function fetchSharedLibrary(userId) {
   return unwrap(await supabase
     .from('recipe_access_grants')
-    .select(`granted_at, recipe:recipes(${RECIPE_WITH_CATEGORY_SELECT})`)
+    // `recipe_access_grants` has exactly one FK to `recipes`
+    // (`recipe_access_grants_recipe_id_fkey`, verified against
+    // pg_constraint — see supabase/STAGING.md), so this embed was never
+    // actually ambiguous. The hint is added anyway, for the same
+    // consistency/hedge reasoning as every other embed in this file.
+    .select(`granted_at, recipe:recipes!recipe_access_grants_recipe_id_fkey(${RECIPE_WITH_CATEGORY_SELECT})`)
     .eq('grantee_id', userId)
     .is('revoked_at', null)
     .order('granted_at', { ascending: false }), 'fetchSharedLibrary');

@@ -1,6 +1,49 @@
 # Staging setup and PR 1 runbook
 
-## PR 4 (this PR): PGRST201 ambiguous-embed fix + default catalog seed — root cause writeup
+## PR 4 follow-up: re-verified after a post-merge bug report on staging
+
+A follow-up report on PR 4 (still open, not yet merged) said the browser
+console still showed `PGRST201` from `fetchPublicRecipes` after running
+migration 008 in staging, with "Modo de Criação" tabs stuck on
+"Carregando..." forever.
+
+**Re-verification result: no remaining ambiguous embed found.** Every
+embed of `categories`/`products`/`recipes` in `catalog.js` was re-read in
+full and re-grepped repo-wide (`grep -rn "categories(\|recipes(\|products("`
+across every `.js` file outside `node_modules`/`vendor`) — the only match
+without a `!` FK hint was `recipe:recipes(...)` in `fetchSharedLibrary`
+(embedding `recipes` from `recipe_access_grants`), and `recipe_access_grants`
+has exactly one FK to `recipes` (`recipe_access_grants_recipe_id_fkey`,
+confirmed again against `pg_constraint` on a fresh local Postgres 16
+instance with schema.sql + 002 + 004 + 005 + 006 + 007 applied), so it was
+never actually ambiguous. A `!recipe_access_grants_recipe_id_fkey` hint was
+added to it anyway, for the same consistency/hedge reasoning as every other
+embed in this file — not because it was the bug. `index.html` loads a
+single `catalog.js` (no duplicate copy exists anywhere in the repo), so the
+most likely explanation for the report is that whatever was actually
+hit still served the pre-PR-4 code from `main` (this branch's PR isn't
+merged yet) or a browser/CDN-cached copy of the old `catalog.js` — not a
+real remaining server-side bug on this branch.
+
+**What was a real, separate gap regardless of the above:** none of the
+loader methods in `app.js` (`loadMyCreationData`, `loadPublicCatalog`,
+`loadSiteCatalogData`, `loadMyRequests`, `loadAllRequests`, the request-
+detail loader, `onOpenMyRecipeDetail`) wrapped their body in try/catch, so
+an unexpected synchronous throw elsewhere in a loader (not an ordinary
+Supabase `{ error }` response, which `catalog.js`'s `unwrap()` already turns
+into a normal return value) could leave a `*Loading` flag (or
+`publicCatalogSource`) stuck `true`/`'loading'` forever with no visible
+error and no way to retry. Fixed by wrapping every one of those loaders in
+try/catch/finally (the `finally` always clears the loading flag), and by
+adding a working "Tentar novamente" button to every error banner that was
+previously missing one (`myCreationError`, `publicCatalogError` — newly
+surfaced in Home, previously computed in `app.js` but never rendered at
+all in `template.js` despite a stale comment claiming it was —
+`siteCatalogError`, `myRequestsError`, `allRequestsError`,
+`requestDetailError`, `myRecipeDetailError`), each wired to call the same
+loader again with the same arguments it was originally invoked with.
+
+## PR 4: PGRST201 ambiguous-embed fix + default catalog seed — root cause writeup
 
 **Bug: `PGRST201` on catalog embeds.** Confirmed root cause: `recipes` and
 `categories` have TWO relationship paths PostgREST's embedding resolver can

@@ -96,6 +96,12 @@ function renderHome(app, v) {
         </div>
         <div style="width:52px;height:52px;border-radius:var(--radius-full);background:var(--brand-100);display:flex;align-items:center;justify-content:center;font-weight:700;color:#F4F2F1;font-size:20px">${v.profileInitial}</div>
       </div>
+      ${v.hasPublicCatalogFallback && html`
+        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
+          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+        </div>
+      `}
     </div>
 
     <div style="padding:24px 40px 8px">
@@ -1094,8 +1100,18 @@ function renderAdmin(app, v) {
     </div>
 
     ${v.hasAdminFlash && html`<div style="margin:0 40px 16px;background:rgba(52,178,62,0.12);border:1px solid var(--green-500);color:var(--green-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;animation:ycFadeIn 0.2s ease">${v.adminFlash}</div>`}
-    ${v.hasMyCreationError && html`<div style="margin:0 40px 16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600">${v.myCreationError}</div>`}
-    ${v.hasSiteCatalogErrorBanner && html`<div style="margin:0 40px 16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600">${v.siteCatalogError}</div>`}
+    ${v.hasMyCreationError && html`
+      <div style="margin:0 40px 16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <span>${v.myCreationError}</span>
+        <button onClick=${v.onRetryMyCreationData} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+      </div>
+    `}
+    ${v.hasSiteCatalogErrorBanner && html`
+      <div style="margin:0 40px 16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <span>${v.siteCatalogError}</span>
+        <button onClick=${v.onRetrySiteCatalogData} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+      </div>
+    `}
 
     ${v.isAdminMyRecipesTab && renderMyRecipesTab(app, v)}
     ${v.isAdminMyProductsTab && renderMyProductsTab(app, v)}
@@ -1379,7 +1395,12 @@ function renderMyRecipeDetailModal(app, v) {
         </div>
 
         ${v.myRecipeDetailLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:30px 0">Carregando...</div>`}
-        ${v.hasMyRecipeDetailError && html`<div style="color:var(--red-600);font-size:13px;font-weight:600;padding:12px 0">${v.myRecipeDetailError}</div>`}
+        ${v.hasMyRecipeDetailError && html`
+          <div style="padding:12px 0">
+            <div style="color:var(--red-600);font-size:13px;font-weight:600;margin-bottom:10px">${v.myRecipeDetailError}</div>
+            <button onClick=${v.onRetryMyRecipeDetail} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Tentar novamente</button>
+          </div>
+        `}
 
         ${d && html`
           <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">${d.code} · ${d.categoryName} · ${d.prepTimeLabel} · ${d.servingsLabel} · ${d.difficulty}</div>
@@ -1486,7 +1507,12 @@ function renderMyRequestsTab(app, v) {
     <div style="padding:8px 40px 24px">
       ${requestFilterBar(v)}
       ${v.myRequestsLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-      ${v.hasMyRequestsError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myRequestsError}</div>`}
+      ${v.hasMyRequestsError && html`
+        <div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>${v.myRequestsError}</span>
+          <button onClick=${v.onRetryMyRequests} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+        </div>
+      `}
       ${!v.myRequestsLoading && !v.hasMyRequestRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum pedido nesta categoria.</div>`}
       ${v.myRequestRows.map((row) => html`
         <div key=${row.id} style="background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px">
@@ -1513,7 +1539,12 @@ function renderRequestsInboxTab(app, v) {
     <div style="padding:8px 40px 24px">
       ${requestFilterBar(v)}
       ${v.allRequestsLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-      ${v.hasAllRequestsError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.allRequestsError}</div>`}
+      ${v.hasAllRequestsError && html`
+        <div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>${v.allRequestsError}</span>
+          <button onClick=${v.onRetryAllRequests} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+        </div>
+      `}
       ${!v.allRequestsLoading && !v.hasAllRequestRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum pedido nesta categoria.</div>`}
       ${v.allRequestRows.map((row) => html`
         <div key=${row.id} onClick=${row.onOpenDetail} style="background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;cursor:pointer">
@@ -1575,7 +1606,12 @@ function renderRequestDetailModal(app, v) {
           </div>
         </div>
         ${v.requestDetailLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-        ${v.hasRequestDetailError && html`<div style="color:var(--red-600);font-size:13px;font-weight:600;padding:12px 0">${v.requestDetailError}</div>`}
+        ${v.hasRequestDetailError && html`
+          <div style="padding:12px 0">
+            <div style="color:var(--red-600);font-size:13px;font-weight:600;margin-bottom:10px">${v.requestDetailError}</div>
+            <button onClick=${v.onRetryRequestDetail} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Tentar novamente</button>
+          </div>
+        `}
         ${d && html`
           <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">${d.entityLabel} · ${d.actionLabel} · ${d.statusLabel}</div>
           <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">Solicitado por: <strong>${d.requesterName}</strong></div>
