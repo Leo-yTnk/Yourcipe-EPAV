@@ -1,16 +1,26 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js';
-import { CustomSelect } from './custom-select.js';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260803-2';
+import { CustomSelect } from './custom-select.js?v=20260803-2';
 import {
   LS_KEYS, SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js';
-import { generateCredential, normalizeCredential } from './credential.js';
-import { supabase } from './supabase-client.js';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js';
-import { runSignupRetryLoop } from './signup-retry.js';
-import { normalizeDisplayName } from './display-name.js';
-import * as catalog from './catalog.js';
+} from './data.js?v=20260803-2';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260803-2';
+import { supabase } from './supabase-client.js?v=20260803-2';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260803-2';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260803-2';
+import { normalizeDisplayName } from './display-name.js?v=20260803-2';
+import * as catalog from './catalog.js?v=20260803-2';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260803-2';
+
+// Cache-busting version stamp — see the comment block at the top of
+// index.html for the full explanation and the bump procedure. This literal
+// must be identical to every `?v=...` query string in index.html and in
+// every local import specifier below/in catalog.js/auth.js/custom-select.js/
+// template.js (tests/js/cache-busting.test.js checks this can't drift).
+const FRONTEND_VERSION = '20260803-2';
+// eslint-disable-next-line no-console
+console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAAED4OOkYJr1mKBgo';
 const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente novamente.';
@@ -174,7 +184,15 @@ class App extends Component {
 
       // ---- Modo de Criação: personal recipes/products/categories (Supabase-backed) ----
       myCreationLoading: false, myCreationError: '',
-      myCategories: [], myProducts: [], myRecipes: [], sharedLibrary: [],
+      myCategories: [], myProducts: [], myRecipes: [],
+      // "Compartilhadas Comigo" (shared-with-me library) is a genuinely
+      // separate data source from "Minhas Receitas/Produtos/Categorias" —
+      // it now has its own independent loading/error flag instead of
+      // sharing myCreationLoading/myCreationError, so a slow/failed
+      // personal-data fetch never blocks or misreports the shared-library
+      // tab's own state, and vice versa (see loadSharedLibrary below).
+      sharedLibrary: [], sharedLibraryAuthorNames: {}, sharedLibraryLoading: false, sharedLibraryError: '',
+      justRedeemedRecipeId: null,
       // Public (scope='site', active=true) categories/products, loaded
       // alongside the caller's own personal rows so every category/product
       // picker in "Modo de Criação" can offer "public active UNION my own
@@ -189,6 +207,7 @@ class App extends Component {
       selectedMyRecipe: null, myRecipeDetailLoading: false, myRecipeDetailError: '', myRecipeDetailRequestedId: null,
       recipeAuthorName: '',
       shareStatus: null, shareGrantCount: 0, shareBusy: false, shareFlash: '',
+      shareRevokeConfirming: false, shareCopyConfirmed: false,
       // "Cadastrar Receita por ID" (Perfil).
       redeemCode: '', redeemBusy: false, redeemMessage: '', redeemMessageKind: '',
       // "Criar cópia própria" + resolução de referências.
@@ -257,13 +276,210 @@ class App extends Component {
     this.onRefreshIndicators();
     this.onRefreshWeather();
     this.initAuth();
+    // Refresh-without-reload fallback (Realtime is not used here — see the
+    // comment on refetchActiveArea for why): whenever the tab regains focus
+    // or becomes visible again, refetch ONLY whichever area is currently
+    // on-screen. Each loader already guards against overlapping requests via
+    // _guardedLoad, and this dispatcher itself only ever calls the loader(s)
+    // for the screen/tab actually showing right now — never every loader
+    // unconditionally — so a background tab never triggers requests for
+    // data nobody is looking at.
+    this._onVisibleRefetch = () => {
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      this.refetchActiveArea();
+    };
+    window.addEventListener('focus', this._onVisibleRefetch);
+    document.addEventListener('visibilitychange', this._onVisibleRefetch);
+    // One shared keyboard handler for every modal in the app (Part 11) —
+    // see modal-keyboard.js's header comment for why this is a plain global
+    // listener driven by getModalStack() rather than a per-modal hook.
+    document.addEventListener('keydown', this.onGlobalModalKeydown);
   }
   componentWillUnmount() {
     if (this._ro) this._ro.disconnect();
     if (this._onResize) { window.removeEventListener('resize', this._onResize); window.removeEventListener('orientationchange', this._onResize); }
     if (this._onFsChange) document.removeEventListener('fullscreenchange', this._onFsChange);
+    if (this._onVisibleRefetch) { window.removeEventListener('focus', this._onVisibleRefetch); document.removeEventListener('visibilitychange', this._onVisibleRefetch); }
+    document.removeEventListener('keydown', this.onGlobalModalKeydown);
+    clearTimeout(this._justRedeemedTimer);
+    clearTimeout(this._shareCopyConfirmTimer);
     if (this._authSub) this._authSub.data.subscription.unsubscribe();
   }
+
+  // =========================================================================
+  // Shared modal keyboard/accessibility mechanism (Part 11) — ONE handler
+  // for every modal, built on the pure functions in modal-keyboard.js. This
+  // app is a single class Component and template.js's `render*Modal`
+  // functions are plain functions (not separate Preact components), so a
+  // "useModalKeyboard" hook would have nothing to attach to even though
+  // vendor/htm-preact-standalone.js does export hooks — see the comment
+  // block at the top of modal-keyboard.js for the full reasoning.
+  //
+  // getModalStack() is the single source of truth for "what modals exist,
+  // in what stacking order, and how to close/submit/guard each one" — every
+  // entry's zIndex mirrors the real z-index used in that modal's render
+  // function in template.js, so getTopmostModal() picks the exact same
+  // modal a user would visually perceive as "on top". Add a new modal here
+  // whenever one is added to template.js's conditional render list.
+  // =========================================================================
+  getModalStack = () => {
+    const s = this;
+    const st = s.state;
+    return [
+      // Auth/profile — none of these are dismissible mid-network-call, and
+      // showCompleteProfileModal/showProfileSetup have no cancel affordance
+      // at all by design (onClose: null — Escape is a no-op for them,
+      // exactly like clicking outside already does nothing for them).
+      { key: 'profileSetup', open: !!st.showProfileSetup, zIndex: 20, onClose: null, onSubmit: this.onSaveProfile, busy: false, dirty: true, multiline: false },
+      { key: 'login', open: !!st.showLoginModal, zIndex: 20, onClose: this.closeLoginModal, onSubmit: this.onLoginSubmit, busy: !!st.loginSubmitting, dirty: false, multiline: false },
+      { key: 'signup', open: !!st.showSignupModal, zIndex: 20, onClose: this.closeSignupModal, onSubmit: this.onSignupSubmit, busy: !!st.signupSubmitting, dirty: false, multiline: false },
+      { key: 'completeProfile', open: !!st.showCompleteProfileModal, zIndex: 25, onClose: null, onSubmit: this.onCompleteProfileSubmit, busy: !!st.completeProfileSubmitting, dirty: false, multiline: false },
+      { key: 'changeName', open: !!st.showChangeNameModal, zIndex: 25, onClose: this.onCloseChangeNameModal, onSubmit: this.onChangeNameSubmit, busy: !!st.changeNameSubmitting, dirty: true, multiline: false },
+      // Local (non-Supabase) demo data.
+      { key: 'sales', open: !!st.salesModalOpen, zIndex: 20, onClose: this.onCloseSalesModal, onSubmit: this.onSaveSale, busy: false, dirty: true, multiline: false },
+      { key: 'alt', open: !!st.altModal, zIndex: 20, onClose: this.closeAltModal, onSubmit: null, busy: false, dirty: false, multiline: false },
+      // Confirm-delete — a "simple modal/dialog" whose Enter key confirms
+      // the destructive action, same as clicking its own "Excluir" button;
+      // never while a delete is already mid-flight.
+      { key: 'confirmDelete', open: !!st.confirmDelete, zIndex: 25, onClose: this.onConfirmDeleteNo, onSubmit: this.onConfirmDeleteYes, busy: !!st.confirmDeleteBusy, dirty: false, multiline: false },
+      // Legacy local admin forms (pre-Supabase demo data editor).
+      { key: 'legacyRecipeForm', open: !!st.showRecipeForm, zIndex: 20, onClose: this.onCancelRecipeForm, onSubmit: this.onSaveRecipeForm, busy: false, dirty: true, multiline: true },
+      { key: 'legacyProductForm', open: !!st.showProductForm, zIndex: 20, onClose: this.onCancelProductForm, onSubmit: this.onSaveProductForm, busy: false, dirty: true, multiline: false },
+      // Import wizard has no single "primary" action across all its steps —
+      // Enter/Ctrl+Enter intentionally do nothing here to avoid triggering
+      // an import a user hasn't explicitly reached the confirm step for.
+      { key: 'import', open: !!st.showImportModal, zIndex: 30, onClose: this.onCloseImportModal, onSubmit: null, busy: false, dirty: true, multiline: false },
+      // "Modo de Criação" personal forms.
+      { key: 'myRecipeForm', open: !!st.showMyRecipeForm, zIndex: 20, onClose: this.onCancelMyRecipeForm, onSubmit: this.onSaveMyRecipeForm, busy: false, dirty: true, multiline: true },
+      { key: 'myProductForm', open: !!st.showMyProductForm, zIndex: 20, onClose: this.onCancelMyProductForm, onSubmit: this.onSaveMyProductForm, busy: false, dirty: true, multiline: false },
+      { key: 'myCategoryForm', open: !!st.showMyCategoryForm, zIndex: 20, onClose: this.onCancelMyCategoryForm, onSubmit: this.onSaveMyCategoryForm, busy: false, dirty: true, multiline: false },
+      // Recipe detail (own or shared-with-me) — hosts the redesigned share
+      // section. No single default Enter action (several independent
+      // buttons: activate/regenerate/deactivate/revoke/copy), so onSubmit is
+      // null; busy covers every in-flight action this modal can start so
+      // Escape can never close it mid-transaction.
+      // Matches template.js's own `showMyRecipeDetail` condition exactly
+      // (loading/error states show this modal before selectedMyRecipe is
+      // populated) — otherwise Escape/Enter would silently do nothing
+      // during the brief loading window right after opening it.
+      { key: 'myRecipeDetail', open: !!st.selectedMyRecipe || !!st.myRecipeDetailLoading || !!st.myRecipeDetailError, zIndex: 22, onClose: this.onCloseMyRecipeDetail, onSubmit: null, busy: !!(st.shareBusy || st.copyBusy || st.myRecipeDetailLoading), dirty: false, multiline: false },
+      { key: 'copyResolve', open: !!st.copyModalOpen, zIndex: 24, onClose: this.onCloseCopyModal, onSubmit: this.onConfirmCopy, busy: !!st.copyBusy, dirty: true, multiline: false },
+      // "Catálogo Público" (admin) forms.
+      { key: 'siteRecipeForm', open: !!st.showSiteRecipeForm, zIndex: 20, onClose: this.onCancelSiteRecipeForm, onSubmit: this.onSaveSiteRecipeForm, busy: false, dirty: true, multiline: true },
+      { key: 'siteProductForm', open: !!st.showSiteProductForm, zIndex: 20, onClose: this.onCancelSiteProductForm, onSubmit: this.onSaveSiteProductForm, busy: false, dirty: true, multiline: false },
+      { key: 'siteCategoryForm', open: !!st.showSiteCategoryForm, zIndex: 20, onClose: this.onCancelSiteCategoryForm, onSubmit: this.onSaveSiteCategoryForm, busy: false, dirty: true, multiline: false },
+      // Change requests.
+      { key: 'publishRequest', open: !!st.publishRequest, zIndex: 26, onClose: this.onClosePublishRequest, onSubmit: this.onConfirmPublishRequest, busy: !!st.publishRequestBusy, dirty: true, multiline: true },
+      { key: 'requestDetail', open: !!st.selectedRequestId, zIndex: 26, onClose: this.onCloseRequestDetail, onSubmit: null, busy: !!st.requestActionBusy, dirty: false, multiline: false },
+      { key: 'returnRequest', open: !!st.showReturnRequestModal, zIndex: 28, onClose: this.onCloseReturnRequestModal, onSubmit: this.onConfirmReturnRequest, busy: !!st.requestActionBusy, dirty: true, multiline: true },
+      { key: 'rejectRequest', open: !!st.showRejectRequestModal, zIndex: 28, onClose: this.onCloseRejectRequestModal, onSubmit: this.onConfirmRejectRequest, busy: !!st.requestActionBusy, dirty: true, multiline: true },
+    ];
+  };
+
+  // Rapid-double-submit guard, independent of whether a given form happens
+  // to expose its own busy/saving flag (several of the legacy/personal
+  // forms above don't) — see modal-keyboard.js's isDoubleSubmit.
+  _lastModalSubmitAt = {};
+
+  onGlobalModalKeydown = (e) => {
+    if (e.key !== 'Escape' && e.key !== 'Enter' && e.key !== 'Tab') return;
+    const top = getTopmostModal(this.getModalStack());
+    if (!top) return;
+
+    if (e.key === 'Tab') { this.trapTabWithin(top.key, e); return; }
+
+    if (e.key === 'Escape') {
+      const action = resolveEscapeAction(top);
+      if (!action) return;
+      e.preventDefault();
+      if (action.needsConfirm && !window.confirm('Descartar as alterações não salvas?')) return;
+      top.onClose();
+      return;
+    }
+
+    // e.key === 'Enter'
+    const isTextarea = isTextareaElement(document.activeElement);
+    const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+    const action = resolveEnterAction(top, { isTextarea, isCtrlOrCmd });
+    if (!action) return;
+    if (isDoubleSubmit(this._lastModalSubmitAt, top.key, Date.now())) { e.preventDefault(); return; }
+    this._lastModalSubmitAt[top.key] = Date.now();
+    e.preventDefault();
+    top.onSubmit();
+  };
+
+  // Focus trap + initial focus + return-focus-on-close, applied to the
+  // modals explicitly called out in the spec (confirm-delete, the recipe
+  // detail modal that hosts the redesigned share section, and the
+  // request-detail modal) via `ref=${this.modalFocusRef('key')}` on each
+  // modal's panel element in template.js. Attach the same helper to any
+  // other modal's panel the same way — it needs no per-modal code beyond
+  // that one `ref` prop.
+  _modalTriggerEl = {};
+  _modalContainerEl = {};
+  FOCUSABLE_SELECTOR = 'input,select,textarea,button,[href],[tabindex]:not([tabindex="-1"])';
+  modalFocusRef = (key) => (el) => {
+    if (el) {
+      this._modalContainerEl[key] = el;
+      if (!this._modalTriggerEl[key]) this._modalTriggerEl[key] = document.activeElement;
+      requestAnimationFrame(() => {
+        if (!el.isConnected) return;
+        if (el.contains(document.activeElement)) return;
+        const focusable = el.querySelector(this.FOCUSABLE_SELECTOR);
+        (focusable || el).focus();
+      });
+    } else {
+      delete this._modalContainerEl[key];
+      const trigger = this._modalTriggerEl[key];
+      delete this._modalTriggerEl[key];
+      if (trigger && typeof trigger.focus === 'function' && document.contains(trigger)) {
+        try { trigger.focus(); } catch (err) { /* trigger no longer focusable — nothing to do */ }
+      }
+    }
+  };
+  // Tab/Shift+Tab focus trap for whichever modal's container was registered
+  // via modalFocusRef above — keeps focus cycling within that modal instead
+  // of escaping into the (visually covered, but otherwise still-in-the-DOM)
+  // background. A no-op for modals that haven't been wired with
+  // `ref=${this.modalFocusRef(key)}` yet (Tab behaves natively for those,
+  // same as before this round).
+  trapTabWithin = (topKey, e) => {
+    const container = this._modalContainerEl[topKey];
+    if (!container || !container.isConnected) return;
+    const focusables = Array.from(container.querySelectorAll(this.FOCUSABLE_SELECTOR)).filter((el) => !el.disabled);
+    if (!focusables.length) { e.preventDefault(); container.focus(); return; }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey ? (active === first || !container.contains(active)) : active === last) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+    }
+  };
+
+  // Refresh strategy (Part 8): this app's Supabase project setup/Realtime
+  // provisioning cannot be confirmed from this sandbox (no network route to
+  // the real project — see supabase/STAGING.md's documented esm.sh
+  // limitation), so wiring an unverifiable Realtime subscription here would
+  // risk shipping something that silently never fires (or errors) against
+  // the real project with no way to catch that in this environment. Per the
+  // task's own fallback allowance, this uses the always-available,
+  // fully-testable alternative instead: refetch on tab/section open (see
+  // goProfile/setAdminTab*/onOpenAdminAttempt above) plus this focus/
+  // visibilitychange handler, covering the same "don't require a manual
+  // reload to see a change" goal without depending on anything unverifiable.
+  refetchActiveArea = () => {
+    const s = this.state;
+    if (s.screen === 'home' || s.screen === 'search' || s.screen === 'favorites') this.loadPublicCatalog();
+    if (s.screen === 'profile' && s.session) this.loadSharedLibrary(s.session.user.id);
+    if (s.screen === 'admin' && s.session) {
+      if (s.adminTab === 'myRecipes' || s.adminTab === 'myProducts' || s.adminTab === 'myCategories') this.loadMyCreationData(s.session.user.id);
+      if (s.adminTab === 'sharedRecipes') this.loadSharedLibrary(s.session.user.id);
+      if (s.adminTab === 'recipes' || s.adminTab === 'products' || s.adminTab === 'categories') this.loadSiteCatalogData();
+      if (s.adminTab === 'myRequests') this.loadMyRequests(s.session.user.id);
+      if (s.adminTab === 'requestsInbox') this.loadAllRequests();
+    }
+  };
 
   // Shared by initial session resolution and every future auth state change
   // (fresh login, fresh signup, session restored on reload). Whenever a
@@ -337,6 +553,14 @@ class App extends Component {
 
   persist(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
   formatBRL(n) { return 'R$ ' + (Number(n) || 0).toFixed(2).replace('.', ','); }
+  // Admin catalog table's "last updated" column — pt-BR date+time, empty
+  // string for anything missing/invalid rather than "Invalid Date".
+  formatDateTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
   weekStart(d) { const dt = new Date(d); const base = this.state.weekStartDay ?? 1; const day = (dt.getDay() - base + 7) % 7; dt.setHours(0, 0, 0, 0); dt.setDate(dt.getDate() - day); return dt; }
   todayDateInputValue = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
@@ -492,6 +716,10 @@ class App extends Component {
     this.animateTo('profile');
     this.setState({ screen: 'profile' });
     if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' } });
+    // Profile shows "Biblioteca Compartilhada Comigo" inline — refetch it
+    // every time this screen is opened (cheap, guarded by loadSharedLibrary's
+    // own in-flight check), same reasoning as setAdminTabSharedRecipes.
+    if (this.state.session) this.loadSharedLibrary(this.state.session.user.id);
   };
 
   selectRecipe = (id) => { this.animateTo('detail'); this.setState({ screen: 'detail', selectedRecipeId: id }); };
@@ -631,6 +859,7 @@ class App extends Component {
     if (this.state.session) {
       this.animateTo('admin'); this.setState({ screen: 'admin' });
       this.loadMyCreationData(this.state.session.user.id);
+      this.loadSharedLibrary(this.state.session.user.id);
       this.loadMyRequests(this.state.session.user.id);
       this.loadSiteCatalogData();
       this.loadAllRequests();
@@ -679,6 +908,7 @@ class App extends Component {
     // authRole were just setState()'d above via applySessionProfile in this
     // same tick, so this.state would still be stale here.
     this.loadMyCreationData(result.user.id);
+    this.loadSharedLibrary(result.user.id);
     this.loadMyRequests(result.user.id);
     this.loadSiteCatalogData(profile.role);
     this.loadAllRequests(profile.role);
@@ -788,6 +1018,12 @@ class App extends Component {
   setAdminTabMyRecipes = () => this.setState({ adminTab: 'myRecipes' });
   setAdminTabMyProducts = () => this.setState({ adminTab: 'myProducts' });
   setAdminTabMyCategories = () => this.setState({ adminTab: 'myCategories' });
+  // Refetches "Compartilhadas Comigo" every time the tab is opened (cheap,
+  // guarded against overlap by loadSharedLibrary's own in-flight check) —
+  // not just once on first "Modo de Criação" entry — so a redemption made
+  // in another tab/device, or a revocation by the owner, is reflected the
+  // next time the user comes back to this tab without a manual reload.
+  setAdminTabSharedRecipes = () => { this.setState({ adminTab: 'sharedRecipes' }); if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
 
   flashAdmin = (msg) => { this.setState({ adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 4000); };
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
@@ -828,12 +1064,33 @@ class App extends Component {
   // below now passes the uid it already has in hand from a resolved value
   // (session.user.id it just received, or the current session it already
   // confirmed truthy), never from a just-set piece of state.
-  loadMyCreationData = async (uid) => {
-    if (!uid) return;
+  // Returns `{ ok: true }` or `{ ok: false, error }` — every caller that
+  // needs to know whether THIS refetch itself succeeded (as opposed to
+  // reading `this.state.myCreationError` right after calling this, which
+  // would be stale in the same tick for the same reason bug #2 was: Preact's
+  // setState only flushes into `this.state` on the next microtask-scheduled
+  // render) uses this return value instead. See
+  // refreshAfterMyCreationMutation below for why this matters.
+  // In-flight guard shared by every "Modo de Criação"/admin loader below —
+  // keyed by loader name, so a focus/visibilitychange-triggered refetch (see
+  // componentDidMount) never stacks a second overlapping request for the
+  // same area on top of one already running, while a DIFFERENT area's loader
+  // is completely unaffected (each key is independent).
+  _inFlight = {};
+  async _guardedLoad(key, fn) {
+    if (this._inFlight[key]) return this._inFlight[key];
+    const p = (async () => { try { return await fn(); } finally { this._inFlight[key] = null; } })();
+    this._inFlight[key] = p;
+    return p;
+  }
+
+  loadMyCreationData = (uid) => this._guardedLoad('myCreationData', () => this._loadMyCreationData(uid));
+  _loadMyCreationData = async (uid) => {
+    if (!uid) return { ok: false, error: 'missing uid' };
     this.setState({ myCreationLoading: true, myCreationError: '' });
     try {
-      const [cats, prods, recs, shared, publicCats, publicProds] = await Promise.all([
-        catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid), catalog.fetchSharedLibrary(uid),
+      const [cats, prods, recs, publicCats, publicProds] = await Promise.all([
+        catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid),
         // Public (scope='site', active=true) categories/products — every
         // category/product picker below unions these with the caller's own
         // personal rows, so pickers work immediately from a freshly-seeded
@@ -841,7 +1098,7 @@ class App extends Component {
         // on the caller having created anything personal first.
         catalog.fetchPublicCategories(), catalog.fetchPublicProducts(),
       ]);
-      const failed = cats.error || prods.error || recs.error || shared.error || publicCats.error || publicProds.error;
+      const failed = cats.error || prods.error || recs.error || publicCats.error || publicProds.error;
       if (failed) {
         // catalog.js already logged the full { code, message, details, hint }
         // to the console (see logSupabaseError) — this is the same real
@@ -850,13 +1107,13 @@ class App extends Component {
         // requirement.
         const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
         this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
-        return;
+        return { ok: false, error: detail };
       }
       this.setState({
         myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
-        sharedLibrary: (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at })),
         pickerPublicCategories: publicCats.data || [], pickerPublicProducts: publicProds.data || [],
       });
+      return { ok: true };
     } catch (e) {
       // Defensive net for an unexpected synchronous throw elsewhere in this
       // body (e.g. a `.map()` over an unexpectedly-shaped response) — every
@@ -864,10 +1121,78 @@ class App extends Component {
       // value via catalog.js's unwrap() and is handled by the branch above;
       // this only guards against something genuinely unforeseen so the UI
       // never gets stuck on "Carregando..." forever.
-      this.setState({ myCreationError: `Não foi possível carregar seus dados: ${(e && e.message) || 'erro inesperado'}` });
+      const detail = (e && e.message) || 'erro inesperado';
+      this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
+      return { ok: false, error: detail };
     } finally {
       this.setState({ myCreationLoading: false });
     }
+  };
+
+  // "Compartilhadas Comigo" — its own independent loader/loading/error flag,
+  // deliberately separate from loadMyCreationData above (see the
+  // sharedLibraryLoading/sharedLibraryError comment in the initial state):
+  // redeeming a code, opening the "sharedRecipes" tab, or a
+  // focus/visibilitychange refetch while that tab is open should never have
+  // to wait on (or misreport) "Minhas Receitas/Produtos/Categorias", and
+  // vice versa.
+  loadSharedLibrary = (uid) => this._guardedLoad('sharedLibrary', () => this._loadSharedLibrary(uid));
+  _loadSharedLibrary = async (uid) => {
+    if (!uid) return { ok: false, error: 'missing uid' };
+    this.setState({ sharedLibraryLoading: true, sharedLibraryError: '' });
+    try {
+      const shared = await catalog.fetchSharedLibrary(uid);
+      if (shared.error) {
+        const detail = shared.error.message ? `${shared.error.message}${shared.error.code ? ` (${shared.error.code})` : ''}` : 'erro desconhecido';
+        this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
+        return { ok: false, error: detail };
+      }
+      const sharedLibrary = (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at }));
+      // Author display_name for every shared-with-me recipe, so the "Receitas
+      // Compartilhadas" tab can show whose recipe it is — never invented or
+      // read off `owner_id` directly (RLS already hides other users' rows
+      // outright), always resolved through the same safe RPC the recipe
+      // detail screen already uses. Best-effort: a failure here must not
+      // fail the whole load (the recipe list itself already succeeded above)
+      // — a row simply falls back to no author label if its lookup fails.
+      const authorEntries = await Promise.all(sharedLibrary.map(async (r) => {
+        const res = await catalog.getRecipeAuthorName(r.id);
+        return [r.id, res.error ? '' : (res.data || '')];
+      }));
+      const sharedLibraryAuthorNames = Object.fromEntries(authorEntries);
+      this.setState({ sharedLibrary, sharedLibraryAuthorNames });
+      return { ok: true };
+    } catch (e) {
+      const detail = (e && e.message) || 'erro inesperado';
+      this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
+      return { ok: false, error: detail };
+    } finally {
+      this.setState({ sharedLibraryLoading: false });
+    }
+  };
+  onRetrySharedLibrary = () => { if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
+
+  // Shared post-mutation refresh for every "Modo de Criação" personal
+  // mutation path (recipe/product/category create, edit, delete; copy;
+  // share-code redemption). By the time this runs, the mutation itself has
+  // ALREADY succeeded — every caller only reaches this after its own
+  // create/update/delete call came back without an error. If THIS refetch
+  // fails (e.g. a transient network error right after a successful insert),
+  // the user must not be told "a criação falhou": that would be misleading,
+  // since the write already landed. Instead this surfaces a distinct,
+  // explicitly-worded, retryable `myCreationError` banner (already rendered
+  // with a "Tentar novamente" button wired to `onRetryMyCreationData` — see
+  // template.js) that says the save worked and only the list refresh needs
+  // a retry, instead of silently doing nothing or reusing the generic
+  // "não foi possível carregar" wording that would read as if the save
+  // itself had failed.
+  refreshAfterMyCreationMutation = async (uid, successMessage) => {
+    const result = await this.loadMyCreationData(uid);
+    if (result && result.ok === false) {
+      this.setState({ myCreationError: `${successMessage} A lista não pôde ser atualizada automaticamente: ${result.error}` });
+      return;
+    }
+    this.flashAdmin(successMessage);
   };
 
   // ---- Minhas Categorias ----
@@ -882,7 +1207,7 @@ class App extends Component {
     const res = f.id ? await catalog.updateCategoryName(f.id, f.name.trim()) : await catalog.createCategory(uid, { type: f.type, name: f.name.trim() });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar a categoria.' }); return; }
     this.setState({ showMyCategoryForm: false, myCategoryForm: null });
-    this.loadMyCreationData(this.state.session.user.id);
+    this.refreshAfterMyCreationMutation(uid, 'Categoria salva com sucesso.');
   };
   askDeleteMyCategory = (id, name) => this.setState({ confirmDelete: { type: 'myCategory', id, message: `Excluir a categoria "${name}"? Produtos ou receitas que a usam podem deixar de funcionar corretamente.` } });
 
@@ -901,7 +1226,7 @@ class App extends Component {
       : await catalog.createProduct(uid, { name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar o produto.' }); return; }
     this.setState({ showMyProductForm: false, myProductForm: null });
-    this.loadMyCreationData(this.state.session.user.id);
+    this.refreshAfterMyCreationMutation(uid, 'Produto salvo com sucesso.');
   };
   askDeleteMyProduct = (id, name) => this.setState({ confirmDelete: { type: 'myProduct', id, message: `Excluir o produto "${name}"? Ele será removido também das receitas que o usam.` } });
 
@@ -973,9 +1298,18 @@ class App extends Component {
       catalog.replaceRecipeIngredients(recipeId, validIngredients.map(i => ({ productId: i.productId, quantity: parseFloat(String(i.quantity).replace(',', '.')) || 0 }))),
       catalog.replaceRecipeCategories(recipeId, f.sectionCategoryIds),
     ]);
-    if (ingRes.error || catRes.error) this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
     this.setState({ showMyRecipeForm: false, myRecipeForm: null });
-    this.loadMyCreationData(this.state.session.user.id);
+    if (ingRes.error || catRes.error) {
+      // Ingredients/sections failed to save, but the recipe row itself did
+      // save — same "don't imply the whole save failed" reasoning as
+      // refreshAfterMyCreationMutation below, just for a different half of
+      // the same mutation. Still refresh the list afterwards so whatever
+      // did save is visible.
+      this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
+      this.loadMyCreationData(uid);
+      return;
+    }
+    this.refreshAfterMyCreationMutation(uid, 'Receita salva com sucesso.');
   };
   askDeleteMyRecipe = (id, name) => this.setState({ confirmDelete: { type: 'myRecipe', id, message: `Excluir a receita "${name}"? Esta ação não pode ser desfeita.` } });
 
@@ -1002,7 +1336,7 @@ class App extends Component {
     }
   };
   onRetryMyRecipeDetail = () => { if (this.state.myRecipeDetailRequestedId) this.onOpenMyRecipeDetail(this.state.myRecipeDetailRequestedId); };
-  onCloseMyRecipeDetail = () => this.setState({ selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '', shareFlash: '', myRecipeDetailError: '', myRecipeDetailRequestedId: null });
+  onCloseMyRecipeDetail = () => this.setState({ selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '', shareFlash: '', myRecipeDetailError: '', myRecipeDetailRequestedId: null, shareRevokeConfirming: false, shareCopyConfirmed: false });
 
   onActivateSharing = async () => {
     const rid = this.state.selectedMyRecipe.id;
@@ -1031,9 +1365,15 @@ class App extends Component {
     this.setState(s => ({ shareStatus: s.shareStatus ? { ...s.shareStatus, active: false } : s.shareStatus }));
     this.flashShare('Novos compartilhamentos desativados. Acessos já concedidos continuam valendo.');
   };
+  // "Revogar acessos existentes" is destructive (existing grantees
+  // immediately lose read access to the original), so it always goes
+  // through an explicit inline confirmation step first — never fires on the
+  // first click. See renderMyRecipeDetailModal's "Compartilhamento" section.
+  onAskRevokeAllAccess = () => this.setState({ shareRevokeConfirming: true });
+  onCancelRevokeAllAccess = () => this.setState({ shareRevokeConfirming: false });
   onRevokeAllAccess = async () => {
     const rid = this.state.selectedMyRecipe.id;
-    this.setState({ shareBusy: true });
+    this.setState({ shareBusy: true, shareRevokeConfirming: false });
     const { data, error } = await catalog.revokeAccess(rid, null);
     this.setState({ shareBusy: false });
     if (error) { this.flashShare('Não foi possível revogar os acessos.'); return; }
@@ -1042,8 +1382,37 @@ class App extends Component {
   };
   onCopyShareCode = () => {
     const code = this.state.shareStatus && this.state.shareStatus.share_code;
-    if (!code || !navigator.clipboard) return;
-    navigator.clipboard.writeText(code).then(() => this.flashShare('ID copiado.')).catch(() => {});
+    if (!code) return;
+    const onCopied = () => {
+      this.flashShare('Código copiado.');
+      this.setState({ shareCopyConfirmed: true });
+      clearTimeout(this._shareCopyConfirmTimer);
+      this._shareCopyConfirmTimer = setTimeout(() => this.setState({ shareCopyConfirmed: false }), 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(onCopied).catch(() => this.copyShareCodeFallback(code, onCopied));
+      return;
+    }
+    this.copyShareCodeFallback(code, onCopied);
+  };
+  // Fallback for browsers/contexts without the async Clipboard API (e.g.
+  // non-secure context, or an older browser) — a hidden, off-screen
+  // <textarea> + document.execCommand('copy') is the standard shim for
+  // this. Silently does nothing further if even that isn't available
+  // (execCommand missing entirely) — never throws.
+  copyShareCodeFallback = (code, onCopied) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = code;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) onCopied();
+    } catch (e) { /* no copy mechanism available — nothing more we can do */ }
   };
 
   // ---- Perfil: "Cadastrar Receita por ID" ----
@@ -1052,10 +1421,25 @@ class App extends Component {
     const code = this.state.redeemCode.trim();
     if (!code || this.state.redeemBusy) return;
     this.setState({ redeemBusy: true, redeemMessage: '' });
-    const { error } = await catalog.redeemShareCode(code);
+    const { data: redeemedRecipeId, error } = await catalog.redeemShareCode(code);
     if (error) { this.setState({ redeemBusy: false, redeemMessage: error.friendly || 'Código inválido.', redeemMessageKind: 'error' }); return; }
-    this.setState({ redeemBusy: false, redeemMessage: 'Receita adicionada à sua biblioteca, em modo somente leitura.', redeemMessageKind: 'success', redeemCode: '' });
-    this.loadMyCreationData(this.state.session.user.id);
+    this.setState({ redeemBusy: false, redeemMessage: 'Receita adicionada à sua biblioteca, em modo somente leitura.', redeemMessageKind: 'success', redeemCode: '', justRedeemedRecipeId: redeemedRecipeId || null });
+    // Clear the highlight a little while after — it's a "just happened"
+    // affordance, not a permanent marker on the row.
+    clearTimeout(this._justRedeemedTimer);
+    this._justRedeemedTimer = setTimeout(() => this.setState({ justRedeemedRecipeId: null }), 15000);
+    // Redemption already succeeded (redeemMessage above already says so) —
+    // if the refetch that populates "Receitas Compartilhadas" fails, that
+    // must not read as if the redemption itself failed. Same differentiation
+    // as every other personal-data mutation (see refreshAfterMyCreationMutation).
+    // Only the shared-library loader needs to run here — redemption only
+    // ever affects "Compartilhadas Comigo", never Minhas Receitas/Produtos/
+    // Categorias — so this refreshes just that one area, per the
+    // independent-loading-states requirement.
+    const refresh = await this.loadSharedLibrary(this.state.session.user.id);
+    if (refresh && refresh.ok === false) {
+      this.setState({ sharedLibraryError: `Código resgatado com sucesso. A lista não pôde ser atualizada automaticamente: ${refresh.error}` });
+    }
   };
 
   // ---- "Criar cópia própria" + resolução de referências ----
@@ -1069,8 +1453,7 @@ class App extends Component {
       const { error } = await catalog.createRecipeCopy(detail.id, []);
       this.setState({ copyBusy: false });
       if (error) { this.setState({ copyError: 'Não foi possível criar a cópia.' }); return; }
-      this.flashAdmin('Cópia própria criada em Minhas Receitas.');
-      this.loadMyCreationData(this.state.session.user.id);
+      this.refreshAfterMyCreationMutation(uid, 'Cópia própria criada em Minhas Receitas.');
       this.onCloseMyRecipeDetail();
       return;
     }
@@ -1100,8 +1483,7 @@ class App extends Component {
     this.setState({ copyBusy: false });
     if (error) { this.setState({ copyError: 'Não foi possível criar a cópia. Verifique as associações escolhidas.' }); return; }
     this.setState({ copyModalOpen: false, copyRefs: [], copyDecisions: {} });
-    this.flashAdmin('Cópia própria criada em Minhas Receitas.');
-    this.loadMyCreationData(this.state.session.user.id);
+    this.refreshAfterMyCreationMutation(this.state.session.user.id, 'Cópia própria criada em Minhas Receitas.');
     this.onCloseMyRecipeDetail();
   };
 
@@ -1116,7 +1498,8 @@ class App extends Component {
   // if it had, nothing ever read scope='site' rows back for the public
   // pages either. This is the actual fix for both halves of that gap.
   // =========================================================================
-  loadPublicCatalog = async () => {
+  loadPublicCatalog = () => this._guardedLoad('publicCatalog', () => this._loadPublicCatalog());
+  _loadPublicCatalog = async () => {
     // Reset to 'loading' on every call (not just the very first, initial
     // one) so a retry after a demo-fallback error shows the loading state
     // again instead of leaving the stale fallback banner up mid-request.
@@ -1202,7 +1585,24 @@ class App extends Component {
   // in the same tick (e.g. onLoginSubmit), for the same reason
   // loadMyCreationData takes an explicit uid: this.state.authRole would
   // still be stale there (Preact setState hasn't flushed yet).
-  loadSiteCatalogData = async (role) => {
+  // Shared post-mutation refresh for every admin "Catálogo Público" action
+  // (create/edit/activate/deactivate/publish/unpublish/archive category,
+  // product, or recipe) and every approval that lands in scope='site'.
+  // Always refreshes both the admin catalog view (so admin sees the new
+  // status/active state immediately) and the public library (so a
+  // newly-published/activated row appears for visitors/plain users without
+  // a manual reload, and a newly-unpublished/deactivated one disappears).
+  // Refetching the public catalog unconditionally on every admin mutation
+  // is deliberately simple/safe here — it is a cheap read-only refetch, not
+  // a write, so there is no correctness cost to occasionally refreshing it
+  // for a change that turned out not to affect a published/active row.
+  refreshAdminCatalog = () => {
+    this.loadSiteCatalogData();
+    this.loadPublicCatalog();
+  };
+
+  loadSiteCatalogData = (role) => this._guardedLoad('siteCatalogData', () => this._loadSiteCatalogData(role));
+  _loadSiteCatalogData = async (role) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
     this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
@@ -1237,12 +1637,12 @@ class App extends Component {
       : await catalog.createSiteCategory({ type: f.type, name: f.name.trim(), active: !!f.active });
     if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
     this.setState({ showSiteCategoryForm: false, siteCategoryForm: null });
-    this.loadSiteCatalogData();
+    this.refreshAdminCatalog();
   };
   onToggleSiteCategoryActive = async (c) => {
     const res = await catalog.updateSiteCategory(c.id, { active: !c.active });
     if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
-    this.loadSiteCatalogData();
+    this.refreshAdminCatalog();
   };
 
   onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true } });
@@ -1259,12 +1659,12 @@ class App extends Component {
       : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active });
     if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
     this.setState({ showSiteProductForm: false, siteProductForm: null });
-    this.loadSiteCatalogData();
+    this.refreshAdminCatalog();
   };
   onToggleSiteProductActive = async (p) => {
     const res = await catalog.updateSiteProduct(p.id, { active: !p.active });
     if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
-    this.loadSiteCatalogData();
+    this.refreshAdminCatalog();
   };
 
   onNewSiteRecipe = () => this.setState({
@@ -1338,15 +1738,13 @@ class App extends Component {
     ]);
     if (ingRes.error || catRes.error) this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
     this.setState({ showSiteRecipeForm: false, siteRecipeForm: null });
-    this.loadSiteCatalogData();
-    this.loadPublicCatalog();
+    this.refreshAdminCatalog();
   };
   onToggleSiteRecipeStatus = async (r) => {
     const nextStatus = r.status === 'published' ? 'draft' : 'published';
     const res = await catalog.updateSiteRecipe(r.id, { status: nextStatus });
     if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
-    this.loadSiteCatalogData();
-    this.loadPublicCatalog();
+    this.refreshAdminCatalog();
   };
 
   // =========================================================================
@@ -1390,7 +1788,8 @@ class App extends Component {
   };
 
   // ---- "Meus Pedidos" (any authenticated user) ----
-  loadMyRequests = async (uid) => {
+  loadMyRequests = (uid) => this._guardedLoad('myRequests', () => this._loadMyRequests(uid));
+  _loadMyRequests = async (uid) => {
     if (!uid) return;
     this.setState({ myRequestsLoading: true, myRequestsError: '' });
     try {
@@ -1451,7 +1850,8 @@ class App extends Component {
   onCloseRequestDetail = () => this.setState({ selectedRequestId: null, selectedRequestRevisions: [], requestDetailError: '' });
 
   // ---- "Solicitações Recebidas" (admin only) ----
-  loadAllRequests = async (role) => {
+  loadAllRequests = (role) => this._guardedLoad('allRequests', () => this._loadAllRequests(role));
+  _loadAllRequests = async (role) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
     this.setState({ allRequestsLoading: true, allRequestsError: '' });
@@ -1518,8 +1918,7 @@ class App extends Component {
     this.setState({ selectedRequestId: null });
     this.flashAdmin(publishMode === 'published' ? 'Solicitação aprovada e publicada.' : 'Solicitação aprovada como rascunho.');
     this.loadAllRequests();
-    this.loadPublicCatalog();
-    this.loadSiteCatalogData();
+    this.refreshAdminCatalog();
   };
 
   setNavRailLeft = () => { this.setState({ navRailSide: 'left' }); this.persist(LS_KEYS.navRailSide, 'left'); };
@@ -1684,11 +2083,21 @@ class App extends Component {
   onConfirmDeleteYes = async () => {
     const cd = this.state.confirmDelete; if (!cd) return;
     if (cd.type === 'myRecipe' || cd.type === 'myProduct' || cd.type === 'myCategory') {
+      const uid = this.state.session.user.id;
       const fn = cd.type === 'myRecipe' ? catalog.deleteRecipe : cd.type === 'myProduct' ? catalog.deleteProduct : catalog.deleteCategory;
       const { error } = await fn(cd.id);
       this.setState({ confirmDelete: null });
-      if (error) { this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.'); }
-      this.loadMyCreationData(this.state.session.user.id);
+      if (error) {
+        // The delete itself failed (e.g. FK restriction from another row
+        // still referencing it) — nothing to refetch differently for, the
+        // list on screen is already accurate since nothing changed server-side.
+        this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.');
+        return;
+      }
+      // Delete succeeded — refetch to drop it from every list, differentiating
+      // a refresh-only failure from a delete failure the same way every other
+      // personal mutation does (see refreshAfterMyCreationMutation).
+      this.refreshAfterMyCreationMutation(uid, 'Item excluído com sucesso.');
       return;
     }
     if (cd.type === 'recipe') {
@@ -2320,8 +2729,20 @@ class App extends Component {
     const updatedAtLabel = new Date(s.indicatorsUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
     // ---- Modo de Criação: "Minhas Receitas / Meus Produtos / Minhas Categorias" ----
+    // Badge/label helper shared by every recipe-row source below (personal,
+    // shared, admin/site) so a user can tell at a glance which of the four
+    // genuinely-separate data sources (myRecipes/sharedLibrary/public
+    // catalog/admin site catalog — never merged into one array anywhere in
+    // state or here) a given row came from, on top of its own status.
+    const statusBadge = (label, color) => `font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${color}22;color:${color}`;
+    const SOURCE_BADGE_COLORS = { personal: '#8A5CF6', shared: '#2E90D6', public: '#34B23E', draft: '#CFB017', archived: '#8A8580' };
+    // recipes.recipes_personal_requires_private_ck (supabase/004_catalog_schema.sql)
+    // guarantees every scope='personal' recipe is always status='private' —
+    // verified against the live schema (see supabase/STAGING.md), so "Privada"
+    // is always correct here, never derived from a guess.
     const myRecipeRows = s.myRecipes.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
+      source: 'personal', sourceLabel: 'Privada', sourceBadgeStyle: statusBadge('Privada', SOURCE_BADGE_COLORS.personal),
       onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteMyRecipe(r.id, r.name),
     }));
     const myProductRows = s.myProducts.map(p => ({
@@ -2337,6 +2758,13 @@ class App extends Component {
     }));
     const sharedLibraryRows = s.sharedLibrary.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
+      source: 'shared', sourceLabel: 'Compartilhada', sourceBadgeStyle: statusBadge('Compartilhada', SOURCE_BADGE_COLORS.shared),
+      authorName: (s.sharedLibraryAuthorNames && s.sharedLibraryAuthorNames[r.id]) || '',
+      // Highlighted immediately after a successful "Cadastrar Receita por
+      // ID" redemption, so the newly-added recipe is easy to find in the
+      // list without hunting for it — cleared automatically a little while
+      // later (see onRedeemSubmit) or the next time this tab is opened.
+      justRedeemed: s.justRedeemedRecipeId === r.id,
       onOpen: () => this.onOpenMyRecipeDetail(r.id),
     }));
 
@@ -2395,28 +2823,36 @@ class App extends Component {
       };
     });
 
-    // ---- Catálogo Público (admin) ----
-    const statusBadge = (label, color) => `font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${color}22;color:${color}`;
+    // ---- Catálogo Público (admin) ---- (statusBadge/SOURCE_BADGE_COLORS
+    // defined above, shared with myRecipeRows/sharedLibraryRows so every
+    // recipe-row source uses the exact same badge look)
     const siteRecipeRows = s.siteRecipes.map(r => {
       const isPublished = r.status === 'published';
+      const statusLabel = isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada';
       return {
         id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '', featured: !!r.featured,
-        statusLabel: isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada',
-        statusBadgeStyle: statusBadge(isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada', isPublished ? '#34B23E' : r.status === 'draft' ? '#CFB017' : '#8A8580'),
+        source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
+        statusLabel,
+        statusBadgeStyle: statusBadge(statusLabel, isPublished ? SOURCE_BADGE_COLORS.public : r.status === 'draft' ? SOURCE_BADGE_COLORS.draft : SOURCE_BADGE_COLORS.archived),
         toggleStatusLabel: isPublished ? 'Despublicar' : 'Publicar',
+        updatedAtLabel: this.formatDateTime(r.updated_at),
         onToggleStatus: () => this.onToggleSiteRecipeStatus(r), onEdit: () => this.onEditSiteRecipe(r),
       };
     });
     const siteProductRows = s.siteProducts.map(p => ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
+      source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
+      updatedAtLabel: this.formatDateTime(p.updated_at),
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
     }));
     const siteCategoryRows = s.siteCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
+      source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: c.active ? 'Ativa' : 'Inativa', statusBadgeStyle: statusBadge('', c.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
+      updatedAtLabel: this.formatDateTime(c.updated_at),
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
     }));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
@@ -2488,6 +2924,14 @@ class App extends Component {
         requesterName: selectedRequestRow.requester_display_name_snapshot, reason: selectedRequestRow.reason || '',
         hasReason: !!selectedRequestRow.reason, adminNote: selectedRequestRow.admin_note || '', hasAdminNote: !!selectedRequestRow.admin_note,
         sourceCode: selectedRequestRow.source_code || '', targetCode: selectedRequestRow.target_code || '', hasTargetCode: !!selectedRequestRow.target_code,
+        // "Abrir receita publicada": only offered when the target is an
+        // actually-published (visible-on-Home/Search) recipe — an approval
+        // made as "Aprovar como rascunho" gets a target_id/target_code too,
+        // but that recipe never appears in `s.recipes` (loadPublicCatalog
+        // only ever loads scope='site' status='published' rows), so this
+        // never renders a dead link for a draft-only approval.
+        canOpenTargetRecipe: selectedRequestRow.entity_type === 'recipe' && !!selectedRequestRow.target_id && s.recipes.some(r => r.id === selectedRequestRow.target_id),
+        onOpenTargetRecipe: () => this.selectRecipe(selectedRequestRow.target_id),
         canReview: this.state.authRole === 'admin' && ['submitted', 'resubmitted'].includes(selectedRequestRow.status),
         payloadPretty: latestRevision ? JSON.stringify(latestRevision.payload, null, 2) : '',
         revisionRows: s.selectedRequestRevisions.map(rv => ({
@@ -2598,7 +3042,7 @@ class App extends Component {
       adminTabMyProductsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myProducts' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myProducts' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabMyCategoriesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myCategories' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myCategories' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       isAdminSharedRecipesTab: s.adminTab === 'sharedRecipes', isAdminMyRequestsTab: s.adminTab === 'myRequests', isAdminRequestsInboxTab: s.adminTab === 'requestsInbox',
-      onSetAdminTabSharedRecipes: () => this.setState({ adminTab: 'sharedRecipes' }), onSetAdminTabMyRequests: this.setAdminTabMyRequests, onSetAdminTabRequestsInbox: this.setAdminTabRequestsInbox,
+      onSetAdminTabSharedRecipes: this.setAdminTabSharedRecipes, onSetAdminTabMyRequests: this.setAdminTabMyRequests, onSetAdminTabRequestsInbox: this.setAdminTabRequestsInbox,
       adminTabSharedRecipesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'sharedRecipes' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'sharedRecipes' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabMyRequestsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myRequests' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myRequests' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabRequestsInboxStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'requestsInbox' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'requestsInbox' ? '#F4F2F1' : 'var(--neutral-800)'}`,
@@ -2658,6 +3102,8 @@ class App extends Component {
       onCloseRejectRequestModal: this.onCloseRejectRequestModal, onConfirmRejectRequest: this.onConfirmRejectRequest,
       myRecipeRows, myProductRows, myCategoryRows, sharedLibraryRows,
       hasMyRecipeRows: myRecipeRows.length > 0, hasMyProductRows: myProductRows.length > 0, hasMyCategoryRows: myCategoryRows.length > 0, hasSharedLibraryRows: sharedLibraryRows.length > 0,
+      sharedLibraryLoading: s.sharedLibraryLoading, hasSharedLibraryError: !!s.sharedLibraryError, sharedLibraryError: s.sharedLibraryError,
+      onRetrySharedLibrary: this.onRetrySharedLibrary,
       onNewMyRecipe: this.onNewMyRecipe, onNewMyProduct: this.onNewMyProduct, onNewMyCategory: this.onNewMyCategory,
       // Minha receita: form modal
       showMyRecipeForm: s.showMyRecipeForm, myRecipeFormTitle: s.myRecipeFormMode === 'new' ? 'Nova Receita' : 'Editar Receita', myRecipeForm: s.myRecipeForm || {},
@@ -2687,8 +3133,10 @@ class App extends Component {
       onCloseMyRecipeDetail: this.onCloseMyRecipeDetail,
       shareActive, shareCode, shareStatusLabel, hasShareCode: !!shareCode, shareGrantCount: s.shareGrantCount, shareBusy: s.shareBusy,
       hasShareFlash: !!s.shareFlash, shareFlash: s.shareFlash,
+      shareCopyConfirmed: s.shareCopyConfirmed, shareRevokeConfirming: s.shareRevokeConfirming,
       onActivateSharing: this.onActivateSharing, onRegenerateShareCode: this.onRegenerateShareCode, onDeactivateSharing: this.onDeactivateSharing,
       onRevokeAllAccess: this.onRevokeAllAccess, onCopyShareCode: this.onCopyShareCode,
+      onAskRevokeAllAccess: this.onAskRevokeAllAccess, onCancelRevokeAllAccess: this.onCancelRevokeAllAccess,
       onStartCopyRecipe: this.onStartCopyRecipe, copyBusy: s.copyBusy,
       // Cópia própria: modal de resolução de referências
       copyModalOpen: s.copyModalOpen, copyRefRows, hasCopyError: !!s.copyError, copyError: s.copyError,
@@ -2764,7 +3212,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js';
+import { renderApp } from './template.js?v=20260803-2';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

@@ -1,4 +1,49 @@
 <!DOCTYPE html>
+<!--
+  Cache-busting note (no bundler/build step in this project — plain static
+  files served as-is, e.g. by GitHub Pages):
+
+  Browsers cache ES module files by their exact URL, indefinitely, with no
+  other cache-busting signal here (no content hash, no build step, no
+  Cache-Control override we control on GitHub Pages). Without a change to the
+  URL itself, a deploy that only edits a .js file's contents can leave
+  returning visitors running old code from cache with nothing forcing a
+  refetch — this is the leading, evidence-backed explanation for a stale
+  `catalog.js` being served after a fix had already landed (see
+  supabase/STAGING.md's PGRST201 write-ups).
+
+  Fix: every local relative import specifier in the module graph rooted at
+  `./app.js` below (and the `./app.js` script src itself) carries the same
+  literal `?v=FRONTEND_VERSION` query string. Changing the query string
+  changes the URL, so the browser treats it as a brand-new resource and
+  refetches instead of serving the stale cached copy.
+
+  FRONTEND_VERSION is a plain, hand-written literal string — never
+  Date.now()/Math.random()/a build-injected hash — so it stays identical
+  across page loads until a human deliberately bumps it. It is duplicated by
+  hand (import specifiers are static string literals; they cannot reference
+  a shared JS constant) in:
+    - this file's module script tag that loads app.js (see the bottom of
+      <body> below) with a "?v=" query string appended
+    - every `import ... from './something.js?v=...'` in app.js, catalog.js,
+      auth.js, custom-select.js, template.js
+    - the `FRONTEND_VERSION` constant in app.js, whose value is also printed
+      via `console.info` on load so anyone can check the loaded build in
+      devtools.
+
+  HOW TO BUMP (do this on every deploy that changes ANY .js file):
+    1. Pick a new literal value, e.g. today's date + a counter for same-day
+       redeploys: `20260804-1`, `20260804-2`, ...
+    2. Replace EVERY occurrence of the old value with the new one in:
+       index.html, app.js, catalog.js, auth.js, custom-select.js,
+       template.js (every `?v=...` query string AND the FRONTEND_VERSION
+       constant in app.js — they must all match, see
+       tests/js/cache-busting.test.js which fails CI if they ever drift).
+    3. A plain repo-wide search for the OLD value is the easiest way to find
+       every spot: they must all be replaced together, or different files
+       end up cached under different versions instead of being invalidated
+       together.
+-->
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
@@ -15,8 +60,8 @@
       Carregando…
     </div>
   </div>
-  <script src="./vendor/xlsx.full.min.js"></script>
+  <script src="./vendor/xlsx.full.min.js?v=20260803-2"></script>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=20260803-2"></script>
 </body>
 </html>

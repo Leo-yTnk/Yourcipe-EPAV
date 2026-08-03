@@ -13,11 +13,11 @@
 // ownerId argument) always receives it from the caller's own
 // session.user.id, never from anywhere else; the server independently
 // re-validates it via RLS/RPC regardless.
-import { supabase } from './supabase-client.js';
+import { supabase } from './supabase-client.js?v=20260803-2';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, version, created_at, updated_at';
-const CATEGORY_SELECT = 'id, category_code, owner_id, scope, type, name, slug, sort_order, active, version';
+const CATEGORY_SELECT = 'id, category_code, owner_id, scope, type, name, slug, sort_order, active, version, created_at, updated_at';
 
 // ---------------------------------------------------------------------
 // Shared, FK-hinted embed selects.
@@ -91,6 +91,37 @@ function unwrap({ data, error }, operation) {
     return { error: { code: error.code, message: error.message, details: error.details, hint: error.hint, operation } };
   }
   return { data };
+}
+
+// ---------------------------------------------------------------------
+// Pagination helper for admin catalog reads. PostgREST caps an unranged
+// `.select(...)` at a server-configured default (commonly 1000 rows, but
+// this must never be assumed — it's configurable per-project and nothing
+// here can read that config), so a single unpaginated query silently
+// truncates once the table grows past whatever that limit happens to be.
+// `fetchAllPages` loops with `.range(offset, offset + pageSize - 1)`,
+// accumulating every page, until a page comes back with FEWER than
+// `pageSize` rows (the standard "short page means last page" signal) — so
+// the admin catalog fetches below never depend on staying under any
+// particular row count. Exported (not just used internally) so its loop
+// logic can be unit-tested directly against a stubbed/mocked query builder
+// without a live database (see tests/js/catalog.test.js).
+export const ADMIN_PAGE_SIZE = 500;
+export async function fetchAllPages(buildQuery, operation, pageSize = ADMIN_PAGE_SIZE) {
+  let offset = 0;
+  let rows = [];
+  for (;;) {
+    const { data, error } = await buildQuery(offset, offset + pageSize - 1);
+    if (error) {
+      logSupabaseError(operation, error);
+      return { error: { code: error.code, message: error.message, details: error.details, hint: error.hint, operation } };
+    }
+    const page = data || [];
+    rows = rows.concat(page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+  return { data: rows };
 }
 
 // ---- Categories (personal) ----
@@ -295,15 +326,30 @@ export async function fetchRecipeSectionsBulk(recipeIds) {
 }
 
 // ---- Admin: full visibility into the public catalog (any status/active),
-// gated server-side by the *_select_admin_site RLS policies (006) ----
+// gated server-side by the *_select_admin_site RLS policies (006). No
+// `.eq('active', true)`/`.eq('status', 'published')` filter here — the
+// public equivalents above (fetchPublicCategories/Products/Recipes) are the
+// ONLY callers that filter on those, by design. Paginated (see
+// fetchAllPages above) so the admin view never silently truncates as the
+// catalog grows past PostgREST's default row cap, however high that is
+// configured today. ----
 export async function fetchAdminCategories() {
-  return unwrap(await supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').order('name'), 'fetchAdminCategories');
+  return fetchAllPages(
+    (from, to) => supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').order('name').range(from, to),
+    'fetchAdminCategories',
+  );
 }
 export async function fetchAdminProducts() {
-  return unwrap(await supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('scope', 'site').order('name'), 'fetchAdminProducts');
+  return fetchAllPages(
+    (from, to) => supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('scope', 'site').order('name').range(from, to),
+    'fetchAdminProducts',
+  );
 }
 export async function fetchAdminRecipes() {
-  return unwrap(await supabase.from('recipes').select(RECIPE_WITH_CATEGORY_SELECT).eq('scope', 'site').order('name'), 'fetchAdminRecipes');
+  return fetchAllPages(
+    (from, to) => supabase.from('recipes').select(RECIPE_WITH_CATEGORY_SELECT).eq('scope', 'site').order('name').range(from, to),
+    'fetchAdminRecipes',
+  );
 }
 
 // ---- Admin: direct catalog authoring (scope='site', owner_id=NULL) ----
