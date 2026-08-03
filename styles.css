@@ -38,6 +38,8 @@ body { margin: 0; font-family: var(--font-sans); }
 .yc-scroll::-webkit-scrollbar { width: 0; height: 0; }
 .yc-scroll { scrollbar-width: none; }
 
+.turnstile-container { min-height: 65px; }
+
 .yc-indicators-container { container-type: inline-size; container-name: yc-indicators; }
 .yc-indicators-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: var(--yc-indicators-gap, 12px); }
 @container yc-indicators (min-width: 580px) {
