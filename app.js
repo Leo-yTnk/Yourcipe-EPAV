@@ -10,6 +10,7 @@ import { supabase } from './supabase-client.js';
 import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js';
 import { runSignupRetryLoop } from './signup-retry.js';
 import { normalizeDisplayName } from './display-name.js';
+import * as catalog from './catalog.js';
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAAED4OOkYJr1mKBgo';
 const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente novamente.';
@@ -138,7 +139,6 @@ class App extends Component {
       session: null,
       authRole: null,
       authDisplayName: null,
-      adminDeniedFlash: '',
       showLoginModal: false,
       loginCredential: '', loginPassword: '', loginError: '', loginSubmitting: false, loginTurnstileToken: '', loginTurnstileReady: false,
       showSignupModal: false,
@@ -156,6 +156,22 @@ class App extends Component {
       // Self-service rename (point 6): change my own display_name.
       showChangeNameModal: false,
       changeNameValue: '', changeNameError: '', changeNameSubmitting: false,
+
+      // ---- Modo de Criação: personal recipes/products/categories (Supabase-backed) ----
+      myCreationLoading: false, myCreationError: '',
+      myCategories: [], myProducts: [], myRecipes: [], sharedLibrary: [],
+      showMyCategoryForm: false, myCategoryFormMode: 'new', myCategoryForm: null,
+      showMyProductForm: false, myProductFormMode: 'new', myProductForm: null,
+      showMyRecipeForm: false, myRecipeFormMode: 'new', myRecipeForm: null,
+      myFormError: '',
+      // Recipe detail (own or shared-with-me) — sharing controls, authorship, copy.
+      selectedMyRecipe: null, myRecipeDetailLoading: false, myRecipeDetailError: '',
+      recipeAuthorName: '',
+      shareStatus: null, shareGrantCount: 0, shareBusy: false, shareFlash: '',
+      // "Cadastrar Receita por ID" (Perfil).
+      redeemCode: '', redeemBusy: false, redeemMessage: '', redeemMessageKind: '',
+      // "Criar cópia própria" + resolução de referências.
+      copyModalOpen: false, copyRefs: [], copyDecisions: {}, copyCandidateCategories: [], copyCandidateProducts: [], copyBusy: false, copyError: '',
     };
   })();
 
@@ -539,13 +555,16 @@ class App extends Component {
     else if (!el && this._signupTurnstileId != null) this.removeTurnstileWidget('signup');
   };
 
+  // "Modo de Criação": any authenticated user may open it, scoped to their
+  // own data (Minhas Receitas / Meus Produtos / Minhas Categorias — see
+  // catalog.js and supabase/004_catalog_schema.sql's "*_insert_personal"
+  // policies, which already allow any authenticated user to CRUD their own
+  // scope='personal' rows, with no role check). Public-catalog admin
+  // functions remain exclusive to role='admin' but are out of scope for
+  // this screen entirely — see supabase/005_creation_mode_sharing.sql's
+  // header comment.
   onOpenAdminAttempt = () => {
-    if (this.state.session && this.state.authRole === 'admin') { this.animateTo('admin'); this.setState({ screen: 'admin' }); return; }
-    if (this.state.session) {
-      this.setState({ adminDeniedFlash: 'Esta credencial não possui acesso administrativo.' });
-      setTimeout(() => this.setState({ adminDeniedFlash: '' }), 4000);
-      return;
-    }
+    if (this.state.session) { this.animateTo('admin'); this.setState({ screen: 'admin' }); this.loadMyCreationData(); return; }
     this.openLoginModal();
   };
   openLoginModal = () => this.setState({ showLoginModal: true, loginCredential: '', loginPassword: '', loginError: '', loginTurnstileToken: '', loginSubmitting: false });
@@ -582,11 +601,9 @@ class App extends Component {
     const profile = await fetchProfile(result.user.id);
     this.applySessionProfile(result.session, profile);
     this.setState({ loginSubmitting: false, showLoginModal: false, loginCredential: '', loginPassword: '' });
-    if (profile.role === 'admin') { this.animateTo('admin'); this.setState({ screen: 'admin' }); }
-    else {
-      this.setState({ adminDeniedFlash: 'Esta credencial não possui acesso administrativo.' });
-      setTimeout(() => this.setState({ adminDeniedFlash: '' }), 4000);
-    }
+    this.animateTo('admin');
+    this.setState({ screen: 'admin' });
+    this.loadMyCreationData();
   };
 
   onSignupDisplayNameChange = (e) => this.setState({ signupDisplayName: e.target.value });
@@ -690,6 +707,263 @@ class App extends Component {
   setAdminTabRecipes = () => this.setState({ adminTab: 'recipes' });
   setAdminTabProducts = () => this.setState({ adminTab: 'products' });
   setAdminTabCategories = () => this.setState({ adminTab: 'categories' });
+  setAdminTabMyRecipes = () => this.setState({ adminTab: 'myRecipes' });
+  setAdminTabMyProducts = () => this.setState({ adminTab: 'myProducts' });
+  setAdminTabMyCategories = () => this.setState({ adminTab: 'myCategories' });
+
+  flashAdmin = (msg) => { this.setState({ adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 4000); };
+  flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
+
+  myRecipeCategories = () => this.state.myCategories.filter(c => c.type === 'receita');
+  mySectionCategories = () => this.state.myCategories.filter(c => c.type === 'secao');
+  myProteinCategories = () => this.state.myCategories.filter(c => c.type === 'proteina');
+
+  // ---- Modo de Criação: load "Minhas Receitas / Meus Produtos / Minhas
+  // Categorias" + the shared-with-me library, all scoped to the caller's own
+  // rows by RLS (supabase/004_catalog_schema.sql, supabase/005_creation_mode_sharing.sql)
+  // — never filtered client-side, since RLS is the actual boundary.
+  loadMyCreationData = async () => {
+    const uid = this.state.session && this.state.session.user.id;
+    if (!uid) return;
+    this.setState({ myCreationLoading: true, myCreationError: '' });
+    const [cats, prods, recs, shared] = await Promise.all([
+      catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid), catalog.fetchSharedLibrary(uid),
+    ]);
+    if (cats.error || prods.error || recs.error || shared.error) {
+      this.setState({ myCreationLoading: false, myCreationError: 'Não foi possível carregar seus dados. Tente novamente.' });
+      return;
+    }
+    this.setState({
+      myCreationLoading: false,
+      myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
+      sharedLibrary: (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at })),
+    });
+  };
+
+  // ---- Minhas Categorias ----
+  onNewMyCategory = () => this.setState({ showMyCategoryForm: true, myCategoryFormMode: 'new', myFormError: '', myCategoryForm: { id: null, type: 'receita', name: '' } });
+  onEditMyCategory = (c) => this.setState({ showMyCategoryForm: true, myCategoryFormMode: 'edit', myFormError: '', myCategoryForm: { id: c.id, type: c.type, name: c.name } });
+  onCancelMyCategoryForm = () => this.setState({ showMyCategoryForm: false, myCategoryForm: null, myFormError: '' });
+  myCategoryFormField = (field) => (e) => this.setState(s => ({ myCategoryForm: { ...s.myCategoryForm, [field]: e.target.value } }));
+  onSaveMyCategoryForm = async () => {
+    const f = this.state.myCategoryForm;
+    const uid = this.state.session.user.id;
+    if (!f.name || !f.name.trim()) { this.setState({ myFormError: 'Informe o nome da categoria.' }); return; }
+    const res = f.id ? await catalog.updateCategoryName(f.id, f.name.trim()) : await catalog.createCategory(uid, { type: f.type, name: f.name.trim() });
+    if (res.error) { this.setState({ myFormError: 'Não foi possível salvar a categoria.' }); return; }
+    this.setState({ showMyCategoryForm: false, myCategoryForm: null });
+    this.loadMyCreationData();
+  };
+  askDeleteMyCategory = (id, name) => this.setState({ confirmDelete: { type: 'myCategory', id, message: `Excluir a categoria "${name}"? Produtos ou receitas que a usam podem deixar de funcionar corretamente.` } });
+
+  // ---- Meus Produtos ----
+  onNewMyProduct = () => this.setState({ showMyProductForm: true, myProductFormMode: 'new', myFormError: '', myProductForm: { id: null, name: '', categoryId: (this.myProteinCategories()[0] && this.myProteinCategories()[0].id) || '', unit: 'kg', price: 0 } });
+  onEditMyProduct = (p) => this.setState({ showMyProductForm: true, myProductFormMode: 'edit', myFormError: '', myProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price } });
+  onCancelMyProductForm = () => this.setState({ showMyProductForm: false, myProductForm: null, myFormError: '' });
+  myProductFormField = (field) => (e) => this.setState(s => ({ myProductForm: { ...s.myProductForm, [field]: e.target.value } }));
+  onSaveMyProductForm = async () => {
+    const f = this.state.myProductForm;
+    const uid = this.state.session.user.id;
+    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ myFormError: 'Informe o nome e a categoria do produto.' }); return; }
+    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0 };
+    const res = f.id
+      ? await catalog.updateProduct(f.id, patch)
+      : await catalog.createProduct(uid, { name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price });
+    if (res.error) { this.setState({ myFormError: 'Não foi possível salvar o produto.' }); return; }
+    this.setState({ showMyProductForm: false, myProductForm: null });
+    this.loadMyCreationData();
+  };
+  askDeleteMyProduct = (id, name) => this.setState({ confirmDelete: { type: 'myProduct', id, message: `Excluir o produto "${name}"? Ele será removido também das receitas que o usam.` } });
+
+  // ---- Minhas Receitas ----
+  onNewMyRecipe = () => this.setState({
+    showMyRecipeForm: true, myRecipeFormMode: 'new', myFormError: '',
+    myRecipeForm: {
+      id: null, name: '', categoryId: (this.myRecipeCategories()[0] && this.myRecipeCategories()[0].id) || '',
+      prepTime: 30, servings: 4, difficulty: 'Fácil', imageUrl: '',
+      ingredients: [{ productId: this.state.myProducts[0] ? this.state.myProducts[0].id : '', quantity: 1 }],
+      sectionCategoryIds: [], extrasText: '', instructionsText: '', tipsText: '',
+    },
+  });
+  onEditMyRecipe = async (row) => {
+    this.setState({ myRecipeDetailLoading: true, myFormError: '' });
+    const { data, error } = await catalog.fetchRecipeDetail(row.id);
+    this.setState({ myRecipeDetailLoading: false });
+    if (error || !data) { this.flashAdmin('Não foi possível carregar a receita.'); return; }
+    this.setState({
+      showMyRecipeForm: true, myRecipeFormMode: 'edit', myFormError: '',
+      myRecipeForm: {
+        id: data.recipe.id, name: data.recipe.name, categoryId: data.recipe.category_id,
+        prepTime: data.recipe.prep_time, servings: data.recipe.servings, difficulty: data.recipe.difficulty,
+        imageUrl: data.recipe.image_url || '',
+        ingredients: data.ingredients.map(i => ({ productId: i.product_id, quantity: i.quantity })),
+        sectionCategoryIds: data.sections.map(s => s.category_id),
+        extrasText: (data.recipe.extras || []).join('\n'),
+        instructionsText: (data.recipe.instructions || []).join('\n'),
+        tipsText: (data.recipe.tips || []).join('\n'),
+      },
+    });
+  };
+  onCancelMyRecipeForm = () => this.setState({ showMyRecipeForm: false, myRecipeForm: null, myFormError: '' });
+  myRecipeFormField = (field) => (e) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, [field]: e.target.value } }));
+  onMyRecipeIngredientChange = (idx, field, value) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.map((row, i) => i === idx ? { ...row, [field]: value } : row) } }));
+  addMyRecipeIngredient = () => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: [...s.myRecipeForm.ingredients, { productId: this.state.myProducts[0] ? this.state.myProducts[0].id : '', quantity: 1 }] } }));
+  removeMyRecipeIngredient = (idx) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.filter((_, i) => i !== idx) } }));
+  toggleMyRecipeSection = (categoryId) => this.setState(s => {
+    const cur = s.myRecipeForm.sectionCategoryIds;
+    const sectionCategoryIds = cur.includes(categoryId) ? cur.filter(id => id !== categoryId) : [...cur, categoryId];
+    return { myRecipeForm: { ...s.myRecipeForm, sectionCategoryIds } };
+  });
+  onSaveMyRecipeForm = async () => {
+    const f = this.state.myRecipeForm;
+    const uid = this.state.session.user.id;
+    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ myFormError: 'Informe o nome e a categoria da receita.' }); return; }
+    const validIngredients = f.ingredients.filter(i => i.productId);
+    const fields = {
+      name: f.name.trim(), categoryId: f.categoryId, prepTime: parseInt(f.prepTime, 10) || 0, servings: parseInt(f.servings, 10) || 0,
+      difficulty: f.difficulty, imageUrl: f.imageUrl.trim() || null,
+      extras: f.extrasText.split('\n').map(s => s.trim()).filter(Boolean),
+      instructions: f.instructionsText.split('\n').map(s => s.trim()).filter(Boolean),
+      tips: f.tipsText.split('\n').map(s => s.trim()).filter(Boolean),
+    };
+    this.setState({ myFormError: '' });
+    let recipeId = f.id;
+    if (f.id) {
+      const { error } = await catalog.updateRecipe(f.id, {
+        name: fields.name, category_id: fields.categoryId, prep_time: fields.prepTime, servings: fields.servings,
+        difficulty: fields.difficulty, image_url: fields.imageUrl, extras: fields.extras, instructions: fields.instructions, tips: fields.tips,
+      });
+      if (error) { this.setState({ myFormError: 'Não foi possível salvar a receita.' }); return; }
+    } else {
+      const { data, error } = await catalog.createRecipe(uid, fields);
+      if (error || !data) { this.setState({ myFormError: 'Não foi possível criar a receita.' }); return; }
+      recipeId = data.id;
+    }
+    const [ingRes, catRes] = await Promise.all([
+      catalog.replaceRecipeIngredients(recipeId, validIngredients.map(i => ({ productId: i.productId, quantity: parseFloat(String(i.quantity).replace(',', '.')) || 0 }))),
+      catalog.replaceRecipeCategories(recipeId, f.sectionCategoryIds),
+    ]);
+    if (ingRes.error || catRes.error) this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
+    this.setState({ showMyRecipeForm: false, myRecipeForm: null });
+    this.loadMyCreationData();
+  };
+  askDeleteMyRecipe = (id, name) => this.setState({ confirmDelete: { type: 'myRecipe', id, message: `Excluir a receita "${name}"? Esta ação não pode ser desfeita.` } });
+
+  // ---- Recipe detail (own or shared-with-me): sharing controls, authorship, copy ----
+  onOpenMyRecipeDetail = async (recipeId) => {
+    this.setState({ myRecipeDetailLoading: true, myRecipeDetailError: '', selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '' });
+    const uid = this.state.session.user.id;
+    const [detailRes, authorRes] = await Promise.all([catalog.fetchRecipeDetail(recipeId), catalog.getRecipeAuthorName(recipeId)]);
+    if (detailRes.error || !detailRes.data) { this.setState({ myRecipeDetailLoading: false, myRecipeDetailError: 'Não foi possível carregar a receita.' }); return; }
+    const isOwner = detailRes.data.recipe.owner_id === uid;
+    this.setState({ myRecipeDetailLoading: false, selectedMyRecipe: { ...detailRes.data, id: recipeId, isOwner }, recipeAuthorName: authorRes.data || '' });
+    if (isOwner) {
+      const [shareRes, countRes] = await Promise.all([catalog.fetchShareStatus(recipeId), catalog.fetchActiveGrantCount(recipeId)]);
+      this.setState({ shareStatus: shareRes.data || null, shareGrantCount: countRes.data || 0 });
+    }
+  };
+  onCloseMyRecipeDetail = () => this.setState({ selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '', shareFlash: '' });
+
+  onActivateSharing = async () => {
+    const rid = this.state.selectedMyRecipe.id;
+    this.setState({ shareBusy: true });
+    const { data, error } = await catalog.activateSharing(rid);
+    this.setState({ shareBusy: false });
+    if (error) { this.flashShare('Não foi possível ativar o compartilhamento.'); return; }
+    this.setState({ shareStatus: { share_code: data, active: true } });
+    this.flashShare('Compartilhamento ativado.');
+  };
+  onRegenerateShareCode = async () => {
+    const rid = this.state.selectedMyRecipe.id;
+    this.setState({ shareBusy: true });
+    const { data, error } = await catalog.regenerateShareCode(rid);
+    this.setState({ shareBusy: false });
+    if (error) { this.flashShare('Não foi possível gerar um novo ID.'); return; }
+    this.setState({ shareStatus: { share_code: data, active: true } });
+    this.flashShare('Novo ID de compartilhamento gerado. O ID anterior deixou de funcionar.');
+  };
+  onDeactivateSharing = async () => {
+    const rid = this.state.selectedMyRecipe.id;
+    this.setState({ shareBusy: true });
+    const { error } = await catalog.deactivateSharing(rid);
+    this.setState({ shareBusy: false });
+    if (error) { this.flashShare('Não foi possível desativar o compartilhamento.'); return; }
+    this.setState(s => ({ shareStatus: s.shareStatus ? { ...s.shareStatus, active: false } : s.shareStatus }));
+    this.flashShare('Novos compartilhamentos desativados. Acessos já concedidos continuam valendo.');
+  };
+  onRevokeAllAccess = async () => {
+    const rid = this.state.selectedMyRecipe.id;
+    this.setState({ shareBusy: true });
+    const { data, error } = await catalog.revokeAccess(rid, null);
+    this.setState({ shareBusy: false });
+    if (error) { this.flashShare('Não foi possível revogar os acessos.'); return; }
+    this.setState({ shareGrantCount: 0 });
+    this.flashShare(`${data || 0} acesso(s) revogado(s).`);
+  };
+  onCopyShareCode = () => {
+    const code = this.state.shareStatus && this.state.shareStatus.share_code;
+    if (!code || !navigator.clipboard) return;
+    navigator.clipboard.writeText(code).then(() => this.flashShare('ID copiado.')).catch(() => {});
+  };
+
+  // ---- Perfil: "Cadastrar Receita por ID" ----
+  onRedeemCodeChange = (e) => this.setState({ redeemCode: e.target.value, redeemMessage: '' });
+  onRedeemSubmit = async () => {
+    const code = this.state.redeemCode.trim();
+    if (!code || this.state.redeemBusy) return;
+    this.setState({ redeemBusy: true, redeemMessage: '' });
+    const { error } = await catalog.redeemShareCode(code);
+    if (error) { this.setState({ redeemBusy: false, redeemMessage: error.friendly || 'Código inválido.', redeemMessageKind: 'error' }); return; }
+    this.setState({ redeemBusy: false, redeemMessage: 'Receita adicionada à sua biblioteca, em modo somente leitura.', redeemMessageKind: 'success', redeemCode: '' });
+    this.loadMyCreationData();
+  };
+
+  // ---- "Criar cópia própria" + resolução de referências ----
+  onStartCopyRecipe = async () => {
+    const detail = this.state.selectedMyRecipe;
+    if (!detail) return;
+    const uid = this.state.session.user.id;
+    const refs = catalog.computeForeignReferences(detail, uid);
+    if (!refs.length) {
+      this.setState({ copyBusy: true, copyError: '' });
+      const { error } = await catalog.createRecipeCopy(detail.id, []);
+      this.setState({ copyBusy: false });
+      if (error) { this.setState({ copyError: 'Não foi possível criar a cópia.' }); return; }
+      this.flashAdmin('Cópia própria criada em Minhas Receitas.');
+      this.loadMyCreationData();
+      this.onCloseMyRecipeDetail();
+      return;
+    }
+    const decisions = {};
+    refs.forEach(r => { decisions[r.refType + ':' + r.refId] = { action: 'add', targetId: '' }; });
+    this.setState({
+      copyModalOpen: true, copyRefs: refs, copyDecisions: decisions, copyError: '',
+      copyCandidateCategories: this.state.myCategories, copyCandidateProducts: this.state.myProducts,
+    });
+  };
+  onCloseCopyModal = () => this.setState({ copyModalOpen: false, copyRefs: [], copyDecisions: {}, copyError: '' });
+  // CustomSelect calls onChange(value) directly (not a DOM event) — see custom-select.js.
+  onSetCopyDecisionAction = (refType, refId) => (value) => this.setState(s => ({ copyDecisions: { ...s.copyDecisions, [refType + ':' + refId]: { ...s.copyDecisions[refType + ':' + refId], action: value, targetId: '' } } }));
+  onSetCopyDecisionTarget = (refType, refId) => (value) => this.setState(s => ({ copyDecisions: { ...s.copyDecisions, [refType + ':' + refId]: { ...s.copyDecisions[refType + ':' + refId], targetId: value } } }));
+  onConfirmCopy = async () => {
+    const { copyRefs, copyDecisions, selectedMyRecipe } = this.state;
+    for (const r of copyRefs) {
+      const d = copyDecisions[r.refType + ':' + r.refId];
+      if (!d || !d.action || (d.action === 'map' && !d.targetId)) { this.setState({ copyError: 'Resolva todas as referências antes de continuar.' }); return; }
+    }
+    const resolutions = copyRefs.map(r => {
+      const d = copyDecisions[r.refType + ':' + r.refId];
+      return { ref_type: r.refType, ref_id: r.refId, action: d.action, target_id: d.action === 'map' ? d.targetId : null };
+    });
+    this.setState({ copyBusy: true, copyError: '' });
+    const { error } = await catalog.createRecipeCopy(selectedMyRecipe.id, resolutions);
+    this.setState({ copyBusy: false });
+    if (error) { this.setState({ copyError: 'Não foi possível criar a cópia. Verifique as associações escolhidas.' }); return; }
+    this.setState({ copyModalOpen: false, copyRefs: [], copyDecisions: {} });
+    this.flashAdmin('Cópia própria criada em Minhas Receitas.');
+    this.loadMyCreationData();
+    this.onCloseMyRecipeDetail();
+  };
 
   setNavRailLeft = () => { this.setState({ navRailSide: 'left' }); this.persist(LS_KEYS.navRailSide, 'left'); };
   setNavRailRight = () => { this.setState({ navRailSide: 'right' }); this.persist(LS_KEYS.navRailSide, 'right'); };
@@ -850,8 +1124,16 @@ class App extends Component {
   askDeleteRecipe = (id, nome) => this.setState({ confirmDelete: { type: 'recipe', id, message: `Excluir a receita "${nome}"? Esta ação não pode ser desfeita.` } });
   askDeleteProduct = (id, nome) => this.setState({ confirmDelete: { type: 'product', id, message: `Excluir o produto "${nome}"? Ele será removido também das receitas que o usam.` } });
   onConfirmDeleteNo = () => this.setState({ confirmDelete: null });
-  onConfirmDeleteYes = () => {
+  onConfirmDeleteYes = async () => {
     const cd = this.state.confirmDelete; if (!cd) return;
+    if (cd.type === 'myRecipe' || cd.type === 'myProduct' || cd.type === 'myCategory') {
+      const fn = cd.type === 'myRecipe' ? catalog.deleteRecipe : cd.type === 'myProduct' ? catalog.deleteProduct : catalog.deleteCategory;
+      const { error } = await fn(cd.id);
+      this.setState({ confirmDelete: null });
+      if (error) { this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.'); }
+      this.loadMyCreationData();
+      return;
+    }
     if (cd.type === 'recipe') {
       const recipes = this.state.recipes.filter(r => r.id !== cd.id);
       this.setState({ recipes, confirmDelete: null }); this.persist(LS_KEYS.recipes, recipes);
@@ -1480,6 +1762,79 @@ class App extends Component {
     };
     const updatedAtLabel = new Date(s.indicatorsUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+    // ---- Modo de Criação: "Minhas Receitas / Meus Produtos / Minhas Categorias" ----
+    const myRecipeRows = s.myRecipes.map(r => ({
+      id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
+      onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteMyRecipe(r.id, r.name),
+    }));
+    const myProductRows = s.myProducts.map(p => ({
+      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
+      onEdit: () => this.onEditMyProduct(p), onDelete: () => this.askDeleteMyProduct(p.id, p.name),
+    }));
+    const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : 'Proteína/Produto';
+    const myCategoryRows = s.myCategories.map(c => ({
+      id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
+      onEdit: () => this.onEditMyCategory(c), onDelete: () => this.askDeleteMyCategory(c.id, c.name),
+    }));
+    const sharedLibraryRows = s.sharedLibrary.map(r => ({
+      id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
+      onOpen: () => this.onOpenMyRecipeDetail(r.id),
+    }));
+
+    const myRecipeCategoryOptions = this.myRecipeCategories().map(c => ({ value: c.id, label: c.name }));
+    const myProteinCategoryOptions = this.myProteinCategories().map(c => ({ value: c.id, label: c.name }));
+    const myRecipeSectionRows = this.mySectionCategories().map(c => ({
+      key: c.id, label: c.name,
+      checked: !!(s.myRecipeForm && s.myRecipeForm.sectionCategoryIds.includes(c.id)),
+      onToggle: () => this.toggleMyRecipeSection(c.id),
+    }));
+    const myProductOptionsForIngredients = s.myProducts.map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
+    const myRecipeIngredientRows = s.myRecipeForm ? s.myRecipeForm.ingredients.map((row, idx) => ({
+      idx, productId: row.productId, quantity: row.quantity,
+      onProductSet: (v) => this.onMyRecipeIngredientChange(idx, 'productId', v),
+      onQuantityChange: (e) => this.onMyRecipeIngredientChange(idx, 'quantity', e.target.value),
+      onRemove: () => this.removeMyRecipeIngredient(idx),
+    })) : [];
+
+    let myRecipeDetailView = null;
+    if (s.selectedMyRecipe) {
+      const d = s.selectedMyRecipe;
+      const ingredientRows2 = d.ingredients.map(i => ({
+        id: i.id, name: i.product.name, quantity: this.formatQtd(i.quantity), unit: i.product.unit,
+        priceLabel: this.formatBRL(i.product.price), subtotalLabel: this.formatBRL(i.product.price * i.quantity),
+      }));
+      const totalCost = d.ingredients.reduce((sum, i) => sum + (i.product.price * i.quantity), 0);
+      myRecipeDetailView = {
+        id: d.id, name: d.recipe.name, code: d.recipe.recipe_code, categoryName: d.recipe.category ? d.recipe.category.name : '',
+        prepTimeLabel: d.recipe.prep_time + ' min', servingsLabel: d.recipe.servings + ' porções', difficulty: d.recipe.difficulty,
+        imageUrl: d.recipe.image_url || FALLBACK_IMG,
+        ingredientRows: ingredientRows2, totalCostLabel: this.formatBRL(totalCost),
+        sectionNames: d.sections.map(sc => sc.category && sc.category.name).filter(Boolean).join(', '),
+        instructions: d.recipe.instructions || [], tips: d.recipe.tips || [], extras: d.recipe.extras || [],
+        isOwner: d.isOwner,
+      };
+    }
+    const shareActive = !!(s.shareStatus && s.shareStatus.active);
+    const shareCode = s.shareStatus ? s.shareStatus.share_code : '';
+    const shareStatusLabel = !s.shareStatus
+      ? 'Compartilhamento inativo.'
+      : (shareActive ? 'Compartilhamento ativo — qualquer pessoa com o ID pode adicionar esta receita à biblioteca dela, em modo somente leitura.' : 'Novos compartilhamentos desativados. Acessos já concedidos continuam ativos.');
+
+    const copyPurposeLabel = (p) => p === 'primary' ? 'Categoria da receita' : p === 'section' ? 'Seção' : 'Ingrediente';
+    const copyRefRows = s.copyRefs.map(r => {
+      const key = r.refType + ':' + r.refId;
+      const d = s.copyDecisions[key] || { action: 'add', targetId: '' };
+      const candidates = r.refType === 'category'
+        ? s.copyCandidateCategories.filter(c => (r.purpose === 'primary' ? c.type === 'receita' : r.purpose === 'section' ? c.type === 'secao' : true))
+        : s.copyCandidateProducts;
+      return {
+        key, label: r.label, purposeLabel: copyPurposeLabel(r.purpose),
+        action: d.action, targetId: d.targetId, canRemove: r.purpose !== 'primary',
+        candidateOptions: candidates.map(c => ({ value: c.id, label: c.name })),
+        onSetAction: this.onSetCopyDecisionAction(r.refType, r.refId), onSetTarget: this.onSetCopyDecisionTarget(r.refType, r.refId),
+      };
+    });
+
     return {
       weeklySales, weeklyTrendPoints, weeklyAreaPoints, weekdayOptions, weekStartDayValue, onWeekStartDaySet: this.onSetWeekStartDay, dailyStats, monthlyStats, weatherNow, weatherTabs, hourly, hourlyLinePoints, hourlyAreaPoints, weatherForecast, economicData, updatedAtLabel,
       salesModalOpen: s.salesModalOpen, saleForm: s.saleForm,
@@ -1529,8 +1884,7 @@ class App extends Component {
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
-      adminStatusLabel: !s.session ? 'Toque para fazer login' : (s.authRole === 'admin' ? 'Toque para abrir o painel' : 'Sem acesso administrativo'),
-      hasAdminDeniedFlash: !!s.adminDeniedFlash, adminDeniedFlash: s.adminDeniedFlash,
+      adminStatusLabel: !s.session ? 'Toque para fazer login' : 'Toque para abrir o painel',
       hasSession: !!s.session, onLogout: this.onLogout,
       authDisplayName: s.authDisplayName,
       connectedCredentialLabel: (s.session && s.session.user && s.session.user.user_metadata && s.session.user.user_metadata.credential) || 'Sessão ativa',
@@ -1567,6 +1921,55 @@ class App extends Component {
       ingredientRows, extrasList, hasExtras, modoPreparoList, dicasList, totalABuyLabel, totalAllLabel,
       altModalOpen, altModalIngredientNome, altOptions, altOptionsEmpty, onCloseAltModal: this.closeAltModal,
       onBackFromAdmin: this.onBackFromAdmin, adminTab: s.adminTab, isAdminRecipesTab: s.adminTab === 'recipes', isAdminProductsTab: s.adminTab === 'products', isAdminCategoriesTab: s.adminTab === 'categories',
+      isAdminRole: s.authRole === 'admin',
+      isAdminMyRecipesTab: s.adminTab === 'myRecipes', isAdminMyProductsTab: s.adminTab === 'myProducts', isAdminMyCategoriesTab: s.adminTab === 'myCategories',
+      onSetAdminTabMyRecipes: this.setAdminTabMyRecipes, onSetAdminTabMyProducts: this.setAdminTabMyProducts, onSetAdminTabMyCategories: this.setAdminTabMyCategories,
+      adminTabMyRecipesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myRecipes' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myRecipes' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      adminTabMyProductsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myProducts' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myProducts' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      adminTabMyCategoriesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myCategories' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myCategories' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      myCreationLoading: s.myCreationLoading, hasMyCreationError: !!s.myCreationError, myCreationError: s.myCreationError,
+      myRecipeRows, myProductRows, myCategoryRows, sharedLibraryRows,
+      hasMyRecipeRows: myRecipeRows.length > 0, hasMyProductRows: myProductRows.length > 0, hasMyCategoryRows: myCategoryRows.length > 0, hasSharedLibraryRows: sharedLibraryRows.length > 0,
+      onNewMyRecipe: this.onNewMyRecipe, onNewMyProduct: this.onNewMyProduct, onNewMyCategory: this.onNewMyCategory,
+      // Minha receita: form modal
+      showMyRecipeForm: s.showMyRecipeForm, myRecipeFormTitle: s.myRecipeFormMode === 'new' ? 'Nova Receita' : 'Editar Receita', myRecipeForm: s.myRecipeForm || {},
+      hasMyFormError: !!s.myFormError, myFormError: s.myFormError,
+      myRecipeFormOnName: this.myRecipeFormField('name'), myRecipeFormOnCategorySet: this.setFormField('myRecipeForm', 'categoryId'),
+      myRecipeFormOnDifficultySet: this.setFormField('myRecipeForm', 'difficulty'), myRecipeFormOnPrepTime: this.myRecipeFormField('prepTime'),
+      myRecipeFormOnServings: this.myRecipeFormField('servings'), myRecipeFormOnImageUrl: this.myRecipeFormField('imageUrl'),
+      myRecipeFormOnExtras: this.myRecipeFormField('extrasText'), myRecipeFormOnInstructions: this.myRecipeFormField('instructionsText'), myRecipeFormOnTips: this.myRecipeFormField('tipsText'),
+      myRecipeCategoryOptions, myRecipeSectionRows, myRecipeIngredientRows, myProductOptionsForIngredients,
+      onAddMyRecipeIngredient: this.addMyRecipeIngredient, onCancelMyRecipeForm: this.onCancelMyRecipeForm, onSaveMyRecipeForm: this.onSaveMyRecipeForm,
+      dificuldadeOptionsMy: this.dificuldades,
+      // Meu produto: form modal
+      showMyProductForm: s.showMyProductForm, myProductFormTitle: s.myProductFormMode === 'new' ? 'Novo Produto' : 'Editar Produto', myProductForm: s.myProductForm || {},
+      myProductFormOnName: this.myProductFormField('name'), myProductFormOnCategorySet: this.setFormField('myProductForm', 'categoryId'),
+      myProductFormOnUnitSet: this.setFormField('myProductForm', 'unit'), myProductFormOnPrice: this.myProductFormField('price'),
+      myProteinCategoryOptions, unidadeOptionsMy: this.unidades,
+      onCancelMyProductForm: this.onCancelMyProductForm, onSaveMyProductForm: this.onSaveMyProductForm,
+      // Minha categoria: form modal
+      showMyCategoryForm: s.showMyCategoryForm, myCategoryFormTitle: s.myCategoryFormMode === 'new' ? 'Nova Categoria' : 'Editar Categoria', myCategoryForm: s.myCategoryForm || {},
+      myCategoryFormOnName: this.myCategoryFormField('name'), myCategoryFormOnTypeSet: this.setFormField('myCategoryForm', 'type'),
+      myCategoryTypeOptions: [{ value: 'receita', label: 'Receita' }, { value: 'secao', label: 'Seção' }, { value: 'proteina', label: 'Proteína/Produto' }],
+      onCancelMyCategoryForm: this.onCancelMyCategoryForm, onSaveMyCategoryForm: this.onSaveMyCategoryForm,
+      // Detalhe de receita própria/compartilhada: sharing, autoria, cópia
+      showMyRecipeDetail: !!s.selectedMyRecipe || s.myRecipeDetailLoading, myRecipeDetailLoading: s.myRecipeDetailLoading,
+      hasMyRecipeDetailError: !!s.myRecipeDetailError, myRecipeDetailError: s.myRecipeDetailError,
+      myRecipeDetail: myRecipeDetailView, recipeAuthorName: s.recipeAuthorName,
+      onCloseMyRecipeDetail: this.onCloseMyRecipeDetail,
+      shareActive, shareCode, shareStatusLabel, hasShareCode: !!shareCode, shareGrantCount: s.shareGrantCount, shareBusy: s.shareBusy,
+      hasShareFlash: !!s.shareFlash, shareFlash: s.shareFlash,
+      onActivateSharing: this.onActivateSharing, onRegenerateShareCode: this.onRegenerateShareCode, onDeactivateSharing: this.onDeactivateSharing,
+      onRevokeAllAccess: this.onRevokeAllAccess, onCopyShareCode: this.onCopyShareCode,
+      onStartCopyRecipe: this.onStartCopyRecipe, copyBusy: s.copyBusy,
+      // Cópia própria: modal de resolução de referências
+      copyModalOpen: s.copyModalOpen, copyRefRows, hasCopyError: !!s.copyError, copyError: s.copyError,
+      onCloseCopyModal: this.onCloseCopyModal, onConfirmCopy: this.onConfirmCopy,
+      copyActionOptions: [{ value: 'add', label: 'Adicionar aos meus dados' }, { value: 'map', label: 'Associar a item existente' }, { value: 'remove', label: 'Remover da receita' }],
+      copyActionOptionsNoRemove: [{ value: 'add', label: 'Adicionar aos meus dados' }, { value: 'map', label: 'Associar a item existente' }],
+      // Perfil: "Cadastrar Receita por ID"
+      redeemCode: s.redeemCode, redeemBusy: s.redeemBusy, hasRedeemMessage: !!s.redeemMessage, redeemMessage: s.redeemMessage, redeemMessageIsError: s.redeemMessageKind === 'error',
+      onRedeemCodeChange: this.onRedeemCodeChange, onRedeemSubmit: this.onRedeemSubmit,
       onSetAdminTabRecipes: this.setAdminTabRecipes, onSetAdminTabProducts: this.setAdminTabProducts, onSetAdminTabCategories: this.setAdminTabCategories,
       adminTabRecipesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'recipes' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'recipes' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabProductsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'products' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'products' ? '#F4F2F1' : 'var(--neutral-800)'}`,
