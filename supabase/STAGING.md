@@ -1,5 +1,67 @@
 # Staging setup and PR 1 runbook
 
+## PR 3 (this PR): bug fixes + change_requests — root cause writeup
+
+Three bugs were reported against the "Modo de Criação" PR. All three were
+reproduced by reading the actual code path (not just re-diagnosed) and
+fixed in this PR. Summary — see the PR description for the full detail:
+
+1. **Admin-created catalog recipes never appeared for other users/visitors.**
+   Root cause, two-part: (a) the admin "Receitas/Produtos/Categorias"
+   screen never called Supabase at all — it mutated a localStorage-backed
+   array (`this.state.recipes`/`this.state.products`, seeded from
+   `data.js`), and Home/Search read from that same local array, so nothing
+   ever left the browser that created it; (b) even had the UI tried to
+   write to Supabase, `supabase/004_catalog_schema.sql` shipped with **no**
+   RLS policy at all allowing anyone — including admin — to INSERT/UPDATE
+   `scope='site'` rows (its own comment says so: "Admin write policies on
+   scope='site' rows are added in PR 3, not here"). Fixed by
+   `supabase/006_admin_catalog_publishing.sql` (the missing policies) plus
+   a real "Catálogo Público" admin screen and a `loadPublicCatalog()` that
+   makes Home/Search load `scope='site', status='published'`/`active=true`
+   rows from Supabase, with local demo data used only as a clearly-labeled
+   fallback on an actual fetch error — never silently.
+
+2. **Personal data in "Modo de Criação" never loaded ("não foi possível
+   carregar").** Root cause: `loadMyCreationData()` read
+   `this.state.session.user.id` synchronously, in the same tick, right
+   after `applySessionProfile()` had just called `setState({ session })`.
+   Preact's `setState` is asynchronous (see
+   `vendor/htm-preact-standalone.js`, `Component.prototype.setState` —
+   it merges into a pending buffer and only flushes into `this.state` on
+   the next microtask-scheduled render), so `this.state.session` was still
+   stale/null at that point right after login, and the function returned
+   silently with nothing loaded. A from-scratch local Postgres 16 + pgTAP
+   reproduction (`supabase/tests/004_admin_catalog_publishing.pg.sql`,
+   `005_change_requests.pg.sql`) confirmed the RLS/embed queries themselves
+   do **not** error for a brand-new user with zero rows — ruling out an
+   RLS/policy cause for the empty-state case. Fixed by passing the
+   already-resolved uid/role explicitly into every loader instead of
+   reading `this.state` right after a same-tick `setState`, and by
+   surfacing the real `{ code, message, details, hint }` from Supabase
+   (logged in full via `catalog.js`'s `logSupabaseError`, and now also
+   shown in the UI) instead of only ever the generic string.
+
+3. **Plain users saw admin editing controls.** Root cause:
+   `adminTab` defaulted to `'recipes'` (the admin-only catalog-editing tab)
+   in the initial state — a leftover from before "Modo de Criação" existed,
+   when reaching `screen==='admin'` at all implied `role==='admin'` by
+   construction. The "Modo de Criação" PR hid the *tab buttons* for
+   non-admins but never changed this default or gated the tab *content*
+   dispatch, so every non-admin landed on the admin catalog editor's full
+   edit/delete UI by default, with no button ever needed to get there.
+   Fixed by defaulting `adminTab` to `'myRecipes'` (available to everyone),
+   resetting away from any admin-only tab whenever the resolved role isn't
+   `'admin'` (including while it's still loading, or on a fetch failure —
+   `auth.js`'s `fetchProfile` already defaults to `'user'` on error, never
+   `'admin'`), and gating the admin-tab content dispatch itself on
+   `isAdminRole` as defense in depth, not only the tab buttons.
+
+See the PR description for the full file list, migration order, and the
+manual two-account checklist.
+
+---
+
 This PR was built and tested entirely against a **local, throwaway PostgreSQL
 instance** (see "What was actually run" below), not against a real Supabase
 project. The agent that wrote this PR has no Supabase account credentials
@@ -48,6 +110,20 @@ Editor. Each is idempotent (safe to re-run). Do **not** run
    new functions/RPCs, and additional (widening-only) SELECT policies. Safe
    to run immediately after 004 in staging; nothing here requires a human
    decision the way phase 2 of the display_name migration does.
+5. `supabase/006_admin_catalog_publishing.sql` — this PR. Adds the RLS
+   policies that let `role='admin'` directly author `scope='site'` rows
+   (categories/products/recipes/recipe_ingredients/recipe_categories),
+   which genuinely did not exist before (see the root-cause writeup above).
+   Also adds one new CHECK constraint (`recipes_site_not_private_ck`) and a
+   `published_at` trigger. Depends on 004. Widening-only for admin; does
+   not change what a plain user or anon can do.
+6. `supabase/007_change_requests.sql` — this PR. Adds the publication
+   request/moderation workflow: `change_requests` and
+   `change_request_revisions` tables, `YRQ-0001` code generation, and the
+   submit/resubmit/cancel/return/review RPCs. Depends on 004 and 006 (the
+   approval RPC creates public catalog rows the same way direct admin
+   authoring does). Brand new tables — does not alter any existing table's
+   data or policies.
 
 Do **not** run `supabase/003_profiles_display_name_phase2_not_null.sql`
 yet — see "Phase 2 checkpoint" below. It refuses to run early on its own
@@ -114,11 +190,40 @@ psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/sc
 psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/002_profiles_display_name_phase1.sql
 psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/004_catalog_schema.sql
 psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/005_creation_mode_sharing.sql
+psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/006_admin_catalog_publishing.sql
+psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/007_change_requests.sql
 
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/001_profiles_display_name.pg.sql
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/002_catalog_schema.pg.sql
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/003_creation_mode_sharing.pg.sql
+pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/004_admin_catalog_publishing.pg.sql
+pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/005_change_requests.pg.sql
 ```
+
+`supabase/tests/004_admin_catalog_publishing.pg.sql` (20 assertions) covers:
+a plain user has no path to write `scope='site'` rows (the actual bug #1
+root cause) both before and after this migration, admin can write them,
+`recipes_site_not_private_ck` holds independently of RLS, draft is
+admin-only/published is everyone's (including anon), `published_at` is set
+on first publish and re-stamped on every later re-publish but preserved
+(not cleared) when archived, and a plain user cannot write a site recipe's
+ingredients or deactivate a public product.
+
+`supabase/tests/005_change_requests.pg.sql` (53 assertions) covers: the
+full submit → block-on-dependency → resolve → submit → return → resubmit
+→ approve lifecycle for all three entity types, `requester_display_name_snapshot`
+coming from the server-side profile (never the client), immutable
+revisions (no direct UPDATE/DELETE grant at all), the original personal
+item staying completely untouched (unconverted, unpublished) after
+approval, admin-only review with a required note for return/reject,
+per-user RLS isolation on `change_requests`/`change_request_revisions`,
+and a simulated `action_type='update'` request proving `review_change_request`
+detects a `base_version` mismatch and rolls back the whole approval with no
+partial writes.
+
+All 5 files together: **157 pgTAP assertions passing** locally against
+Postgres 16 + pgTAP, with no cross-file interference (each wraps its own
+fixtures in `begin;...rollback;`).
 
 `supabase/tests/003_creation_mode_sharing.pg.sql` (44 assertions, all
 passing against local Postgres 16 + pgTAP) covers: isolation before
@@ -232,6 +337,84 @@ hand:
 - Back on the owner's account: "Gerar novo ID" and confirm the old ID no
   longer works; "Revogar acessos" and confirm the second account loses
   access to the original but keeps its own copy.
+
+## 8. This PR's bug fixes + change_requests — **[HUMAN]** manual checklist with two accounts
+
+Same network limitation as sections 5/7 — not click-tested here. Once
+staging has 006 and 007 applied and the app is pointed at it, verify by
+hand with one plain-`user` account and one `role='admin'` account
+(promoted via `supabase/promote_admin_example.sql`, staging only):
+
+**Bug #1 — public catalog:**
+- As admin, open "Catálogo: Categorias" → create a category, active on.
+  Open "Catálogo: Produtos" → create a product in it. Open "Catálogo:
+  Receitas" → create a recipe using that product, set status "Publicada".
+- Reload the app in a **different, logged-out browser/tab** (or as the
+  plain user, or as anon) → the recipe/product/category must appear on
+  Home/Search. Set the recipe back to "Rascunho" (draft) → it must
+  disappear from that other session on reload.
+- Create a second recipe as "Rascunho" → confirm it does **not** appear
+  for anon/the other user, but does still appear to admin in "Catálogo:
+  Receitas" (admin-only visibility of drafts).
+
+**Bug #2 — personal data loading:**
+- As a plain user, log in and immediately land on "Modo de Criação" (or
+  navigate there right after login) → "Minhas Receitas/Produtos/Categorias"
+  must load (empty state "Você ainda não tem..." is fine and is NOT an
+  error) — no "Não foi possível carregar" message.
+- Repeat as the admin account → same result, and confirm the admin's "Meu
+  conteúdo" tabs show **only their own** personal data, never another
+  user's.
+- To confirm the error path itself works (not just that it's silent): with
+  browser devtools open, simulate a Supabase failure (e.g. block network
+  to the Supabase host mid-session) and confirm the UI shows a real,
+  specific message (not just "erro desconhecido") and the browser console
+  shows the full `{ code, message, details, hint }`.
+
+**Bug #3 — role-based visibility:**
+- As the plain user: confirm "Catálogo: Receitas/Produtos/Categorias" and
+  "Solicitações Recebidas" tabs are **not visible at all**, and that
+  opening "Modo de Criação" lands on "Minhas Receitas", never on any
+  catalog-editing screen.
+- As admin: confirm those tabs **are** visible and functional.
+- While the profile/role is still resolving (e.g. throttle network in
+  devtools right after login): confirm no admin-only tab briefly flashes
+  visible before the role resolves.
+
+**Change requests — full lifecycle:**
+- As the plain user: create a personal category + product (product's
+  category must be the new personal one) + a personal recipe using that
+  product. Try "Solicitar publicação" on the recipe → it must be **blocked**
+  with a message naming the pending product/category dependencies, with a
+  working "Solicitar publicação" shortcut for each.
+- Use those shortcuts to submit the category, then (once approved below)
+  the product; edit the recipe/product to point at the newly-public items;
+  then submit the recipe itself → should succeed.
+- As admin: open "Solicitações Recebidas" → see the pending requests with
+  the requester's real display name (not a uuid/email). Open one, click
+  "Devolver para edição" without a note → must be blocked; with a note →
+  status becomes "Devolvido".
+- As the user: see it under "Meus Pedidos" filtered to "Devolvidos" with
+  the admin's note visible; "Editar item" → edit the personal item →
+  "Reenviar" → status becomes "Reenviado", revision count increments.
+- As admin: "Aprovar como rascunho" on one request, "Aprovar e publicar" on
+  another → confirm the resulting public items appear in "Catálogo:
+  Receitas/Produtos/Categorias" with new `YCR-`/`YPR-`/`YCT-` codes, and
+  that the user's **original personal item is untouched** (still private,
+  still editable, unrelated to the new public copy).
+- "Rejeitar" a request without a note → blocked; with a note → status
+  "Rejeitado", visible to the user with the note.
+- As the user: "Cancelar" a still-pending request → status "Cancelado",
+  disappears from actionable filters.
+
+**Compatibility (must still work exactly as before):**
+- Signup/login, display_name, Turnstile.
+- YSH-code sharing: activate/copy/regenerate/deactivate/revoke, and a
+  shared recipe still reads the owner's live price.
+- "Criar cópia própria" from a shared recipe still works, independent of
+  and unaffected by the change-request flow.
+- Existing YCR/YPR/YCT codes on any previously-created catalog rows are
+  untouched.
 
 ## Secrets policy
 

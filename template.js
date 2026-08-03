@@ -38,6 +38,13 @@ export function renderApp(app) {
         ${v.showMyCategoryForm && renderMyCategoryFormModal(app, v)}
         ${v.showMyRecipeDetail && renderMyRecipeDetailModal(app, v)}
         ${v.copyModalOpen && renderCopyResolveModal(app, v)}
+        ${v.showSiteRecipeForm && renderSiteRecipeFormModal(app, v)}
+        ${v.showSiteProductForm && renderSiteProductFormModal(app, v)}
+        ${v.showSiteCategoryForm && renderSiteCategoryFormModal(app, v)}
+        ${v.publishRequestOpen && renderPublishRequestModal(app, v)}
+        ${v.requestDetailOpen && renderRequestDetailModal(app, v)}
+        ${v.showReturnRequestModal && renderReturnRequestModal(app, v)}
+        ${v.showRejectRequestModal && renderRejectRequestModal(app, v)}
         ${v.showLoginModal && renderLoginModal(app, v)}
         ${v.showSignupModal && renderSignupModal(app, v)}
         ${v.showCompleteProfileModal && renderCompleteProfileModal(app, v)}
@@ -934,44 +941,6 @@ function selectionBar(count, onDelete, onCancel, extraAction) {
   `;
 }
 
-function renderAdminRecipesTab(app, v) {
-  return html`
-    <div style="padding:8px 40px 24px">
-      <div onClick=${v.onNewRecipe} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
-        Nova Receita
-      </div>
-      ${v.selectionMode && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection, html`<div onClick=${v.onBulkHideAsk} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Ocultar</div>`)}
-      ${v.adminRecipeRows.map((row) => html`
-        <div key=${row.id} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${row.rowStyle}>
-          ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
-          <img loading="lazy" decoding="async" src=${row.imagem} style=${`width:52px;height:52px;border-radius:var(--radius-sm);object-fit:cover;flex-shrink:0;opacity:${row.imgOpacity}`}/>
-          <div style="flex:1">
-            <div style="font-size:15px;font-weight:600">${row.nome}${row.isHidden ? html` <span style="font-size:11px;font-weight:700;color:var(--neutral-600);background:var(--neutral-50);border:1px solid var(--neutral-100);padding:2px 8px;border-radius:var(--radius-full);margin-left:6px">Oculta</span>` : ''}</div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.categoria} · ${row.tempoLabel} · ${row.dificuldade}</div>
-          </div>
-          ${row.showActions && html`
-            <div style="position:relative">
-              <div onClick=${row.onToggleMenu} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.15s ease,background 0.15s ease">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--neutral-600)"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg>
-              </div>
-              ${row.menuOpen && html`
-                <div style="position:absolute;top:42px;right:0;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);box-shadow:var(--shadow-md);min-width:170px;z-index:6;overflow:hidden;animation:ycSelectIn 0.15s cubic-bezier(0.22,0.8,0.24,1)">
-                  <div onClick=${row.onEdit} style="padding:12px 16px;font-size:14px;font-weight:600;cursor:pointer;color:var(--neutral-900)">Editar Receita</div>
-                  <div onClick=${row.onDuplicate} style="padding:12px 16px;font-size:14px;font-weight:600;cursor:pointer;color:var(--neutral-900);border-top:1px solid var(--neutral-100)">Duplicar Receita</div>
-                  <div onClick=${row.onToggleHide} style="padding:12px 16px;font-size:14px;font-weight:600;cursor:pointer;color:var(--neutral-900);border-top:1px solid var(--neutral-100)">${row.hideLabel}</div>
-                </div>
-              `}
-            </div>
-            <div onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.15s ease,background 0.15s ease">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
-            </div>
-          `}
-        </div>
-      `)}
-    </div>
-  `;
-}
 
 function toggleRow(row) {
   return html`
@@ -990,20 +959,18 @@ function toggleRow(row) {
   `;
 }
 
-function renderAdminCategoriesTab(app, v) {
+// Local-device-only personalization (Home sections shown, which product
+// categories are offered when cadastro/import). NOT the public catalog —
+// that is now the Supabase-backed "Catálogo Público" admin tabs below,
+// which is also where "Receita do Dia" moved to (recipes.featured, set via
+// the site recipe form) once it became a real, syncing column instead of a
+// local-only tag. Kept here, clearly labeled, so nothing already working
+// is silently dropped (see PR description for why this split exists).
+function renderLocalHomeCustomization(app, v) {
   return html`
-    <div style="padding:8px 40px 24px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:4px">Receita do Dia</div>
-      <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Selecione uma ou mais receitas para aparecerem no carrossel de destaque da Home.</div>
-      ${v.destaqueRecipeRows.map((row) => html`
-        <div key=${row.id} onClick=${row.onToggle} style=${row.rowStyle}>
-          <div style=${row.checkboxStyle}>${row.checkMark}</div>
-          <img loading="lazy" decoding="async" src=${row.imagem} style="width:44px;height:44px;border-radius:var(--radius-sm);object-fit:cover;flex-shrink:0"/>
-          <div style="font-size:14px;font-weight:600;flex:1">${row.nome}</div>
-        </div>
-      `)}
-
-      <div style="font-size:15px;font-weight:700;margin-top:26px;margin-bottom:4px">Seções da Home</div>
+    <div style="margin-top:24px;border-top:1px solid var(--neutral-100);padding-top:20px">
+      <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-700);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:18px">Personalização local — válida apenas neste dispositivo, não é sincronizada com o Supabase.</div>
+      <div style="font-size:15px;font-weight:700;margin-top:6px;margin-bottom:4px">Seções da Home</div>
       <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na tela inicial. Segure uma seção para selecionar várias e excluir de uma vez.</div>
       ${v.sectionSelectionMode && selectionBar(v.selectedSectionCountLabel, v.onBulkDeleteSectionsAsk, v.onCancelSectionSelection)}
       ${v.sectionToggleRows.map(toggleRow)}
@@ -1024,33 +991,81 @@ function renderAdminCategoriesTab(app, v) {
   `;
 }
 
-function renderAdminProductsTab(app, v) {
+// ==== Catálogo Público (admin-only, Supabase scope='site' — bug #1 fix) ====
+function renderSiteRecipesTab(app, v) {
   return html`
     <div style="padding:8px 40px 24px">
-      <div onClick=${v.onNewProduct} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
+      <div onClick=${v.onNewSiteRecipe} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
-        Novo Produto
+        Nova Receita no Catálogo
       </div>
-      ${v.productSelectionMode && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection)}
-      ${v.adminProductRows.map((row) => html`
-        <div key=${row.id} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${row.rowStyle}>
-          ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
+      ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
+      ${v.siteRecipeRows.map((row) => html`
+        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
           <div style="flex:1">
-            <div style="font-size:15px;font-weight:600">${row.nome}</div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.categoria} · por ${row.unidade}</div>
+            <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span>${row.featured ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">★ Receita do Dia</span>` : ''}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}</div>
           </div>
-          ${row.showActions && html`
-            ${row.isEditing && html`
-              <input type="number" step="0.01" value=${row.editPriceValue} onInput=${row.onEditPriceChange} style="background:var(--neutral-0);color:var(--neutral-900);width:100px;padding:8px 10px;border-radius:var(--radius-sm);border:1.5px solid var(--brand-500);font-family:var(--font-sans);font-size:14px"/>
-              <div onClick=${row.onSavePrice} style="font-size:13px;font-weight:700;color:var(--green-600);cursor:pointer;padding:8px 10px">Salvar</div>
-            `}
-            ${row.isNotEditing && html`<div onClick=${row.onStartEditPrice} style="font-size:15px;font-weight:700;color:var(--brand-700);cursor:pointer">${row.precoLabel}</div>`}
-            <div onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.15s ease,background 0.15s ease">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
-            </div>
-          `}
+          <div onClick=${row.onToggleStatus} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleStatusLabel}</div>
+          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </div>
         </div>
       `)}
+    </div>
+  `;
+}
+
+function renderSiteProductsTab(app, v) {
+  return html`
+    <div style="padding:8px 40px 24px">
+      <div onClick=${v.onNewSiteProduct} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
+        Novo Produto no Catálogo
+      </div>
+      ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
+      ${v.siteProductRows.map((row) => html`
+        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+          <div style="flex:1">
+            <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
+          </div>
+          <div style="font-size:15px;font-weight:700;color:var(--brand-700)">${row.priceLabel}</div>
+          <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
+          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+function renderSiteCategoriesTab(app, v) {
+  return html`
+    <div style="padding:8px 40px 24px">
+      <div onClick=${v.onNewSiteCategory} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
+        Nova Categoria no Catálogo
+      </div>
+      ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
+      ${v.siteCategoryRows.map((row) => html`
+        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+          <div style="flex:1">
+            <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}</div>
+          </div>
+          <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
+          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </div>
+        </div>
+      `)}
+      ${v.hasSiteCategoryError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-top:8px">${v.siteCategoryError}</div>`}
+      ${renderLocalHomeCustomization(app, v)}
     </div>
   `;
 }
@@ -1068,26 +1083,29 @@ function renderAdmin(app, v) {
       <div onClick=${v.onSetAdminTabMyRecipes} style=${v.adminTabMyRecipesStyle + ';flex-shrink:0'}>Minhas Receitas</div>
       <div onClick=${v.onSetAdminTabMyProducts} style=${v.adminTabMyProductsStyle + ';flex-shrink:0'}>Meus Produtos</div>
       <div onClick=${v.onSetAdminTabMyCategories} style=${v.adminTabMyCategoriesStyle + ';flex-shrink:0'}>Minhas Categorias</div>
+      <div onClick=${v.onSetAdminTabSharedRecipes} style=${v.adminTabSharedRecipesStyle + ';flex-shrink:0'}>Receitas Compartilhadas</div>
+      <div onClick=${v.onSetAdminTabMyRequests} style=${v.adminTabMyRequestsStyle + ';flex-shrink:0'}>Meus Pedidos</div>
       ${v.isAdminRole && html`
-        <div onClick=${v.onSetAdminTabRecipes} style=${v.adminTabRecipesStyle + ';flex-shrink:0'}>Receitas (Catálogo)</div>
-        <div onClick=${v.onSetAdminTabProducts} style=${v.adminTabProductsStyle + ';flex-shrink:0'}>Produtos (Catálogo)</div>
-        <div onClick=${v.onSetAdminTabCategories} style=${v.adminTabCategoriesStyle + ';flex-shrink:0'}>Categorias (Catálogo)</div>
-        <div onClick=${v.onOpenImportModal} style="margin-left:auto;display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;background:var(--neutral-0);color:var(--brand-700);border:1.5px solid var(--brand-500);transition:transform 0.15s ease;flex-shrink:0">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2.2"><path d="M12 3v12M7 10l5 5 5-5"></path><path d="M4 19h16"></path></svg>
-          Importar Planilha
-        </div>
+        <div onClick=${v.onSetAdminTabRecipes} style=${v.adminTabRecipesStyle + ';flex-shrink:0'}>Catálogo: Receitas</div>
+        <div onClick=${v.onSetAdminTabProducts} style=${v.adminTabProductsStyle + ';flex-shrink:0'}>Catálogo: Produtos</div>
+        <div onClick=${v.onSetAdminTabCategories} style=${v.adminTabCategoriesStyle + ';flex-shrink:0'}>Catálogo: Categorias</div>
+        <div onClick=${v.onSetAdminTabRequestsInbox} style=${v.adminTabRequestsInboxStyle + ';flex-shrink:0'}>Solicitações Recebidas${v.hasPendingRequestsBadge ? html` (${v.pendingRequestsCount})` : ''}</div>
       `}
     </div>
 
     ${v.hasAdminFlash && html`<div style="margin:0 40px 16px;background:rgba(52,178,62,0.12);border:1px solid var(--green-500);color:var(--green-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;animation:ycFadeIn 0.2s ease">${v.adminFlash}</div>`}
     ${v.hasMyCreationError && html`<div style="margin:0 40px 16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600">${v.myCreationError}</div>`}
+    ${v.hasSiteCatalogErrorBanner && html`<div style="margin:0 40px 16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600">${v.siteCatalogError}</div>`}
 
     ${v.isAdminMyRecipesTab && renderMyRecipesTab(app, v)}
     ${v.isAdminMyProductsTab && renderMyProductsTab(app, v)}
     ${v.isAdminMyCategoriesTab && renderMyCategoriesTab(app, v)}
-    ${v.isAdminRecipesTab && renderAdminRecipesTab(app, v)}
-    ${v.isAdminCategoriesTab && renderAdminCategoriesTab(app, v)}
-    ${v.isAdminProductsTab && renderAdminProductsTab(app, v)}
+    ${v.isAdminSharedRecipesTab && renderSharedRecipesTab(app, v)}
+    ${v.isAdminMyRequestsTab && renderMyRequestsTab(app, v)}
+    ${v.isAdminRole && v.isAdminRecipesTab && renderSiteRecipesTab(app, v)}
+    ${v.isAdminRole && v.isAdminCategoriesTab && renderSiteCategoriesTab(app, v)}
+    ${v.isAdminRole && v.isAdminProductsTab && renderSiteProductsTab(app, v)}
+    ${v.isAdminRole && v.isAdminRequestsInboxTab && renderRequestsInboxTab(app, v)}
   `;
 }
 
@@ -1134,6 +1152,7 @@ function renderMyProductsTab(app, v) {
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
           </div>
           <div style="font-size:15px;font-weight:700;color:var(--brand-700)">${row.priceLabel}</div>
+          <div onClick=${row.onRequestPublish} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">Solicitar publicação</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
@@ -1161,6 +1180,7 @@ function renderMyCategoriesTab(app, v) {
             <div style="font-size:15px;font-weight:600">${row.name}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}</div>
           </div>
+          <div onClick=${row.onRequestPublish} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">Solicitar publicação</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
@@ -1394,6 +1414,7 @@ function renderMyRecipeDetailModal(app, v) {
                 ${v.shareActive && html`<div onClick=${v.onDeactivateSharing} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--neutral-400);color:var(--neutral-800);font-weight:600;font-size:13px;cursor:pointer">Desativar novos compartilhamentos</div>`}
                 ${v.shareGrantCount > 0 && html`<div onClick=${v.onRevokeAllAccess} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--red-600);color:var(--red-600);font-weight:600;font-size:13px;cursor:pointer">Revogar acessos</div>`}
               </div>
+              <div onClick=${d.onOpenPublishRequest} style="margin-top:14px;text-align:center;padding:12px;border-radius:var(--radius-md);font-weight:700;font-size:14px;cursor:pointer;color:var(--brand-700);border:1.5px solid var(--brand-500)">Solicitar publicação no catálogo</div>
             </div>
           ` : html`
             <div style="margin-top:22px;border-top:1px solid var(--neutral-100);padding-top:18px">
@@ -1427,6 +1448,295 @@ function renderCopyResolveModal(app, v) {
         <div style="display:flex;gap:10px;margin-top:12px">
           <div onClick=${v.onCloseCopyModal} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
           <div onClick=${v.copyBusy ? null : v.onConfirmCopy} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">${v.copyBusy ? 'Criando...' : 'Concluir cópia'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSharedRecipesTab(app, v) {
+  return html`
+    <div style="padding:8px 40px 24px">
+      ${!v.hasSharedLibraryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita compartilhada com você ainda. Use "Cadastrar Receita por ID" no Perfil.</div>`}
+      ${v.sharedLibraryRows.map((row) => html`
+        <div key=${row.id} onClick=${row.onOpen} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;cursor:pointer">
+          <div>
+            <div style="font-size:15px;font-weight:600">${row.name}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code} · somente leitura</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2"><path d="M9 6l6 6-6 6"></path></svg>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+function requestFilterBar(v) {
+  return html`
+    <div className="yc-scroll" style="display:flex;gap:8px;overflow-x:auto;margin-bottom:16px">
+      ${v.requestFilterOptions.map((opt) => html`
+        <div key=${opt.value} onClick=${() => v.onSetRequestFilterStatus(opt.value)} style=${`padding:8px 16px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;background:${v.requestFilterStatus === opt.value ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${v.requestFilterStatus === opt.value ? '#F4F2F1' : 'var(--neutral-800)'}`}>${opt.label}</div>
+      `)}
+    </div>
+  `;
+}
+
+function renderMyRequestsTab(app, v) {
+  return html`
+    <div style="padding:8px 40px 24px">
+      ${requestFilterBar(v)}
+      ${v.myRequestsLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.hasMyRequestsError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myRequestsError}</div>`}
+      ${!v.myRequestsLoading && !v.hasMyRequestRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum pedido nesta categoria.</div>`}
+      ${v.myRequestRows.map((row) => html`
+        <div key=${row.id} style="background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div onClick=${row.onOpenDetail} style="cursor:pointer;flex:1">
+              <div style="font-size:15px;font-weight:600">${row.code} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
+              <div style="font-size:12px;color:var(--neutral-600);margin-top:2px">${row.entityLabel} · ${row.actionLabel} · ${row.itemCode} · ${row.dateLabel} · rev. ${row.revision}</div>
+              ${row.hasAdminNote && html`<div style="font-size:12px;color:var(--red-600);margin-top:4px">Nota do admin: ${row.adminNote}</div>`}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            ${row.canEdit && html`<div onClick=${row.onEditItem} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:6px 12px;border-radius:var(--radius-full)">Editar item</div>`}
+            ${row.canResubmit && html`<div onClick=${row.isResubmitBusy ? null : row.onResubmit} style="font-size:12px;font-weight:700;color:#F4F2F1;cursor:pointer;background:var(--brand-700);padding:6px 12px;border-radius:var(--radius-full)">${row.isResubmitBusy ? 'Reenviando...' : 'Reenviar'}</div>`}
+            ${row.canCancel && html`<div onClick=${row.onCancel} style="font-size:12px;font-weight:700;color:var(--red-600);cursor:pointer;border:1.5px solid var(--red-600);padding:6px 12px;border-radius:var(--radius-full)">Cancelar</div>`}
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+function renderRequestsInboxTab(app, v) {
+  return html`
+    <div style="padding:8px 40px 24px">
+      ${requestFilterBar(v)}
+      ${v.allRequestsLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.hasAllRequestsError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.allRequestsError}</div>`}
+      ${!v.allRequestsLoading && !v.hasAllRequestRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum pedido nesta categoria.</div>`}
+      ${v.allRequestRows.map((row) => html`
+        <div key=${row.id} onClick=${row.onOpenDetail} style="background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;cursor:pointer">
+          <div style="font-size:15px;font-weight:600">${row.code} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span>${row.canReview ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">● aguardando análise</span>` : ''}</div>
+          <div style="font-size:12px;color:var(--neutral-600);margin-top:2px">${row.requesterName} · ${row.entityLabel} · ${row.actionLabel} · ${row.itemCode} · ${row.dateLabel} · rev. ${row.revision}</div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+function renderPublishRequestModal(app, v) {
+  const pr = v.publishRequest;
+  const blockers = pr.blockers;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div className="yc-scroll" style="width:520px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:20px;font-weight:700;margin-bottom:6px">Solicitar publicação</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:16px">${pr.sourceName}</div>
+        ${v.hasPublishRequestError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.publishRequestError}</div>`}
+        ${v.publishRequestBusy && !blockers && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:16px 0">Verificando...</div>`}
+        ${blockers && blockers.blocked ? html`
+          <div style="font-size:14px;color:var(--neutral-800);margin-bottom:14px">Esta receita possui ${blockers.product_refs.length} produto(s) e ${blockers.category_refs.length} categoria(s) que ainda não pertencem ao catálogo público. Publique-os primeiro (ou edite a receita para remover/substituir a referência).</div>
+          ${blockers.category_refs.map((ref) => html`
+            <div key=${'c' + ref.id} style="display:flex;justify-content:space-between;align-items:center;background:var(--neutral-50);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:8px">
+              <div style="font-size:13px;font-weight:600">${ref.name} <span style="color:var(--neutral-600);font-weight:400">(categoria)</span></div>
+              <div onClick=${() => v.onOpenPublishRequestForBlocker('category', ref.id, ref.name)} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer">Solicitar publicação</div>
+            </div>
+          `)}
+          ${blockers.product_refs.map((ref) => html`
+            <div key=${'p' + ref.id} style="display:flex;justify-content:space-between;align-items:center;background:var(--neutral-50);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:8px">
+              <div style="font-size:13px;font-weight:600">${ref.name} <span style="color:var(--neutral-600);font-weight:400">(produto)</span></div>
+              <div onClick=${() => v.onOpenPublishRequestForBlocker('product', ref.id, ref.name)} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer">Solicitar publicação</div>
+            </div>
+          `)}
+          <div style="font-size:12px;color:var(--neutral-600);margin-top:10px">Para substituir por um item público existente ou remover a referência, use "Editar Receita".</div>
+          <div onClick=${v.onClosePublishRequest} style="margin-top:18px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50)">Fechar</div>
+        ` : (!v.publishRequestBusy || blockers) && html`
+          <textarea placeholder="Motivo (opcional)" value=${pr.reasonValue} onInput=${v.onPublishReasonChange} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical;box-sizing:border-box"></textarea>
+          <div style="display:flex;gap:10px;margin-top:16px">
+            <div onClick=${v.onClosePublishRequest} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50)">Cancelar</div>
+            <div onClick=${v.publishRequestBusy ? null : v.onConfirmPublishRequest} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700)">${v.publishRequestBusy ? 'Enviando...' : 'Enviar Solicitação'}</div>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function renderRequestDetailModal(app, v) {
+  const d = v.requestDetail;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div style="font-size:20px;font-weight:700">${d ? d.code : 'Pedido'}</div>
+          <div onClick=${v.onCloseRequestDetail} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          </div>
+        </div>
+        ${v.requestDetailLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+        ${v.hasRequestDetailError && html`<div style="color:var(--red-600);font-size:13px;font-weight:600;padding:12px 0">${v.requestDetailError}</div>`}
+        ${d && html`
+          <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">${d.entityLabel} · ${d.actionLabel} · ${d.statusLabel}</div>
+          <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">Solicitado por: <strong>${d.requesterName}</strong></div>
+          ${d.sourceCode && html`<div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">Item original: ${d.sourceCode}</div>`}
+          ${d.hasTargetCode && html`<div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">Item público: ${d.targetCode}</div>`}
+          ${d.hasReason && html`<div style="font-size:13px;color:var(--neutral-800);margin-top:10px"><strong>Justificativa:</strong> ${d.reason}</div>`}
+          ${d.hasAdminNote && html`<div style="font-size:13px;color:var(--red-600);margin-top:10px"><strong>Nota do admin:</strong> ${d.adminNote}</div>`}
+
+          <div style="font-size:15px;font-weight:700;margin-top:18px;margin-bottom:8px">Histórico de revisões</div>
+          ${d.revisionRows.map((rv) => html`
+            <div key=${rv.key} style="display:flex;justify-content:space-between;background:var(--neutral-50);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:6px;font-size:13px">
+              <div>Revisão ${rv.number} — ${rv.namePreview}${rv.message ? html` · "${rv.message}"` : ''}</div>
+              <div style="color:var(--neutral-600)">${rv.dateLabel}</div>
+            </div>
+          `)}
+
+          <div style="font-size:15px;font-weight:700;margin-top:18px;margin-bottom:8px">Dados enviados (última revisão)</div>
+          <pre style="background:var(--neutral-50);border-radius:var(--radius-md);padding:14px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word">${d.payloadPretty}</pre>
+
+          ${v.hasRequestActionError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-top:14px">${v.requestActionError}</div>`}
+          ${d.canReview && html`
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;border-top:1px solid var(--neutral-100);padding-top:16px">
+              <div onClick=${v.requestActionBusy ? null : v.onApproveDraft} style="font-size:13px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:10px 16px;border-radius:var(--radius-full)">Aprovar como rascunho</div>
+              <div onClick=${v.requestActionBusy ? null : v.onApproveAndPublish} style="font-size:13px;font-weight:700;color:#F4F2F1;cursor:pointer;background:var(--brand-700);padding:10px 16px;border-radius:var(--radius-full)">Aprovar e publicar</div>
+              <div onClick=${v.onOpenReturnRequestModal} style="font-size:13px;font-weight:700;color:var(--neutral-800);cursor:pointer;border:1.5px solid var(--neutral-400);padding:10px 16px;border-radius:var(--radius-full)">Devolver para edição</div>
+              <div onClick=${v.onOpenRejectRequestModal} style="font-size:13px;font-weight:700;color:var(--red-600);cursor:pointer;border:1.5px solid var(--red-600);padding:10px 16px;border-radius:var(--radius-full)">Rejeitar</div>
+            </div>
+          `}
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function renderReturnRequestModal(app, v) {
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.7);display:flex;align-items:center;justify-content:center;z-index:28;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:20px;font-weight:700;margin-bottom:12px">Devolver para edição</div>
+        <textarea placeholder="Explique o que precisa ser ajustado (obrigatório)" value=${v.returnNoteValue} onInput=${v.onReturnNoteChange} rows="4" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical;box-sizing:border-box"></textarea>
+        ${v.hasRequestActionError && html`<div style="color:var(--red-600);font-size:13px;font-weight:600;margin-top:10px">${v.requestActionError}</div>`}
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <div onClick=${v.onCloseReturnRequestModal} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50)">Cancelar</div>
+          <div onClick=${v.requestActionBusy ? null : v.onConfirmReturnRequest} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700)">${v.requestActionBusy ? 'Enviando...' : 'Devolver'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderRejectRequestModal(app, v) {
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.7);display:flex;align-items:center;justify-content:center;z-index:28;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:20px;font-weight:700;margin-bottom:12px">Rejeitar solicitação</div>
+        <textarea placeholder="Explique o motivo da rejeição (obrigatório)" value=${v.rejectNoteValue} onInput=${v.onRejectNoteChange} rows="4" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical;box-sizing:border-box"></textarea>
+        ${v.hasRequestActionError && html`<div style="color:var(--red-600);font-size:13px;font-weight:600;margin-top:10px">${v.requestActionError}</div>`}
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <div onClick=${v.onCloseRejectRequestModal} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50)">Cancelar</div>
+          <div onClick=${v.requestActionBusy ? null : v.onConfirmRejectRequest} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--red-600)">${v.requestActionBusy ? 'Enviando...' : 'Rejeitar'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ==== Catálogo Público: form modals (admin) ====
+function renderSiteRecipeFormModal(app, v) {
+  const f = v.siteRecipeForm;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.siteRecipeFormTitle}</div>
+        ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <input type="text" placeholder="Nome da receita" value=${f.name} onInput=${v.siteRecipeFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <${CustomSelect} options=${v.siteRecipeCategoryOptions} value=${f.categoryId} onChange=${v.siteRecipeFormOnCategorySet} />
+          <${CustomSelect} options=${v.dificuldadeOptionsMy} value=${f.difficulty} onChange=${v.siteRecipeFormOnDifficultySet} />
+          <input type="number" placeholder="Tempo (min)" value=${f.prepTime} onInput=${v.siteRecipeFormOnPrepTime} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <input type="number" placeholder="Porções" value=${f.servings} onInput=${v.siteRecipeFormOnServings} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <${CustomSelect} options=${v.siteRecipeStatusOptions} value=${f.status} onChange=${v.siteRecipeFormOnStatusSet} />
+          <input type="text" placeholder="URL da imagem" value=${f.imageUrl} onInput=${v.siteRecipeFormOnImageUrl} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+        </div>
+
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);margin-top:14px"><input type="checkbox" checked=${!!f.featured} onChange=${v.siteRecipeFormOnFeatured}/> Receita do Dia (destaque na Home)</label>
+
+        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:6px">Seções (opcional)</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">
+          ${v.siteRecipeSectionRows.map((row) => html`
+            <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+          `)}
+        </div>
+
+        <div style="font-size:15px;font-weight:700;margin-top:16px;margin-bottom:10px">Ingredientes (produtos do catálogo)</div>
+        ${v.siteRecipeIngredientRows.map((row) => html`
+          <div key=${row.idx} style="display:flex;gap:10px;margin-bottom:10px;align-items:center">
+            <div style="flex:1"><${CustomSelect} options=${v.siteProductOptionsForIngredients} value=${row.productId} onChange=${row.onProductSet} /></div>
+            <input type="number" step="0.1" value=${row.quantity} onInput=${row.onQuantityChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
+            <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            </div>
+          </div>
+        `)}
+        <div onClick=${v.onAddSiteRecipeIngredient} style="font-size:13px;font-weight:700;color:var(--brand-700);cursor:pointer;margin-bottom:6px">+ Adicionar ingrediente</div>
+
+        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Outros itens necessários (um por linha)</div>
+        <textarea value=${f.extrasText} onInput=${v.siteRecipeFormOnExtras} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
+
+        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Modo de preparo (um passo por linha)</div>
+        <textarea value=${f.instructionsText} onInput=${v.siteRecipeFormOnInstructions} rows="5" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
+
+        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Dicas (uma por linha)</div>
+        <textarea value=${f.tipsText} onInput=${v.siteRecipeFormOnTips} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
+
+        <div style="display:flex;gap:10px;margin-top:24px">
+          <div onClick=${v.onCancelSiteRecipeForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveSiteRecipeForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSiteProductFormModal(app, v) {
+  const f = v.siteProductForm;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.siteProductFormTitle}</div>
+        ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <input type="text" placeholder="Nome do produto" value=${f.name} onInput=${v.siteProductFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <${CustomSelect} options=${v.siteProteinCategoryOptions} value=${f.categoryId} onChange=${v.siteProductFormOnCategorySet} />
+          <${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />
+          <input type="number" step="0.01" placeholder="Preço (R$)" value=${f.price} onInput=${v.siteProductFormOnPrice} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${!!f.active} onChange=${v.siteProductFormOnActive}/> Ativo (visível publicamente)</label>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:22px">
+          <div onClick=${v.onCancelSiteProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveSiteProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSiteCategoryFormModal(app, v) {
+  const f = v.siteCategoryForm;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.siteCategoryFormTitle}</div>
+        ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <input type="text" placeholder="Nome da categoria" value=${f.name} onInput=${v.siteCategoryFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <${CustomSelect} options=${v.siteCategoryTypeOptions} value=${f.type} onChange=${v.siteCategoryFormOnTypeSet} />
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${!!f.active} onChange=${v.siteCategoryFormOnActive}/> Ativa (visível publicamente)</label>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:22px">
+          <div onClick=${v.onCancelSiteCategoryForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveSiteCategoryForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
         </div>
       </div>
     </div>
