@@ -1,0 +1,4 @@
+node_modules/
+
+# Never commit a local staging pointer — see supabase/STAGING.md section 3.
+supabase-config.local.js

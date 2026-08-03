@@ -1,0 +1,12 @@
+{
+  "name": "yourcipe-epav",
+  "private": true,
+  "type": "module",
+  "description": "Static Preact app — no bundler in production. Vitest is a dev-only dependency for testing pure JS logic (display-name.js, credential.js, signup-retry.js). See supabase/STAGING.md for the SQL/pgTAP test suite.",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}
