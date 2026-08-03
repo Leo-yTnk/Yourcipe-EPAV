@@ -13,6 +13,8 @@ import { runSignupRetryLoop } from './signup-retry.js';
 const TURNSTILE_SITE_KEY = '0x4AAAAAAED4OOkYJr1mKBgo';
 const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente novamente.';
 const TURNSTILE_TOKEN_WAIT_MS = 20000;
+const TURNSTILE_MOUNT_POLL_MS = 100;
+const TURNSTILE_MOUNT_TIMEOUT_MS = 5000;
 
 function ref() { return { current: null }; }
 
@@ -136,9 +138,9 @@ class App extends Component {
       authRole: null,
       adminDeniedFlash: '',
       showLoginModal: false,
-      loginCredential: '', loginPassword: '', loginError: '', loginSubmitting: false, loginTurnstileToken: '',
+      loginCredential: '', loginPassword: '', loginError: '', loginSubmitting: false, loginTurnstileToken: '', loginTurnstileReady: false,
       showSignupModal: false,
-      signupPassword: '', signupConfirmPassword: '', signupError: '', signupSubmitting: false, signupTurnstileToken: '',
+      signupPassword: '', signupConfirmPassword: '', signupError: '', signupSubmitting: false, signupTurnstileToken: '', signupTurnstileReady: false,
       signupResult: null, credentialCopied: false,
     };
   })();
@@ -410,10 +412,39 @@ class App extends Component {
     this.persist(LS_KEYS.profile, profile);
   };
 
+  // Mounting a brand-new modal subtree means this ref can fire before `el`'s
+  // ancestor chain is fully attached to `document` (Preact fires a leaf's
+  // ref as soon as its own immediate parent is built, which happens before
+  // that parent itself is appended further up — see PR description for the
+  // full trace). So `el.isConnected` can genuinely be false on the very
+  // first call here; that used to be treated as fatal (`return;`, no
+  // retry), which silently aborted the whole mount forever with no error,
+  // no widget, and a permanently-disabled submit button. Retry like the
+  // `!window.turnstile` branch below already did, with a bounded timeout
+  // that surfaces a visible error instead of failing silently.
   mountTurnstileWidget = (el, kind) => {
+    const readyKey = kind === 'login' ? 'loginTurnstileReady' : 'signupTurnstileReady';
+    const errorKey = kind === 'login' ? 'loginError' : 'signupError';
+    let waitedMs = 0;
     const attempt = () => {
-      if (!el.isConnected) return;
-      if (!window.turnstile) { setTimeout(attempt, 150); return; }
+      if (!el.isConnected) {
+        waitedMs += TURNSTILE_MOUNT_POLL_MS;
+        if (waitedMs >= TURNSTILE_MOUNT_TIMEOUT_MS) {
+          this.setState({ [errorKey]: 'Não foi possível carregar a verificação de segurança. Feche e abra novamente.' });
+          return;
+        }
+        setTimeout(attempt, TURNSTILE_MOUNT_POLL_MS);
+        return;
+      }
+      if (!window.turnstile) {
+        waitedMs += TURNSTILE_MOUNT_POLL_MS;
+        if (waitedMs >= TURNSTILE_MOUNT_TIMEOUT_MS) {
+          this.setState({ [errorKey]: 'Não foi possível carregar a verificação de segurança. Feche e abra novamente.' });
+          return;
+        }
+        setTimeout(attempt, TURNSTILE_MOUNT_POLL_MS);
+        return;
+      }
       const widgetId = window.turnstile.render(el, {
         sitekey: TURNSTILE_SITE_KEY,
         language: 'pt-BR',
@@ -428,6 +459,7 @@ class App extends Component {
         'error-callback': () => this.setState(kind === 'login' ? { loginTurnstileToken: '', loginError: CAPTCHA_FRIENDLY_ERROR } : { signupTurnstileToken: '', signupError: CAPTCHA_FRIENDLY_ERROR }),
       });
       if (kind === 'login') this._loginTurnstileId = widgetId; else this._signupTurnstileId = widgetId;
+      this.setState({ [readyKey]: true });
     };
     attempt();
   };
@@ -455,6 +487,9 @@ class App extends Component {
     window.turnstile.reset(id);
     setTimeout(() => settle({ timeout: true }), TURNSTILE_TOKEN_WAIT_MS);
   });
+  // Remove the widget, then clear its token/ready state — always in that
+  // order, before the caller's own setState hides the modal (and with it,
+  // the container). See callers below (closeLoginModal, etc).
   removeTurnstileWidget = (kind) => {
     const id = kind === 'login' ? this._loginTurnstileId : this._signupTurnstileId;
     if (window.turnstile && id != null) { try { window.turnstile.remove(id); } catch (e) {} }
@@ -463,6 +498,9 @@ class App extends Component {
     // (Call the stored settle() itself rather than clearing the slot first — settle() clears it via its own identity check.)
     const resolverKey = kind === 'login' ? '_loginTokenSettle' : '_signupTokenSettle';
     if (this[resolverKey]) this[resolverKey]({ timeout: true });
+    this.setState(kind === 'login'
+      ? { loginTurnstileToken: '', loginTurnstileReady: false }
+      : { signupTurnstileToken: '', signupTurnstileReady: false });
   };
   turnstileLoginRef = (el) => {
     if (el && this._loginTurnstileId == null) this.mountTurnstileWidget(el, 'login');
@@ -1418,12 +1456,14 @@ class App extends Component {
       showLoginModal: s.showLoginModal, loginCredential: s.loginCredential, loginPassword: s.loginPassword,
       hasLoginError: !!s.loginError, loginError: s.loginError, loginSubmitting: s.loginSubmitting,
       canSubmitLogin: !!(s.loginTurnstileToken && s.loginCredential.trim() && s.loginPassword && !s.loginSubmitting),
+      loginTurnstileReady: s.loginTurnstileReady, showLoginTurnstileLoading: !s.loginTurnstileReady && !s.loginError,
       turnstileLoginRef: this.turnstileLoginRef,
       onLoginCredentialChange: this.onLoginCredentialChange, onLoginPasswordChange: this.onLoginPasswordChange,
       onLoginSubmit: this.onLoginSubmit, onCloseLoginModal: this.closeLoginModal, onGoSignupFromLogin: this.openSignupModal,
       showSignupModal: s.showSignupModal, signupPassword: s.signupPassword, signupConfirmPassword: s.signupConfirmPassword,
       hasSignupError: !!s.signupError, signupError: s.signupError, signupSubmitting: s.signupSubmitting,
       canSubmitSignup: !!(s.signupTurnstileToken && s.signupPassword && s.signupConfirmPassword && !s.signupSubmitting),
+      signupTurnstileReady: s.signupTurnstileReady, showSignupTurnstileLoading: !s.signupTurnstileReady && !s.signupError,
       turnstileSignupRef: this.turnstileSignupRef,
       onSignupPasswordChange: this.onSignupPasswordChange, onSignupConfirmChange: this.onSignupConfirmChange,
       onSignupSubmit: this.onSignupSubmit, onCloseSignupModal: this.closeSignupModal, onBackToLoginFromSignup: this.backToLoginFromSignup,

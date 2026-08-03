@@ -712,7 +712,8 @@ function renderLoginModal(app, v) {
         <div style="display:flex;flex-direction:column;gap:14px">
           <input type="text" placeholder="Credencial (YCP-XXXX-XXXX)" autocomplete="off" value=${v.loginCredential} onInput=${v.onLoginCredentialChange} style=${AUTH_INPUT_STYLE}/>
           <input type="password" placeholder="Senha" autocomplete="current-password" value=${v.loginPassword} onInput=${v.onLoginPasswordChange} style=${AUTH_INPUT_STYLE}/>
-          <div ref=${v.turnstileLoginRef}></div>
+          ${v.showLoginTurnstileLoading && html`<div style="font-size:12px;color:var(--neutral-600)">Carregando verificação de segurança...</div>`}
+          <div id="login-turnstile-container" class="turnstile-container" aria-label="Verificação de segurança" ref=${v.turnstileLoginRef}></div>
           ${v.hasLoginError && html`<div style="font-size:13px;color:var(--red-600);font-weight:600">${v.loginError}</div>`}
         </div>
         <div style="display:flex;gap:10px;margin-top:22px">
@@ -736,7 +737,8 @@ function renderSignupModal(app, v) {
           <div style="display:flex;flex-direction:column;gap:14px">
             <input type="password" placeholder="Senha" autocomplete="new-password" value=${v.signupPassword} onInput=${v.onSignupPasswordChange} style=${AUTH_INPUT_STYLE}/>
             <input type="password" placeholder="Confirmar senha" autocomplete="new-password" value=${v.signupConfirmPassword} onInput=${v.onSignupConfirmChange} style=${AUTH_INPUT_STYLE}/>
-            <div ref=${v.turnstileSignupRef}></div>
+            ${v.showSignupTurnstileLoading && html`<div style="font-size:12px;color:var(--neutral-600)">Carregando verificação de segurança...</div>`}
+            <div id="signup-turnstile-container" class="turnstile-container" aria-label="Verificação de segurança" ref=${v.turnstileSignupRef}></div>
             ${v.hasSignupError && html`<div style="font-size:13px;color:var(--red-600);font-weight:600">${v.signupError}</div>`}
           </div>
           <div style="display:flex;gap:10px;margin-top:22px">
