@@ -1,5 +1,40 @@
 # Staging setup and PR 1 runbook
 
+## Round: reference-checked recipe deletion, Home category bug, infinite-loading fix, welcome splash, responsiveness/visual polish
+
+**New migration: `supabase/009_recipe_deletion.sql`.** Adds two SECURITY
+DEFINER functions, no schema/table changes:
+- `get_recipe_delete_impact(p_recipe_id uuid) returns jsonb` — read-only.
+  Returns whether a recipe has an active `recipe_shares` row, how many
+  active `recipe_access_grants`, how many pending `change_requests`
+  (`source_id`/`target_id` match, status in submitted/resubmitted/
+  changes_requested), and whether it "recommends archive" (a `scope='site'`
+  row that was ever published/shared/granted). Raises `not_authorized`
+  unless the caller owns the personal recipe or is admin on a site recipe.
+- `delete_recipe(p_recipe_id uuid, p_revoke_shares boolean default false, p_cancel_pending_requests boolean default false) returns jsonb` —
+  the actual delete. Raises `active_share_exists`/`pending_requests_exist:N`
+  unless the caller explicitly passes the matching acknowledgement flag
+  (set only after the front end's "Referências a resolver" popup). A
+  `scope='personal'` recipe is always hard-deleted (its `recipe_ingredients`/
+  `recipe_categories`/`recipe_shares`/`recipe_access_grants` all cascade;
+  the products/categories it referenced are never touched — no cascade,
+  `ON DELETE RESTRICT` on `recipe_ingredients.product_id`). A `scope='site'`
+  recipe that was ever published/shared/granted is archived
+  (`status='archived'`) instead of hard-deleted — no new DELETE RLS policy
+  was added for `scope='site'` rows, consistent with
+  `006_admin_catalog_publishing.sql`'s existing documented stance that admin
+  manages the public catalog's lifecycle via status rather than hard-
+  deleting it; a history-free `scope='site'` row (never published/shared)
+  is hard-deleted.
+
+New test file: `supabase/tests/007_recipe_deletion.pg.sql` (30 assertions;
+chain: harness → schema → 002 → 004 → 005 → 006 → 007 → 009, 008 optional).
+
+**Nothing in this file has been run against staging or production** — see
+the PR description for the exact `psql`/Supabase-SQL-Editor command to run
+`009_recipe_deletion.sql` when ready; it's idempotent (`create or replace
+function` + explicit `revoke`/`grant`), safe to re-run.
+
 ## Round: sharing/approval hardening, admin pagination, refresh strategy, share-modal redesign, modal keyboard/a11y
 
 **No new migration in this round.** Every server-side requirement in this

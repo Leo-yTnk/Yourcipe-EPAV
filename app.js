@@ -1,24 +1,25 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260803-2';
-import { CustomSelect } from './custom-select.js?v=20260803-2';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260803-3';
+import { CustomSelect } from './custom-select.js?v=20260803-3';
 import {
   LS_KEYS, SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260803-2';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260803-2';
-import { supabase } from './supabase-client.js?v=20260803-2';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260803-2';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260803-2';
-import { normalizeDisplayName } from './display-name.js?v=20260803-2';
-import * as catalog from './catalog.js?v=20260803-2';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260803-2';
+} from './data.js?v=20260803-3';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260803-3';
+import { supabase } from './supabase-client.js?v=20260803-3';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260803-3';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260803-3';
+import { normalizeDisplayName } from './display-name.js?v=20260803-3';
+import * as catalog from './catalog.js?v=20260803-3';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260803-3';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260803-3';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260803-2';
+const FRONTEND_VERSION = '20260803-3';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -76,6 +77,11 @@ class App extends Component {
     try { const sw = localStorage.getItem(LS_KEYS.weekStartDay); if (sw !== null) weekStartDay = Number(sw); } catch (e) {}
     let fontSize = 'normal';
     try { const sfz = localStorage.getItem(LS_KEYS.fontSize); if (sfz === 'small' || sfz === 'large' || sfz === 'normal') fontSize = sfz; } catch (e) {}
+    // Welcome splash shows once per browser, ever — not once per session/
+    // login. If localStorage is unavailable (private browsing, disabled,
+    // throws), this fails safe by falling through to the pre-existing
+    // "always show" behavior rather than breaking anything else.
+    const shouldShowSplash = shouldShowWelcome(localStorage, LS_KEYS.welcomeSeen);
     return {
       frameW: (typeof window !== 'undefined') ? window.innerWidth : 1200,
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
@@ -145,10 +151,16 @@ class App extends Component {
       productFormMode: 'new',
       productForm: null,
       confirmDelete: null,
+      // Reference-checked recipe deletion (supabase/009_recipe_deletion.sql)
+      // — see askDeleteRecipeChecked/renderReferencesModal.
+      deleteImpact: null, deleteImpactLoading: false,
+      ingredientRemoveConfirm: null,
+      deleteResolutions: { revokeShares: false, cancelPendingRequests: false },
+      deleteBusy: false,
       editingProductId: null,
       editPriceValue: '',
       dataLoaded: true,
-      showSplash: true,
+      showSplash: shouldShowSplash,
       showImportModal: false,
       importStep: 'instructions',
       importFileName: '',
@@ -221,6 +233,11 @@ class App extends Component {
       // failed, and always shown with a visible banner (see
       // renderHome/publicCatalogSource in template.js) — never silently.
       publicCatalogSource: 'loading', publicCatalogError: '',
+      // Live scope='site'/active=true categories from Supabase (see
+      // publicRecipeCategories()/publicProteinCategories()/
+      // publicSectionCategories()) — populated by _loadPublicCatalog,
+      // never by data.js's static constants or localStorage.
+      publicCategories: [],
 
       // ---- Modo de Criação: "Catálogo Público" (admin-only direct authoring
       // of scope='site' rows — supabase/006_admin_catalog_publishing.sql).
@@ -342,6 +359,12 @@ class App extends Component {
       // the destructive action, same as clicking its own "Excluir" button;
       // never while a delete is already mid-flight.
       { key: 'confirmDelete', open: !!st.confirmDelete, zIndex: 25, onClose: this.onConfirmDeleteNo, onSubmit: this.onConfirmDeleteYes, busy: !!st.confirmDeleteBusy, dirty: false, multiline: false },
+      // "Referências a resolver" — the reference-checked recipe-deletion
+      // popup (askDeleteRecipeChecked/renderReferencesModal). No default
+      // Enter action (the user must explicitly tick which references to
+      // resolve, never confirm a destructive delete via bare Enter), and
+      // Escape/close is blocked while a delete is mid-flight.
+      { key: 'referencesModal', open: !!st.deleteImpact, zIndex: 26, onClose: this.onCloseReferencesModal, onSubmit: null, busy: !!st.deleteBusy, dirty: false, multiline: false },
       // Legacy local admin forms (pre-Supabase demo data editor).
       { key: 'legacyRecipeForm', open: !!st.showRecipeForm, zIndex: 20, onClose: this.onCancelRecipeForm, onSubmit: this.onSaveRecipeForm, busy: false, dirty: true, multiline: true },
       { key: 'legacyProductForm', open: !!st.showProductForm, zIndex: 20, onClose: this.onCancelProductForm, onSubmit: this.onSaveProductForm, busy: false, dirty: true, multiline: false },
@@ -705,6 +728,7 @@ class App extends Component {
 
   onSplashContinue = () => {
     this.setState({ showSplash: false });
+    markWelcomeSeen(localStorage, LS_KEYS.welcomeSeen);
     if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' } });
   };
   goHome = () => { this.animateTo('home'); this.setState({ screen: 'home' }); };
@@ -1076,15 +1100,45 @@ class App extends Component {
   // componentDidMount) never stacks a second overlapping request for the
   // same area on top of one already running, while a DIFFERENT area's loader
   // is completely unaffected (each key is independent).
+  // Bug fixed here: without a timeout, a request that never settles (device
+  // sleep/wake, backgrounded tab, a stalled connection with no server-side
+  // timeout either) left `_inFlight[key]` permanently set, since its own
+  // `finally` below only ever ran once `fn()` actually settled. Every later
+  // attempt to load that same area — reopening the tab, the focus/
+  // visibilitychange refetch, even clicking "Tentar novamente" — hit the
+  // dedup guard and silently returned the same dead promise, never calling
+  // setState again. That's the "stuck on Carregando... forever, needs a
+  // reload" bug. Fixed by racing a timer alongside `fn()`: if the timer
+  // wins, `onTimeout` (per-call-site, sets that area's own loading/error
+  // state so its existing "Tentar novamente" button appears) fires and
+  // `_inFlight[key]` is freed immediately, so the next call — including an
+  // automatic retry — starts a genuinely new request instead of returning
+  // the hung one. If `fn()` eventually does resolve after all, its own
+  // try/catch/finally (unchanged) still runs and still updates state; that
+  // late update is harmless (fresher data is always fine to apply), it
+  // just no longer blocks anything in the meantime.
   _inFlight = {};
-  async _guardedLoad(key, fn) {
+  _guardedLoad(key, fn, onTimeout, timeoutMs = 20000) {
     if (this._inFlight[key]) return this._inFlight[key];
-    const p = (async () => { try { return await fn(); } finally { this._inFlight[key] = null; } })();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      this._inFlight[key] = null;
+      if (onTimeout) onTimeout();
+    }, timeoutMs);
+    const p = (async () => {
+      try {
+        return await fn();
+      } finally {
+        clearTimeout(timer);
+        if (!timedOut) this._inFlight[key] = null;
+      }
+    })();
     this._inFlight[key] = p;
     return p;
   }
 
-  loadMyCreationData = (uid) => this._guardedLoad('myCreationData', () => this._loadMyCreationData(uid));
+  loadMyCreationData = (uid) => this._guardedLoad('myCreationData', () => this._loadMyCreationData(uid), () => this.setState({ myCreationLoading: false, myCreationError: 'Tempo de carregamento esgotado. Tente novamente.' }));
   _loadMyCreationData = async (uid) => {
     if (!uid) return { ok: false, error: 'missing uid' };
     this.setState({ myCreationLoading: true, myCreationError: '' });
@@ -1136,7 +1190,7 @@ class App extends Component {
   // focus/visibilitychange refetch while that tab is open should never have
   // to wait on (or misreport) "Minhas Receitas/Produtos/Categorias", and
   // vice versa.
-  loadSharedLibrary = (uid) => this._guardedLoad('sharedLibrary', () => this._loadSharedLibrary(uid));
+  loadSharedLibrary = (uid) => this._guardedLoad('sharedLibrary', () => this._loadSharedLibrary(uid), () => this.setState({ sharedLibraryLoading: false, sharedLibraryError: 'Tempo de carregamento esgotado. Tente novamente.' }));
   _loadSharedLibrary = async (uid) => {
     if (!uid) return { ok: false, error: 'missing uid' };
     this.setState({ sharedLibraryLoading: true, sharedLibraryError: '' });
@@ -1242,8 +1296,14 @@ class App extends Component {
   });
   onEditMyRecipe = async (row) => {
     this.setState({ myRecipeDetailLoading: true, myFormError: '' });
-    const { data, error } = await catalog.fetchRecipeDetail(row.id);
-    this.setState({ myRecipeDetailLoading: false });
+    let data, error;
+    try {
+      ({ data, error } = await catalog.fetchRecipeDetail(row.id));
+    } catch (e) {
+      error = e;
+    } finally {
+      this.setState({ myRecipeDetailLoading: false });
+    }
     if (error || !data) { this.flashAdmin('Não foi possível carregar a receita.'); return; }
     this.setState({
       showMyRecipeForm: true, myRecipeFormMode: 'edit', myFormError: '',
@@ -1259,11 +1319,46 @@ class App extends Component {
       },
     });
   };
-  onCancelMyRecipeForm = () => this.setState({ showMyRecipeForm: false, myRecipeForm: null, myFormError: '' });
+  onCancelMyRecipeForm = () => this.setState({ showMyRecipeForm: false, myRecipeForm: null, myFormError: '', ingredientRemoveConfirm: null });
   myRecipeFormField = (field) => (e) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, [field]: e.target.value } }));
   onMyRecipeIngredientChange = (idx, field, value) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.map((row, i) => i === idx ? { ...row, [field]: value } : row) } }));
   addMyRecipeIngredient = () => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: [...s.myRecipeForm.ingredients, { productId: this.pickerProducts()[0] ? this.pickerProducts()[0].id : '', quantity: 1 }] } }));
-  removeMyRecipeIngredient = (idx) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.filter((_, i) => i !== idx) } }));
+  removeMyRecipeIngredient = (idx) => this.removeIngredientAt('myRecipeForm', idx);
+  // Confirm-before-remove for a single ingredient row (shared by
+  // myRecipeForm and siteRecipeForm — see askRemoveIngredient below). Only
+  // arms a confirmation when there's actually something to lose (a product
+  // already selected for this row); an empty/just-added row removes
+  // immediately, matching "confirmar somente quando necessário".
+  removeIngredientAt = (formKey, idx) => this.setState(s => ({ [formKey]: { ...s[formKey], ingredients: s[formKey].ingredients.filter((_, i) => i !== idx) } }));
+  askRemoveIngredient = async (formKey, idx) => {
+    const form = this.state[formKey];
+    const ing = form.ingredients[idx];
+    if (!ing || !ing.productId) { this.removeIngredientAt(formKey, idx); return; }
+    const products = formKey === 'myRecipeForm' ? this.pickerProducts() : this.state.siteProducts;
+    const product = products.find(p => p.id === ing.productId);
+    const quantity = parseFloat(String(ing.quantity).replace(',', '.')) || 0;
+    const costImpact = product ? product.price * quantity : 0;
+    this.setState({
+      ingredientRemoveConfirm: {
+        formKey, idx, productId: ing.productId, productName: product ? product.name : 'este produto', unit: product ? product.unit : '',
+        quantity, costLabel: this.formatBRL(costImpact), usageCount: null,
+      },
+    });
+    const { data } = await catalog.countOtherRecipesUsingProduct(ing.productId, form.id);
+    // Guard against the user having already dismissed/changed the pending
+    // row — or reopened/replaced the form entirely with a different
+    // recipe reusing the same idx — by the time this resolves. Checking
+    // productId too (not just formKey+idx) means a stale confirm can never
+    // silently reattach itself to an unrelated row.
+    this.setState(s => (s.ingredientRemoveConfirm && s.ingredientRemoveConfirm.formKey === formKey && s.ingredientRemoveConfirm.idx === idx && s.ingredientRemoveConfirm.productId === ing.productId)
+      ? { ingredientRemoveConfirm: { ...s.ingredientRemoveConfirm, usageCount: data || 0 } } : {});
+  };
+  onConfirmRemoveIngredient = () => {
+    const c = this.state.ingredientRemoveConfirm; if (!c) return;
+    this.removeIngredientAt(c.formKey, c.idx);
+    this.setState({ ingredientRemoveConfirm: null });
+  };
+  onCancelRemoveIngredient = () => this.setState({ ingredientRemoveConfirm: null });
   toggleMyRecipeSection = (categoryId) => this.setState(s => {
     const cur = s.myRecipeForm.sectionCategoryIds;
     const sectionCategoryIds = cur.includes(categoryId) ? cur.filter(id => id !== categoryId) : [...cur, categoryId];
@@ -1311,7 +1406,74 @@ class App extends Component {
     }
     this.refreshAfterMyCreationMutation(uid, 'Receita salva com sucesso.');
   };
-  askDeleteMyRecipe = (id, name) => this.setState({ confirmDelete: { type: 'myRecipe', id, message: `Excluir a receita "${name}"? Esta ação não pode ser desfeita.` } });
+  // Reference-checked recipe deletion (supabase/009_recipe_deletion.sql).
+  // Used for both a personal recipe (owner, "Minhas Receitas") and a site
+  // recipe (admin, "Catálogo Público") — get_recipe_delete_impact/
+  // delete_recipe branch on scope/ownership server-side, so this one flow
+  // covers both call sites; a non-owner/non-admin caller gets
+  // not_authorized/not_owner/not_admin from the RPC itself, never a UI
+  // that pretends the action is available. If the recipe has no live
+  // references, this skips straight to the ordinary confirm-delete dialog
+  // (showing its YCR code and name, "não pode ser desfeita") instead of
+  // opening the references popup for nothing.
+  askDeleteRecipeChecked = async (id) => {
+    this.setState({ deleteImpactLoading: true, deleteImpact: null });
+    let data, error;
+    try {
+      ({ data, error } = await catalog.getRecipeDeleteImpact(id));
+    } catch (e) {
+      error = e;
+    } finally {
+      this.setState({ deleteImpactLoading: false });
+    }
+    if (error || !data) {
+      this.flashAdmin('Não foi possível verificar as referências desta receita. Tente novamente.');
+      return;
+    }
+    const hasRefs = data.active_share || data.active_grant_count > 0 || data.pending_request_count > 0;
+    if (!hasRefs) {
+      this.setState({ confirmDelete: { type: 'recipeChecked', id, message: `Excluir a receita "${data.name}" (código ${data.recipe_code})? Esta ação não pode ser desfeita.` } });
+      return;
+    }
+    this.setState({ deleteImpact: data, deleteResolutions: { revokeShares: false, cancelPendingRequests: false } });
+  };
+  onCloseReferencesModal = () => { if (!this.state.deleteBusy) this.setState({ deleteImpact: null }); };
+  onToggleResolveRevokeShares = () => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, revokeShares: !s.deleteResolutions.revokeShares } }));
+  onToggleResolveCancelRequests = () => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, cancelPendingRequests: !s.deleteResolutions.cancelPendingRequests } }));
+  onConfirmDeleteFromReferences = async () => {
+    const impact = this.state.deleteImpact; if (!impact) return;
+    const r = this.state.deleteResolutions;
+    if (impact.active_share && !r.revokeShares) { this.flashAdmin('Marque "Revogar compartilhamentos" para continuar.'); return; }
+    if (impact.pending_request_count > 0 && !r.cancelPendingRequests) { this.flashAdmin('Marque "Cancelar solicitações pendentes" para continuar.'); return; }
+    this.setState({ deleteBusy: true });
+    const { data, error } = await catalog.deleteRecipeChecked(impact.recipe_id, { revokeShares: r.revokeShares, cancelPendingRequests: r.cancelPendingRequests });
+    this.setState({ deleteBusy: false });
+    if (error) { this.flashAdmin('Não foi possível excluir a receita.'); return; }
+    this.setState({ deleteImpact: null });
+    this.afterRecipeDeleted(impact.recipe_id, data);
+  };
+  // Runs after either delete path (simple confirm or references-resolved)
+  // succeeds — updates every list this recipe could appear in, without a
+  // page reload: local favorites (client-side only, no server table — see
+  // supabase/009_recipe_deletion.sql's header comment), "Minhas
+  // Receitas"/"Catálogo Público" (whichever applies), and the public
+  // catalog (Home/Search), since a delete or archive can change what's
+  // publicly visible.
+  afterRecipeDeleted = (recipeId, result) => {
+    if (this.state.favoriteIds.includes(recipeId)) {
+      const favoriteIds = this.state.favoriteIds.filter(id => id !== recipeId);
+      this.setState({ favoriteIds });
+      this.persist(LS_KEYS.favorites, favoriteIds);
+    }
+    const msg = result && result.action === 'archived'
+      ? 'Receita arquivada — havia histórico de compartilhamento ou publicação, então foi arquivada em vez de excluída.'
+      : 'Receita excluída com sucesso.';
+    const uid = this.state.session && this.state.session.user && this.state.session.user.id;
+    if (uid) this.loadMyCreationData(uid);
+    if (this.state.authRole === 'admin') this.loadSiteCatalogData();
+    this.loadPublicCatalog();
+    this.flashAdmin(msg);
+  };
 
   // ---- Recipe detail (own or shared-with-me): sharing controls, authorship, copy ----
   onOpenMyRecipeDetail = async (recipeId) => {
@@ -1336,7 +1498,12 @@ class App extends Component {
     }
   };
   onRetryMyRecipeDetail = () => { if (this.state.myRecipeDetailRequestedId) this.onOpenMyRecipeDetail(this.state.myRecipeDetailRequestedId); };
-  onCloseMyRecipeDetail = () => this.setState({ selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '', shareFlash: '', myRecipeDetailError: '', myRecipeDetailRequestedId: null, shareRevokeConfirming: false, shareCopyConfirmed: false });
+  // myRecipeDetailLoading is reset here too (not just by the loaders that
+  // set it) as a backstop: showMyRecipeDetail (computed prop) is true
+  // whenever this flag is true regardless of selectedMyRecipe, so without
+  // this the modal's own close button couldn't dismiss a stuck
+  // "Carregando..." state.
+  onCloseMyRecipeDetail = () => this.setState({ selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '', shareFlash: '', myRecipeDetailError: '', myRecipeDetailLoading: false, myRecipeDetailRequestedId: null, shareRevokeConfirming: false, shareCopyConfirmed: false });
 
   onActivateSharing = async () => {
     const rid = this.state.selectedMyRecipe.id;
@@ -1498,7 +1665,10 @@ class App extends Component {
   // if it had, nothing ever read scope='site' rows back for the public
   // pages either. This is the actual fix for both halves of that gap.
   // =========================================================================
-  loadPublicCatalog = () => this._guardedLoad('publicCatalog', () => this._loadPublicCatalog());
+  loadPublicCatalog = () => this._guardedLoad('publicCatalog', () => this._loadPublicCatalog(), () => this.setState({
+    publicCatalogSource: 'demo-fallback', publicCatalogError: 'Tempo de carregamento esgotado. Tente novamente.',
+    products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
+  }));
   _loadPublicCatalog = async () => {
     // Reset to 'loading' on every call (not just the very first, initial
     // one) so a retry after a demo-fallback error shows the loading state
@@ -1517,7 +1687,7 @@ class App extends Component {
         this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${firstError.message || 'erro desconhecido'}${firstError.code ? ` (${firstError.code})` : ''}`,
-          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
         });
         return;
       }
@@ -1530,7 +1700,7 @@ class App extends Component {
         this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${secondError.message || 'erro desconhecido'}${secondError.code ? ` (${secondError.code})` : ''}`,
-          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
         });
         return;
       }
@@ -1556,7 +1726,15 @@ class App extends Component {
           extras: r.extras || [], modoPreparo: r.instructions || [], dicas: r.tips || [],
         };
       });
-      this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes });
+      // fetchPublicCategories() (catalog.js) already filters scope='site'
+      // and active=true server-side — catsRes.data is exactly the set of
+      // public categories Home/Search should ever show, never the static
+      // data.js constants (CATEGORIAS_RECEITA/SECTION_DEFS) that Home used
+      // to read instead. Kept as the raw rows (not pre-split by type) so
+      // publicRecipeCategories()/publicProteinCategories()/
+      // publicSectionCategories() below stay the single place that splits
+      // by type — see the comment there for why the three must never mix.
+      this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes, publicCategories: catsRes.data || [] });
     } catch (e) {
       // Same defensive net as loadMyCreationData: an unexpected synchronous
       // throw here (not a normal Supabase `{ error }` response, which is
@@ -1565,10 +1743,20 @@ class App extends Component {
       this.setState({
         publicCatalogSource: 'demo-fallback',
         publicCatalogError: (e && e.message) || 'erro inesperado',
-        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
       });
     }
   };
+
+  // Home/Search's only source of the live public category vocabulary —
+  // never data.js's static CATEGORIAS_RECEITA/CATEGORIAS_PRODUTO/
+  // SECTION_DEFS, and never localStorage. type is one of 'receita'
+  // (recipe category chips), 'proteina' (product/protein categories) or
+  // 'secao' (section/filter tags) — deliberately three separate getters,
+  // never merged into one list, so a caller can't accidentally mix types.
+  publicRecipeCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'receita');
+  publicProteinCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'proteina');
+  publicSectionCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'secao');
 
   // =========================================================================
   // Modo de Criação: "Catálogo Público" — admin-only direct authoring of
@@ -1601,7 +1789,7 @@ class App extends Component {
     this.loadPublicCatalog();
   };
 
-  loadSiteCatalogData = (role) => this._guardedLoad('siteCatalogData', () => this._loadSiteCatalogData(role));
+  loadSiteCatalogData = (role) => this._guardedLoad('siteCatalogData', () => this._loadSiteCatalogData(role), () => this.setState({ siteCatalogLoading: false, siteCatalogError: 'Tempo de carregamento esgotado. Tente novamente.' }));
   _loadSiteCatalogData = async (role) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
@@ -1678,8 +1866,14 @@ class App extends Component {
   });
   onEditSiteRecipe = async (row) => {
     this.setState({ myRecipeDetailLoading: true, siteFormError: '' });
-    const { data, error } = await catalog.fetchRecipeDetail(row.id);
-    this.setState({ myRecipeDetailLoading: false });
+    let data, error;
+    try {
+      ({ data, error } = await catalog.fetchRecipeDetail(row.id));
+    } catch (e) {
+      error = e;
+    } finally {
+      this.setState({ myRecipeDetailLoading: false });
+    }
     if (error || !data) { this.flashAdmin('Não foi possível carregar a receita.'); return; }
     this.setState({
       showSiteRecipeForm: true, siteRecipeFormMode: 'edit', siteFormError: '',
@@ -1695,12 +1889,12 @@ class App extends Component {
       },
     });
   };
-  onCancelSiteRecipeForm = () => this.setState({ showSiteRecipeForm: false, siteRecipeForm: null, siteFormError: '' });
+  onCancelSiteRecipeForm = () => this.setState({ showSiteRecipeForm: false, siteRecipeForm: null, siteFormError: '', ingredientRemoveConfirm: null });
   siteRecipeFormField = (field) => (e) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, [field]: e.target.value } }));
   toggleSiteRecipeFormFeatured = (e) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, featured: e.target.checked } }));
   onSiteRecipeIngredientChange = (idx, field, value) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, ingredients: s.siteRecipeForm.ingredients.map((row, i) => i === idx ? { ...row, [field]: value } : row) } }));
   addSiteRecipeIngredient = () => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, ingredients: [...s.siteRecipeForm.ingredients, { productId: this.state.siteProducts[0] ? this.state.siteProducts[0].id : '', quantity: 1 }] } }));
-  removeSiteRecipeIngredient = (idx) => this.setState(s => ({ siteRecipeForm: { ...s.siteRecipeForm, ingredients: s.siteRecipeForm.ingredients.filter((_, i) => i !== idx) } }));
+  removeSiteRecipeIngredient = (idx) => this.removeIngredientAt('siteRecipeForm', idx);
   toggleSiteRecipeSection = (categoryId) => this.setState(s => {
     const cur = s.siteRecipeForm.sectionCategoryIds;
     const sectionCategoryIds = cur.includes(categoryId) ? cur.filter(id => id !== categoryId) : [...cur, categoryId];
@@ -1788,7 +1982,7 @@ class App extends Component {
   };
 
   // ---- "Meus Pedidos" (any authenticated user) ----
-  loadMyRequests = (uid) => this._guardedLoad('myRequests', () => this._loadMyRequests(uid));
+  loadMyRequests = (uid) => this._guardedLoad('myRequests', () => this._loadMyRequests(uid), () => this.setState({ myRequestsLoading: false, myRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
   _loadMyRequests = async (uid) => {
     if (!uid) return;
     this.setState({ myRequestsLoading: true, myRequestsError: '' });
@@ -1850,7 +2044,7 @@ class App extends Component {
   onCloseRequestDetail = () => this.setState({ selectedRequestId: null, selectedRequestRevisions: [], requestDetailError: '' });
 
   // ---- "Solicitações Recebidas" (admin only) ----
-  loadAllRequests = (role) => this._guardedLoad('allRequests', () => this._loadAllRequests(role));
+  loadAllRequests = (role) => this._guardedLoad('allRequests', () => this._loadAllRequests(role), () => this.setState({ allRequestsLoading: false, allRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
   _loadAllRequests = async (role) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
@@ -2082,6 +2276,14 @@ class App extends Component {
   onConfirmDeleteNo = () => this.setState({ confirmDelete: null });
   onConfirmDeleteYes = async () => {
     const cd = this.state.confirmDelete; if (!cd) return;
+    if (cd.type === 'recipeChecked') {
+      this.setState({ confirmDelete: null, deleteBusy: true });
+      const { data, error } = await catalog.deleteRecipeChecked(cd.id, {});
+      this.setState({ deleteBusy: false });
+      if (error) { this.flashAdmin('Não foi possível excluir a receita.'); return; }
+      this.afterRecipeDeleted(cd.id, data);
+      return;
+    }
     if (cd.type === 'myRecipe' || cd.type === 'myProduct' || cd.type === 'myCategory') {
       const uid = this.state.session.user.id;
       const fn = cd.type === 'myRecipe' ? catalog.deleteRecipe : cd.type === 'myProduct' ? catalog.deleteProduct : catalog.deleteCategory;
@@ -2468,14 +2670,18 @@ class App extends Component {
 
     const q = s.searchQuery.trim().toLowerCase();
     const searchFiltered = visibleRecipes.filter(r => (s.activeFilter === 'Todas' || r.categoria === s.activeFilter) && (!q || r.nome.toLowerCase().includes(q)));
-    const categoryChips = ['Todas', ...this.categoriasReceita].map(cat => ({
+    const publicRecipeCategoryNames = this.publicRecipeCategories().map(c => c.name);
+    const categoryChips = ['Todas', ...publicRecipeCategoryNames].map(cat => ({
       label: cat, onClick: () => this.setFilter(cat),
       style: `padding:9px 18px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;background:${s.activeFilter === cat ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.activeFilter === cat ? 'var(--neutral-0)' : 'var(--neutral-800)'}`,
     }));
     const filteredSearchResults = searchFiltered.map((r, i) => this.makeRecipeCard(r, 'search', i));
 
     const favoritesList = visibleRecipes.filter(r => s.favoriteIds.includes(r.id)).map((r, i) => this.makeRecipeCard(r, 'favorites', i));
-    const homeCategoryChips = this.categoriasReceita.map(cat => ({ label: cat, onClick: () => this.goSearchWithFilter(cat) }));
+    // Live Supabase type='receita' categories only — never the static
+    // data.js CATEGORIAS_RECEITA constant (see publicRecipeCategories()).
+    const homeCategoryChips = this.publicRecipeCategories().map(cat => ({ label: cat.name, onClick: () => this.goSearchWithFilter(cat.name) }));
+    const homeCategoriesEmpty = s.publicCatalogSource === 'supabase' && homeCategoryChips.length === 0;
 
     let selectedRecipe = null, ingredientRows = [], extrasList = [], modoPreparoList = [], dicasList = [], totalABuyLabel = 'R$ 0,00', totalAllLabel = 'R$ 0,00', hasExtras = false;
     const selR = s.recipes.find(r => r.id === s.selectedRecipeId);
@@ -2743,7 +2949,7 @@ class App extends Component {
     const myRecipeRows = s.myRecipes.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
       source: 'personal', sourceLabel: 'Privada', sourceBadgeStyle: statusBadge('Privada', SOURCE_BADGE_COLORS.personal),
-      onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteMyRecipe(r.id, r.name),
+      onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteRecipeChecked(r.id),
     }));
     const myProductRows = s.myProducts.map(p => ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
@@ -2776,12 +2982,28 @@ class App extends Component {
       onToggle: () => this.toggleMyRecipeSection(c.id),
     }));
     const myProductOptionsForIngredients = this.pickerProducts().map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
-    const myRecipeIngredientRows = s.myRecipeForm ? s.myRecipeForm.ingredients.map((row, idx) => ({
-      idx, productId: row.productId, quantity: row.quantity,
-      onProductSet: (v) => this.onMyRecipeIngredientChange(idx, 'productId', v),
-      onQuantityChange: (e) => this.onMyRecipeIngredientChange(idx, 'quantity', e.target.value),
-      onRemove: () => this.removeMyRecipeIngredient(idx),
-    })) : [];
+    const myRecipeIngredientRows = s.myRecipeForm ? s.myRecipeForm.ingredients.map((row, idx) => {
+      const rc = s.ingredientRemoveConfirm;
+      const confirming = rc && rc.formKey === 'myRecipeForm' && rc.idx === idx && rc.productId === row.productId ? rc : null;
+      return {
+        idx, productId: row.productId, quantity: row.quantity,
+        onProductSet: (v) => this.onMyRecipeIngredientChange(idx, 'productId', v),
+        onQuantityChange: (e) => this.onMyRecipeIngredientChange(idx, 'quantity', e.target.value),
+        onRemove: () => this.askRemoveIngredient('myRecipeForm', idx),
+        confirming: !!confirming,
+        confirmProductName: confirming ? confirming.productName : '',
+        confirmDetailLabel: confirming ? `${this.formatQtd(confirming.quantity)} ${confirming.unit} · impacto no custo: ${confirming.costLabel}` : '',
+        confirmUsageLabel: confirming
+          ? (confirming.usageCount === null ? 'Verificando uso em outras receitas...' : confirming.usageCount > 0 ? `Este produto ainda é usado em ${confirming.usageCount} outra(s) receita(s).` : 'Este produto não é usado em nenhuma outra receita.')
+          : '',
+        onConfirmRemove: this.onConfirmRemoveIngredient, onCancelRemove: this.onCancelRemoveIngredient,
+      };
+    }) : [];
+    const myIngredientTotalCostLabel = this.formatBRL((s.myRecipeForm ? s.myRecipeForm.ingredients : []).reduce((sum, row) => {
+      const p = this.pickerProducts().find(pp => pp.id === row.productId);
+      const q = parseFloat(String(row.quantity).replace(',', '.')) || 0;
+      return sum + (p ? p.price * q : 0);
+    }, 0));
 
     let myRecipeDetailView = null;
     if (s.selectedMyRecipe) {
@@ -2837,6 +3059,7 @@ class App extends Component {
         toggleStatusLabel: isPublished ? 'Despublicar' : 'Publicar',
         updatedAtLabel: this.formatDateTime(r.updated_at),
         onToggleStatus: () => this.onToggleSiteRecipeStatus(r), onEdit: () => this.onEditSiteRecipe(r),
+        onDelete: () => this.askDeleteRecipeChecked(r.id),
       };
     });
     const siteProductRows = s.siteProducts.map(p => ({
@@ -2863,12 +3086,28 @@ class App extends Component {
       onToggle: () => this.toggleSiteRecipeSection(c.id),
     }));
     const siteProductOptionsForIngredients = s.siteProducts.map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
-    const siteRecipeIngredientRows = s.siteRecipeForm ? s.siteRecipeForm.ingredients.map((row, idx) => ({
-      idx, productId: row.productId, quantity: row.quantity,
-      onProductSet: (val) => this.onSiteRecipeIngredientChange(idx, 'productId', val),
-      onQuantityChange: (e) => this.onSiteRecipeIngredientChange(idx, 'quantity', e.target.value),
-      onRemove: () => this.removeSiteRecipeIngredient(idx),
-    })) : [];
+    const siteRecipeIngredientRows = s.siteRecipeForm ? s.siteRecipeForm.ingredients.map((row, idx) => {
+      const rc = s.ingredientRemoveConfirm;
+      const confirming = rc && rc.formKey === 'siteRecipeForm' && rc.idx === idx && rc.productId === row.productId ? rc : null;
+      return {
+        idx, productId: row.productId, quantity: row.quantity,
+        onProductSet: (val) => this.onSiteRecipeIngredientChange(idx, 'productId', val),
+        onQuantityChange: (e) => this.onSiteRecipeIngredientChange(idx, 'quantity', e.target.value),
+        onRemove: () => this.askRemoveIngredient('siteRecipeForm', idx),
+        confirming: !!confirming,
+        confirmProductName: confirming ? confirming.productName : '',
+        confirmDetailLabel: confirming ? `${this.formatQtd(confirming.quantity)} ${confirming.unit} · impacto no custo: ${confirming.costLabel}` : '',
+        confirmUsageLabel: confirming
+          ? (confirming.usageCount === null ? 'Verificando uso em outras receitas...' : confirming.usageCount > 0 ? `Este produto ainda é usado em ${confirming.usageCount} outra(s) receita(s).` : 'Este produto não é usado em nenhuma outra receita.')
+          : '',
+        onConfirmRemove: this.onConfirmRemoveIngredient, onCancelRemove: this.onCancelRemoveIngredient,
+      };
+    }) : [];
+    const siteIngredientTotalCostLabel = this.formatBRL((s.siteRecipeForm ? s.siteRecipeForm.ingredients : []).reduce((sum, row) => {
+      const p = s.siteProducts.find(pp => pp.id === row.productId);
+      const q = parseFloat(String(row.quantity).replace(',', '.')) || 0;
+      return sum + (p ? p.price * q : 0);
+    }, 0));
 
     // ---- Solicitações (change_requests) ----
     const requestStatusLabel = (st) => ({
@@ -2994,7 +3233,7 @@ class App extends Component {
       showSplash: s.showSplash, onSplashContinue: this.onSplashContinue, splashButtonLabel: s.profile ? 'Bem-vindo de volta' : 'Criar meu perfil',
       userGreetingName, profileInitial,
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
-      recommendedList, practicalList, occasionList, quickList, churrascoList, snackList, homeCategoryChips, customHomeSectionBlocks,
+      recommendedList, practicalList, occasionList, quickList, churrascoList, snackList, homeCategoryChips, homeCategoriesEmpty, customHomeSectionBlocks,
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
@@ -3064,7 +3303,7 @@ class App extends Component {
       siteRecipeFormOnExtras: this.siteRecipeFormField('extrasText'), siteRecipeFormOnInstructions: this.siteRecipeFormField('instructionsText'), siteRecipeFormOnTips: this.siteRecipeFormField('tipsText'),
       siteRecipeFormOnFeatured: this.toggleSiteRecipeFormFeatured, siteRecipeFormOnStatusSet: this.setFormField('siteRecipeForm', 'status'),
       siteRecipeStatusOptions: [{ value: 'draft', label: 'Rascunho' }, { value: 'published', label: 'Publicada' }],
-      siteRecipeCategoryOptions, siteRecipeSectionRows, siteRecipeIngredientRows, siteProductOptionsForIngredients,
+      siteRecipeCategoryOptions, siteRecipeSectionRows, siteRecipeIngredientRows, siteProductOptionsForIngredients, siteIngredientTotalCostLabel,
       onAddSiteRecipeIngredient: this.addSiteRecipeIngredient, onCancelSiteRecipeForm: this.onCancelSiteRecipeForm, onSaveSiteRecipeForm: this.onSaveSiteRecipeForm,
       showSiteProductForm: s.showSiteProductForm, siteProductFormTitle: s.siteProductFormMode === 'new' ? 'Novo Produto do Catálogo' : 'Editar Produto do Catálogo', siteProductForm: s.siteProductForm || {},
       siteProductFormOnName: this.siteProductFormField('name'), siteProductFormOnCategorySet: this.setFormField('siteProductForm', 'categoryId'),
@@ -3112,7 +3351,7 @@ class App extends Component {
       myRecipeFormOnDifficultySet: this.setFormField('myRecipeForm', 'difficulty'), myRecipeFormOnPrepTime: this.myRecipeFormField('prepTime'),
       myRecipeFormOnServings: this.myRecipeFormField('servings'), myRecipeFormOnImageUrl: this.myRecipeFormField('imageUrl'),
       myRecipeFormOnExtras: this.myRecipeFormField('extrasText'), myRecipeFormOnInstructions: this.myRecipeFormField('instructionsText'), myRecipeFormOnTips: this.myRecipeFormField('tipsText'),
-      myRecipeCategoryOptions, myRecipeSectionRows, myRecipeIngredientRows, myProductOptionsForIngredients,
+      myRecipeCategoryOptions, myRecipeSectionRows, myRecipeIngredientRows, myProductOptionsForIngredients, myIngredientTotalCostLabel,
       onAddMyRecipeIngredient: this.addMyRecipeIngredient, onCancelMyRecipeForm: this.onCancelMyRecipeForm, onSaveMyRecipeForm: this.onSaveMyRecipeForm,
       dificuldadeOptionsMy: this.dificuldades,
       // Meu produto: form modal
@@ -3174,6 +3413,33 @@ class App extends Component {
       darkModeThumbStyle: `width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;left:${s.darkMode ? '21px' : '3px'};transition:left 0.15s ease;box-shadow:var(--shadow-sm)`,
       adminRecipeRows, adminProductRows, onNewRecipe: this.onNewRecipe, onNewProduct: this.onNewProduct,
       confirmDeleteOpen: !!s.confirmDelete, confirmDeleteMessage: s.confirmDelete ? s.confirmDelete.message : '', onConfirmDeleteYes: this.onConfirmDeleteYes, onConfirmDeleteNo: this.onConfirmDeleteNo,
+      referencesModalOpen: !!s.deleteImpact,
+      referencesModal: s.deleteImpact ? {
+        recipeName: s.deleteImpact.name, recipeCode: s.deleteImpact.recipe_code,
+        recommendArchive: !!s.deleteImpact.recommend_archive,
+        rows: [
+          s.deleteImpact.active_share ? {
+            key: 'share', type: 'Compartilhamento ativo', quantity: 1,
+            consequence: 'O código YSH continuará existindo e concedendo acesso somente leitura enquanto não for revogado.',
+            action: 'Revogar todos os compartilhamentos e acessos concedidos antes de excluir.',
+            resolved: s.deleteResolutions.revokeShares, onToggleResolve: this.onToggleResolveRevokeShares,
+          } : null,
+          s.deleteImpact.active_grant_count > 0 ? {
+            key: 'grants', type: 'Acessos concedidos', quantity: s.deleteImpact.active_grant_count,
+            consequence: `${s.deleteImpact.active_grant_count} pessoa(s) com acesso somente leitura perderão o acesso a esta receita.`,
+            action: 'Incluído ao revogar os compartilhamentos acima.',
+            resolved: s.deleteResolutions.revokeShares, onToggleResolve: null,
+          } : null,
+          s.deleteImpact.pending_request_count > 0 ? {
+            key: 'requests', type: 'Solicitações de publicação pendentes', quantity: s.deleteImpact.pending_request_count,
+            consequence: `${s.deleteImpact.pending_request_count} solicitação(ões) pendente(s) (${(s.deleteImpact.pending_request_codes || []).join(', ')}) ficariam sem a receita de origem.`,
+            action: 'Cancelar as solicitações pendentes antes de excluir.',
+            resolved: s.deleteResolutions.cancelPendingRequests, onToggleResolve: this.onToggleResolveCancelRequests,
+          } : null,
+        ].filter(Boolean),
+        onConfirm: this.onConfirmDeleteFromReferences, onCancel: this.onCloseReferencesModal, busy: s.deleteBusy,
+        canConfirm: (!s.deleteImpact.active_share || s.deleteResolutions.revokeShares) && (!(s.deleteImpact.pending_request_count > 0) || s.deleteResolutions.cancelPendingRequests),
+      } : null,
       showRecipeForm: s.showRecipeForm, recipeFormTitle: s.recipeFormMode === 'new' ? 'Nova Receita' : 'Editar Receita', recipeForm: s.recipeForm || {},
       recipeFormOnNome: this.recipeFormField('nome'), recipeFormOnCategoriaSet: this.setFormField('recipeForm', 'categoria'), recipeFormOnDificuldadeSet: this.setFormField('recipeForm', 'dificuldade'),
       recipeFormOnTempo: this.recipeFormField('tempo'), recipeFormOnPorcoes: this.recipeFormField('porcoes'), recipeFormOnImagem: this.recipeFormField('imagem'),
@@ -3212,7 +3478,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260803-2';
+import { renderApp } from './template.js?v=20260803-3';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
