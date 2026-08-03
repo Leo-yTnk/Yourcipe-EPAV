@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260803-2';
-import { CustomSelect } from './custom-select.js?v=20260803-2';
+import { html } from './vendor/htm-preact-standalone.js?v=20260803-3';
+import { CustomSelect } from './custom-select.js?v=20260803-3';
 
 export function renderApp(app) {
   const v = app.computeViewModel();
@@ -30,6 +30,7 @@ export function renderApp(app) {
         ${v.salesModalOpen && renderSalesModal(app, v)}
         ${v.altModalOpen && renderAltModal(app, v)}
         ${v.confirmDeleteOpen && renderConfirmDeleteModal(app, v)}
+        ${v.referencesModalOpen && renderReferencesModal(app, v)}
         ${v.showRecipeForm && renderRecipeFormModal(app, v)}
         ${v.showProductForm && renderProductFormModal(app, v)}
         ${v.showImportModal && renderImportModal(app, v)}
@@ -149,6 +150,9 @@ function renderHome(app, v) {
       <div className="yc-scroll" style="display:flex;gap:10px;overflow-x:auto;padding:0 40px">
         ${v.homeCategoryChips.map((chip) => html`<div key=${chip.label} onClick=${chip.onClick} style="flex-shrink:0;padding:10px 20px;border-radius:var(--radius-full);background:var(--neutral-50);border:1px solid var(--neutral-100);font-size:13px;font-weight:600;color:var(--neutral-800);cursor:pointer;white-space:nowrap">${chip.label}</div>`)}
       </div>
+      ${v.homeCategoriesEmpty && html`
+        <div style="margin:4px 40px 0;font-size:12px;color:var(--neutral-600)">Nenhuma categoria pública cadastrada ainda.</div>
+      `}
     </div>
 
     ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2L12 2z"></path></svg>`, 'Recomendados', v.recommendedList, v.goSearch)}
@@ -797,7 +801,7 @@ function renderSignupModal(app, v) {
         ` : html`
           <div style="font-size:22px;font-weight:700;margin-bottom:6px">Credencial Criada</div>
           <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Esta é a sua credencial de acesso.</div>
-          <div style="background:var(--neutral-50);border:1.5px dashed var(--brand-500);border-radius:var(--radius-md);padding:20px;text-align:center;font-size:24px;font-weight:700;letter-spacing:0.04em;color:var(--brand-700);margin-bottom:14px">${v.signupResult.credential}</div>
+          <div className="yc-code-box" style="font-size:24px;font-weight:700;color:var(--brand-700);margin-bottom:14px">${v.signupResult.credential}</div>
           <div onClick=${v.onCopyCredential} style="text-align:center;font-size:14px;font-weight:600;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-700);padding:12px;border-radius:var(--radius-full);margin-bottom:18px;transition:transform 0.15s ease">${v.credentialCopied ? 'Copiado!' : 'Copiar credencial'}</div>
           <div style="background:rgba(207,176,23,0.14);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:14px 16px;font-size:13px;font-weight:600;line-height:1.5;margin-bottom:20px">Guarde sua credencial e sua senha. Sem elas, não será possível recuperar o acesso.</div>
           <div onClick=${v.onFinishSignup} style="text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Concluir</div>
@@ -921,6 +925,41 @@ function renderConfirmDeleteModal(app, v) {
   `;
 }
 
+function renderReferencesModal(app, v) {
+  const m = v.referencesModal;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div ref=${app.modalFocusRef('referencesModal')} role="dialog" aria-modal="true" aria-label="Referências a resolver" tabindex="-1" className="yc-scroll" style="width:520px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
+        <div style="font-size:18px;font-weight:700;margin-bottom:4px">Referências a resolver</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:6px">A receita <strong>${m ? m.recipeName : ''}</strong> (código ${m ? m.recipeCode : ''}) tem vínculos ativos. Resolva cada um antes de excluir.</div>
+        ${m && m.recommendArchive && html`
+          <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px">Esta receita já foi publicada e/ou compartilhada — em vez de excluir, ela será arquivada (mantém o histórico, deixa de aparecer no catálogo público).</div>
+        `}
+        ${(m ? m.rows : []).map(row => html`
+          <div key=${row.key} style="border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px">
+              <div style="font-size:14px;font-weight:700">${row.type}</div>
+              <span style="background:var(--neutral-50);color:var(--neutral-800);border-radius:var(--radius-full);padding:3px 10px;font-size:12px;font-weight:700">${row.quantity}</span>
+            </div>
+            <div style="font-size:13px;color:var(--neutral-600);margin-bottom:8px">${row.consequence}</div>
+            <div style="font-size:12px;color:var(--neutral-800);font-weight:600;margin-bottom:${row.onToggleResolve ? '8px' : '0'}">Ação necessária: ${row.action}</div>
+            ${row.onToggleResolve && html`
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--neutral-900)">
+                <input type="checkbox" checked=${row.resolved} onChange=${row.onToggleResolve}/> Resolver esta referência antes de excluir
+              </label>
+            `}
+          </div>
+        `)}
+        <div style="font-size:12px;color:var(--neutral-600);margin:4px 0 18px">Favoritos locais deste dispositivo (se houver) são removidos automaticamente. Cópias próprias feitas por outras pessoas a partir desta receita, se existirem, não têm vínculo rastreável no sistema e continuam existindo de forma independente.</div>
+        <div style="display:flex;gap:10px">
+          <div onClick=${m ? m.onCancel : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Voltar sem excluir</div>
+          <div onClick=${(m && m.canConfirm && !m.busy) ? m.onConfirm : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:${(m && m.canConfirm && !m.busy) ? 'pointer' : 'not-allowed'};color:#F4F2F1;background:${(m && m.canConfirm && !m.busy) ? 'var(--red-600)' : 'var(--neutral-200)'};transition:transform 0.15s ease">${m && m.busy ? 'Excluindo...' : 'Resolver e excluir'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderSplash(app, v) {
   return html`
     <div style="position:absolute;inset:0;background:var(--brand-700);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:48px;z-index:40;animation:ycFadeIn 0.3s ease">
@@ -1016,6 +1055,9 @@ function renderSiteRecipesTab(app, v) {
           <div onClick=${row.onToggleStatus} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleStatusLabel}</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </div>
+          <div onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
       `)}
@@ -1216,9 +1258,9 @@ function renderRecipeFormModal(app, v) {
   const f = v.recipeForm;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.recipeFormTitle}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div className="yc-form-grid">
           <input type="text" placeholder="Nome da receita" value=${f.nome} onInput=${v.recipeFormOnNome} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
           <${CustomSelect} options=${v.categoriaReceitaOptions} value=${f.categoria} onChange=${v.recipeFormOnCategoriaSet} />
           <${CustomSelect} options=${v.dificuldadeOptions} value=${f.dificuldade} onChange=${v.recipeFormOnDificuldadeSet} />
@@ -1237,8 +1279,8 @@ function renderRecipeFormModal(app, v) {
 
         <div style="font-size:15px;font-weight:700;margin-top:22px;margin-bottom:10px">Ingredientes (produtos cadastrados)</div>
         ${v.recipeIngredientRows.map((row) => html`
-          <div key=${row.idx} style="display:flex;gap:10px;margin-bottom:10px;align-items:center">
-            <div style="flex:1"><${CustomSelect} options=${v.produtoOptions} value=${row.produtoId} onChange=${row.onProdutoSet} /></div>
+          <div key=${row.idx} style="display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+            <div style="flex:1;min-width:160px"><${CustomSelect} options=${v.produtoOptions} value=${row.produtoId} onChange=${row.onProdutoSet} /></div>
             <input type="number" step="0.1" value=${row.qtd} onInput=${row.onQtdChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
             <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
@@ -1290,10 +1332,10 @@ function renderMyRecipeFormModal(app, v) {
   const f = v.myRecipeForm;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.myRecipeFormTitle}</div>
         ${v.hasMyFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myFormError}</div>`}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div className="yc-form-grid">
           <input type="text" placeholder="Nome da receita" value=${f.name} onInput=${v.myRecipeFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
           <${CustomSelect} options=${v.myRecipeCategoryOptions} value=${f.categoryId} onChange=${v.myRecipeFormOnCategorySet} />
           <${CustomSelect} options=${v.dificuldadeOptionsMy} value=${f.difficulty} onChange=${v.myRecipeFormOnDifficultySet} />
@@ -1313,16 +1355,30 @@ function renderMyRecipeFormModal(app, v) {
 
         <div style="font-size:15px;font-weight:700;margin-top:16px;margin-bottom:10px">Ingredientes (meus produtos)</div>
         ${v.myRecipeIngredientRows.map((row) => html`
-          <div key=${row.idx} style="display:flex;gap:10px;margin-bottom:10px;align-items:center">
-            <div style="flex:1"><${CustomSelect} options=${v.myProductOptionsForIngredients} value=${row.productId} onChange=${row.onProductSet} /></div>
-            <input type="number" step="0.1" value=${row.quantity} onInput=${row.onQuantityChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
-            <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          <div key=${row.idx}>
+            <div style="display:flex;gap:10px;margin-bottom:${row.confirming ? '4px' : '10px'};align-items:center;flex-wrap:wrap">
+              <div style="flex:1;min-width:160px"><${CustomSelect} options=${v.myProductOptionsForIngredients} value=${row.productId} onChange=${row.onProductSet} /></div>
+              <input type="number" step="0.1" value=${row.quantity} onInput=${row.onQuantityChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
+              <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+              </div>
             </div>
+            ${row.confirming && html`
+              <div style="background:rgba(195,61,34,0.06);border:1px solid var(--red-500);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:10px">
+                <div style="font-size:13px;font-weight:600;margin-bottom:2px">Remover "${row.confirmProductName}" desta receita?</div>
+                <div style="font-size:12px;color:var(--neutral-600);margin-bottom:2px">${row.confirmDetailLabel}</div>
+                <div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">${row.confirmUsageLabel}</div>
+                <div style="display:flex;gap:8px">
+                  <div onClick=${row.onCancelRemove} style="padding:8px 14px;border-radius:var(--radius-full);background:var(--neutral-50);color:var(--neutral-800);font-weight:600;font-size:12px;cursor:pointer">Cancelar</div>
+                  <div onClick=${row.onConfirmRemove} style="padding:8px 14px;border-radius:var(--radius-full);background:var(--red-600);color:#F4F2F1;font-weight:700;font-size:12px;cursor:pointer">Remover ingrediente</div>
+                </div>
+              </div>
+            `}
           </div>
         `)}
         <div onClick=${v.onAddMyRecipeIngredient} style="font-size:13px;font-weight:700;color:var(--brand-700);cursor:pointer;margin-bottom:6px">+ Adicionar ingrediente</div>
         ${v.myProductOptionsForIngredients.length === 0 && html`<div style="font-size:12px;color:var(--neutral-600)">Cadastre antes um produto em Meus Produtos.</div>`}
+        ${v.myRecipeIngredientRows.length > 0 && html`<div style="font-size:13px;font-weight:700;color:var(--neutral-800);margin-top:4px">Custo estimado dos ingredientes: ${v.myIngredientTotalCostLabel}</div>`}
 
         <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Outros itens necessários (um por linha)</div>
         <textarea value=${f.extrasText} onInput=${v.myRecipeFormOnExtras} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
@@ -1389,7 +1445,7 @@ function renderMyRecipeDetailModal(app, v) {
   const d = v.myRecipeDetail;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:22;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div ref=${app.modalFocusRef('myRecipeDetail')} role="dialog" aria-modal="true" aria-label=${d ? d.name : 'Receita'} tabindex="-1" className="yc-scroll" style="width:640px;max-width:100%;max-height:90%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
+      <div ref=${app.modalFocusRef('myRecipeDetail')} role="dialog" aria-modal="true" aria-label=${d ? d.name : 'Receita'} tabindex="-1" className="yc-scroll" style="width:640px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div style="font-size:22px;font-weight:700">${d ? d.name : 'Receita'}</div>
           <div onClick=${v.onCloseMyRecipeDetail} aria-label="Fechar" role="button" tabindex="0" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
@@ -1432,10 +1488,8 @@ function renderMyRecipeDetailModal(app, v) {
               ${v.hasShareFlash && html`<div style="background:rgba(52,178,62,0.12);border:1px solid var(--green-500);color:var(--green-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:12px">${v.shareFlash}</div>`}
 
               ${v.hasShareCode && html`
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--neutral-50);border:1.5px solid var(--brand-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:6px">
-                  <div style="font-family:ui-monospace,SFMono-Regular,Consolas,'Courier New',monospace;font-size:18px;font-weight:700;letter-spacing:0.06em;color:var(--brand-700);user-select:all">${v.shareCode}</div>
-                  <div onClick=${v.onCopyShareCode} style="flex-shrink:0;padding:8px 14px;border-radius:var(--radius-full);background:${v.shareCopyConfirmed ? 'var(--green-600)' : 'var(--brand-700)'};color:#F4F2F1;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap">${v.shareCopyConfirmed ? 'Código copiado ✓' : 'Copiar código'}</div>
-                </div>
+                <div className="yc-code-box" style="margin-bottom:12px;font-size:22px;font-weight:700;color:var(--brand-700);user-select:all">${v.shareCode}</div>
+                <div onClick=${v.onCopyShareCode} style="text-align:center;font-size:14px;font-weight:700;color:${v.shareCopyConfirmed ? 'var(--green-600)' : '#F4F2F1'};cursor:pointer;border:1.5px solid ${v.shareCopyConfirmed ? 'var(--green-600)' : 'var(--brand-700)'};background:${v.shareCopyConfirmed ? 'transparent' : 'var(--brand-700)'};padding:12px;border-radius:var(--radius-full);margin-bottom:6px;transition:transform 0.15s ease" role="button" tabindex="0" onKeyDown=${(e) => (e.key === 'Enter' || e.key === ' ') && v.onCopyShareCode(e)}>${v.shareCopyConfirmed ? 'Código copiado ✓' : 'Copiar código'}</div>
                 <div style="font-size:12px;color:var(--neutral-600);margin-bottom:12px">Este é o código YSH — compartilhe-o com quem deve ter acesso somente leitura a esta receita.</div>
               `}
               <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">${v.shareGrantCount} acesso(s) ativo(s) concedido(s) por este código.</div>
@@ -1726,10 +1780,10 @@ function renderSiteRecipeFormModal(app, v) {
   const f = v.siteRecipeForm;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.siteRecipeFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div className="yc-form-grid">
           <input type="text" placeholder="Nome da receita" value=${f.name} onInput=${v.siteRecipeFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
           <${CustomSelect} options=${v.siteRecipeCategoryOptions} value=${f.categoryId} onChange=${v.siteRecipeFormOnCategorySet} />
           <${CustomSelect} options=${v.dificuldadeOptionsMy} value=${f.difficulty} onChange=${v.siteRecipeFormOnDifficultySet} />
@@ -1750,15 +1804,29 @@ function renderSiteRecipeFormModal(app, v) {
 
         <div style="font-size:15px;font-weight:700;margin-top:16px;margin-bottom:10px">Ingredientes (produtos do catálogo)</div>
         ${v.siteRecipeIngredientRows.map((row) => html`
-          <div key=${row.idx} style="display:flex;gap:10px;margin-bottom:10px;align-items:center">
-            <div style="flex:1"><${CustomSelect} options=${v.siteProductOptionsForIngredients} value=${row.productId} onChange=${row.onProductSet} /></div>
-            <input type="number" step="0.1" value=${row.quantity} onInput=${row.onQuantityChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
-            <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          <div key=${row.idx}>
+            <div style="display:flex;gap:10px;margin-bottom:${row.confirming ? '4px' : '10px'};align-items:center;flex-wrap:wrap">
+              <div style="flex:1;min-width:160px"><${CustomSelect} options=${v.siteProductOptionsForIngredients} value=${row.productId} onChange=${row.onProductSet} /></div>
+              <input type="number" step="0.1" value=${row.quantity} onInput=${row.onQuantityChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
+              <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+              </div>
             </div>
+            ${row.confirming && html`
+              <div style="background:rgba(195,61,34,0.06);border:1px solid var(--red-500);border-radius:var(--radius-md);padding:10px 14px;margin-bottom:10px">
+                <div style="font-size:13px;font-weight:600;margin-bottom:2px">Remover "${row.confirmProductName}" desta receita?</div>
+                <div style="font-size:12px;color:var(--neutral-600);margin-bottom:2px">${row.confirmDetailLabel}</div>
+                <div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">${row.confirmUsageLabel}</div>
+                <div style="display:flex;gap:8px">
+                  <div onClick=${row.onCancelRemove} style="padding:8px 14px;border-radius:var(--radius-full);background:var(--neutral-50);color:var(--neutral-800);font-weight:600;font-size:12px;cursor:pointer">Cancelar</div>
+                  <div onClick=${row.onConfirmRemove} style="padding:8px 14px;border-radius:var(--radius-full);background:var(--red-600);color:#F4F2F1;font-weight:700;font-size:12px;cursor:pointer">Remover ingrediente</div>
+                </div>
+              </div>
+            `}
           </div>
         `)}
         <div onClick=${v.onAddSiteRecipeIngredient} style="font-size:13px;font-weight:700;color:var(--brand-700);cursor:pointer;margin-bottom:6px">+ Adicionar ingrediente</div>
+        ${v.siteRecipeIngredientRows.length > 0 && html`<div style="font-size:13px;font-weight:700;color:var(--neutral-800);margin-top:4px">Custo estimado dos ingredientes: ${v.siteIngredientTotalCostLabel}</div>`}
 
         <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Outros itens necessários (um por linha)</div>
         <textarea value=${f.extrasText} onInput=${v.siteRecipeFormOnExtras} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>

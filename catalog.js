@@ -13,7 +13,7 @@
 // ownerId argument) always receives it from the caller's own
 // session.user.id, never from anywhere else; the server independently
 // re-validates it via RLS/RPC regardless.
-import { supabase } from './supabase-client.js?v=20260803-2';
+import { supabase } from './supabase-client.js?v=20260803-3';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, version, created_at, updated_at';
@@ -200,6 +200,38 @@ export async function updateRecipe(id, patch) {
 }
 export async function deleteRecipe(id) {
   return unwrap(await supabase.from('recipes').delete().eq('id', id), 'deleteRecipe');
+}
+
+// Reference-checked deletion (supabase/009_recipe_deletion.sql). Prefer
+// these two over the bare deleteRecipe() above for anything reachable from
+// the UI: getRecipeDeleteImpact() tells the caller what would be affected
+// (active share, active grants, pending change requests) before anything
+// is touched, and deleteRecipeChecked() only proceeds past those once the
+// caller has explicitly acknowledged each one — both run server-side as a
+// single transactional RPC call, so a failure partway through leaves
+// nothing changed. deleteRecipe() above is kept only because other code/
+// tests may still reference it; it performs no reference checking at all.
+export async function getRecipeDeleteImpact(recipeId) {
+  return unwrap(await supabase.rpc('get_recipe_delete_impact', { p_recipe_id: recipeId }), 'getRecipeDeleteImpact');
+}
+export async function deleteRecipeChecked(recipeId, { revokeShares = false, cancelPendingRequests = false } = {}) {
+  return unwrap(await supabase.rpc('delete_recipe', {
+    p_recipe_id: recipeId, p_revoke_shares: revokeShares, p_cancel_pending_requests: cancelPendingRequests,
+  }), 'deleteRecipeChecked');
+}
+
+// How many OTHER recipes (besides p_excludeRecipeId, if given) still use
+// this product — for the "Este produto ainda é usado em X outras
+// receitas" notice shown when removing a single ingredient row. Subject to
+// RLS like any other query here, so it only counts recipe_ingredients rows
+// the caller can actually see (their own personal recipes, or published
+// site recipes) — never a cross-user leak.
+export async function countOtherRecipesUsingProduct(productId, excludeRecipeId) {
+  let q = supabase.from('recipe_ingredients').select('recipe_id', { count: 'exact', head: true }).eq('product_id', productId);
+  if (excludeRecipeId) q = q.neq('recipe_id', excludeRecipeId);
+  const { count, error } = await q;
+  if (error) { logSupabaseError('countOtherRecipesUsingProduct', error); return { error: { code: error.code, message: error.message, details: error.details, hint: error.hint, operation: 'countOtherRecipesUsingProduct' } }; }
+  return { data: count || 0 };
 }
 
 // Full replace is simplest/safest for a form-driven editor: clear then

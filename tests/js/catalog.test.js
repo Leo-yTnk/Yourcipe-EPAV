@@ -11,10 +11,25 @@ import { describe, it, expect, vi } from 'vitest';
 // specifier must match that exact string — including the query — or the
 // mock silently misses and the real module (which reaches out to esm.sh)
 // gets loaded instead. Keep this in sync whenever the version is bumped.
-vi.mock('../../supabase-client.js?v=20260803-2', () => ({ supabase: {} }));
+// getRecipeDeleteImpact/deleteRecipeChecked (supabase/009_recipe_deletion.sql
+// RPCs) and countOtherRecipesUsingProduct need supabase.rpc/supabase.from to
+// actually be callable (not just an empty object) — vi.hoisted() so these
+// fn refs exist before vi.mock's factory (itself hoisted above all imports)
+// runs, per Vitest's documented pattern for this exact situation.
+const { mockRpc, mockFrom } = vi.hoisted(() => ({ mockRpc: vi.fn(), mockFrom: vi.fn() }));
+vi.mock('../../supabase-client.js?v=20260803-3', () => ({ supabase: { rpc: mockRpc, from: mockFrom } }));
 
 const catalogModule = await import('../../catalog.js');
-const { computeForeignReferences } = catalogModule;
+const { computeForeignReferences, getRecipeDeleteImpact, deleteRecipeChecked, countOtherRecipesUsingProduct } = catalogModule;
+
+// A minimal thenable query-builder stub mimicking supabase-js's fluent
+// `.from(...).select(...).eq(...).neq(...)` chain, resolving to `result`
+// only once actually awaited — same shape countOtherRecipesUsingProduct
+// builds in catalog.js.
+function fakeQueryBuilder(result) {
+  const builder = { select: () => builder, eq: () => builder, neq: () => builder, then: (resolve) => resolve(result) };
+  return builder;
+}
 
 // Regression guard for the PGRST201 ambiguous-embed bug: `recipes` and
 // `categories` have two relationship paths PostgREST can see (the direct
@@ -269,5 +284,65 @@ describe('fetchAllPages', () => {
     const result = await fetchAllPages(query, 'fetchAdminRecipes', 5);
     expect(result.data).toBeUndefined();
     expect(result.error).toEqual({ code: 'PGRST000', message: 'boom', details: null, hint: null, operation: 'fetchAdminRecipes' });
+  });
+});
+
+// Reference-checked recipe deletion (supabase/009_recipe_deletion.sql) —
+// these three functions are thin RPC/query wrappers, so the tests only
+// verify the exact RPC name/params are sent and the response is unwrapped
+// the same way every other catalog.js function is (see unwrap() above);
+// the actual authorization/transaction logic is covered server-side by
+// supabase/tests/007_recipe_deletion.pg.sql, not here.
+describe('getRecipeDeleteImpact', () => {
+  it('calls the get_recipe_delete_impact RPC with the recipe id and returns its data', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { recipe_id: 'r1', active_share: false, active_grant_count: 0, pending_request_count: 0 }, error: null });
+    const result = await getRecipeDeleteImpact('r1');
+    expect(mockRpc).toHaveBeenCalledWith('get_recipe_delete_impact', { p_recipe_id: 'r1' });
+    expect(result.data.recipe_id).toBe('r1');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('surfaces an RPC error (e.g. not_authorized) as a normal { error } result, never a thrown exception', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'not_authorized', details: null, hint: null } });
+    const result = await getRecipeDeleteImpact('r1');
+    expect(result.data).toBeUndefined();
+    expect(result.error.message).toBe('not_authorized');
+  });
+});
+
+describe('deleteRecipeChecked', () => {
+  it('defaults revokeShares/cancelPendingRequests to false when not given', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'deleted', recipe_id: 'r1' }, error: null });
+    await deleteRecipeChecked('r1');
+    expect(mockRpc).toHaveBeenCalledWith('delete_recipe', { p_recipe_id: 'r1', p_revoke_shares: false, p_cancel_pending_requests: false });
+  });
+
+  it('forwards explicit revokeShares/cancelPendingRequests acknowledgements to the RPC', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'archived', recipe_id: 'r2' }, error: null });
+    const result = await deleteRecipeChecked('r2', { revokeShares: true, cancelPendingRequests: true });
+    expect(mockRpc).toHaveBeenCalledWith('delete_recipe', { p_recipe_id: 'r2', p_revoke_shares: true, p_cancel_pending_requests: true });
+    expect(result.data.action).toBe('archived');
+  });
+});
+
+describe('countOtherRecipesUsingProduct', () => {
+  it('returns the count when the query succeeds', async () => {
+    mockFrom.mockReset().mockReturnValueOnce(fakeQueryBuilder({ count: 3, error: null }));
+    const result = await countOtherRecipesUsingProduct('p1', 'r1');
+    expect(mockFrom).toHaveBeenCalledWith('recipe_ingredients');
+    expect(result.data).toBe(3);
+  });
+
+  it('returns 0 (not undefined/null) when the product is used nowhere else', async () => {
+    mockFrom.mockReset().mockReturnValueOnce(fakeQueryBuilder({ count: 0, error: null }));
+    const result = await countOtherRecipesUsingProduct('p1', 'r1');
+    expect(result.data).toBe(0);
+  });
+
+  it('surfaces a query error instead of silently returning a count', async () => {
+    mockFrom.mockReset().mockReturnValueOnce(fakeQueryBuilder({ count: null, error: { code: 'PGRST000', message: 'boom', details: null, hint: null } }));
+    const result = await countOtherRecipesUsingProduct('p1', 'r1');
+    expect(result.data).toBeUndefined();
+    expect(result.error.message).toBe('boom');
   });
 });
