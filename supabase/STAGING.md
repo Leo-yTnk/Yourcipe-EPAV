@@ -1,6 +1,96 @@
 # Staging setup and PR 1 runbook
 
-## PR 3 (this PR): bug fixes + change_requests — root cause writeup
+## PR 4 (this PR): PGRST201 ambiguous-embed fix + default catalog seed — root cause writeup
+
+**Bug: `PGRST201` on catalog embeds.** Confirmed root cause: `recipes` and
+`categories` have TWO relationship paths PostgREST's embedding resolver can
+see — (1) the direct foreign key `recipes.category_id -> categories.id`,
+and (2) an implicit many-to-many path through the `recipe_categories`
+bridge table (which itself has a direct FK to both `recipes` and
+`categories`). Any `.from('recipes').select('..., categories(...)')` (or
+any nested embed reaching `categories` from `recipes` the same way,
+including through `recipe_shares`/`recipe_access_grants` wrapping a
+`recipes` embed) without an explicit FK hint is genuinely ambiguous to
+PostgREST, which is exactly what produces `PGRST201`
+("Could not embed because more than one relationship was found"). No other
+table pair in this schema has this problem: `products`↔`categories`,
+`recipe_ingredients`↔`products`, and `recipe_categories`↔`categories`/
+`recipes` each have exactly one direct FK connecting them (no bridge table
+provides a second path), so those embeds were never actually ambiguous —
+but `catalog.js` now names an explicit FK hint on every one of them anyway,
+both for consistency and as a hedge against a future second FK silently
+reintroducing this same class of bug elsewhere.
+
+**Real FK constraint names**, verified by standing up a from-scratch local
+Postgres 16 instance (`supabase/tests/000_local_harness.sql` +
+`supabase/schema.sql` + 002 + 004 + 005 + 006 + 007) and querying
+`pg_constraint` directly (`select conname, conrelid::regclass,
+confrelid::regclass from pg_constraint where contype='f' and
+connamespace='public'::regnamespace order by 1;`) rather than assuming
+Postgres' default `<table>_<column>_fkey` naming — they matched exactly,
+but this was verified, not assumed:
+- `recipes_category_id_fkey` (recipes.category_id -> categories.id) — the
+  direct path in the ambiguous pair above.
+- `recipe_categories_category_id_fkey` (recipe_categories.category_id ->
+  categories.id) and `recipe_categories_recipe_id_fkey`
+  (recipe_categories.recipe_id -> recipes.id) — together the bridge-table
+  path in the same ambiguous pair.
+- `products_category_id_fkey` (products.category_id -> categories.id).
+- `recipe_ingredients_product_id_fkey` (recipe_ingredients.product_id ->
+  products.id) and `recipe_ingredients_recipe_id_fkey`
+  (recipe_ingredients.recipe_id -> recipes.id).
+
+**Fix:** every embed of `categories`/`products` in `catalog.js` now uses
+explicit `!<constraint_name>` FK-hint syntax (e.g.
+`category:categories!recipes_category_id_fkey(id, name)`), factored into a
+small set of exported shared select-string constants
+(`PRODUCT_WITH_CATEGORY_SELECT`, `RECIPE_WITH_CATEGORY_SELECT`,
+`RECIPE_DETAIL_WITH_CATEGORY_SELECT`, `RECIPE_INGREDIENT_DETAIL_SELECT`,
+`RECIPE_SECTION_DETAIL_SELECT`, `RECIPE_SECTION_SLUG_SELECT`) so every
+caller (personal recipes/products load, public catalog load, shared
+library, recipe detail, admin catalog load, `find_similar_site_items`-style
+lookups) shares one definition instead of each hand-rolling its own shape.
+All embeds keep ordinary left-join semantics (never `!inner`), so a recipe
+with zero `recipe_categories` rows or zero `recipe_ingredients` rows is
+still returned, never silently dropped. A Vitest regression test
+(`tests/js/catalog.test.js`) scans these exported constants' actual string
+literals for any bare (un-hinted) `categories(`/`products(` embed, so a
+future edit that reintroduces an un-hinted embed fails CI instead of
+shipping a new PGRST201.
+
+**Bug: missing default catalog data.** Confirmed root cause: the app's
+"default catalog" (63 products, 28 recipes, their categories, ingredients
+and section tags) existed ONLY in `data.js`'s `DEFAULT_PRODUCTS`/
+`DEFAULT_RECIPES` arrays, read into `App`'s initial state in `app.js`
+(optionally overridden by whatever a given browser's `localStorage`
+happened to already contain — see `LS_KEYS.products`/`LS_KEYS.recipes` in
+`data.js`). `loadPublicCatalog()` only falls back to this local data on an
+actual Supabase fetch *error*; against a real, working, but genuinely EMPTY
+`scope='site'` catalog (e.g. a freshly-provisioned Supabase project with
+004-007 applied and nothing ever published through the admin UI or the
+change-request workflow), the fetch succeeds and simply returns zero rows,
+so Home/Search render empty instead of the "63 products / 28 recipes"
+experience the app was designed to ship with. Fixed by
+`supabase/008_seed_default_catalog.sql` (see section 2 below), which
+inserts that same content into Supabase as `scope='site'` rows once, so
+every browser sees the same default catalog from Supabase regardless of
+its own `localStorage` state.
+
+**Is clearing `localStorage`/browser cache safe now?** Yes. Once 008 has
+been run, the default catalog is served entirely from Supabase
+(`scope='site'`) via `loadPublicCatalog()`, exactly like any
+admin-authored or change-request-approved public content — nothing about
+rendering it depends on `localStorage` or `data.js`'s arrays anymore. A
+user's `localStorage` still holds their own local-only state (favorites,
+dark mode preference, hidden recipes, etc. — see `LS_KEYS` in `data.js`),
+which clearing will reset, but never the catalog content itself. `data.js`'s
+`DEFAULT_PRODUCTS`/`DEFAULT_RECIPES` remain in the codebase solely as the
+error-path fallback in `loadPublicCatalog()` (shown with an explicit
+"demo-fallback" banner, never silently) and as the one-time source this
+migration was generated from — the running app no longer depends on them
+for its normal, working state.
+
+## PR 3: bug fixes + change_requests — root cause writeup
 
 Three bugs were reported against the "Modo de Criação" PR. All three were
 reproduced by reading the actual code path (not just re-diagnosed) and
@@ -124,6 +214,31 @@ Editor. Each is idempotent (safe to re-run). Do **not** run
    approval RPC creates public catalog rows the same way direct admin
    authoring does). Brand new tables — does not alter any existing table's
    data or policies.
+7. `supabase/008_seed_default_catalog.sql` — **new in this PR, the only
+   migration staging does not already have.** Staging already has
+   002/004/005/006/007 applied (per this section, run previously); 008 is
+   the single new file to run, in the SQL Editor, after confirming 007 is
+   already applied. Seeds the app's built-in default catalog (22
+   categories — 10 `proteina`/6 `receita`/6 `secao` —, 63 products, 28
+   recipes, 153 `recipe_ingredients` rows, 59 `recipe_categories`/section-tag
+   rows) as `scope='site'` rows, carried over verbatim from `data.js`'s
+   `DEFAULT_PRODUCTS`/`DEFAULT_RECIPES`/`CATEGORIAS_PRODUTO`/
+   `CATEGORIAS_RECEITA`/`SECTION_DEFS`. Idempotent and safe to re-run: it
+   adds a nullable `seed_key` column to `categories`/`products` (partial
+   `UNIQUE` index scoped to `scope='site'`) and reuses the existing nullable
+   `recipes.legacy_id` column (confirmed unused by 005/006/007 before
+   reusing it here) as recipes' seed identity key, and every insert is
+   guarded by `WHERE NOT EXISTS (... seed_key/legacy_id ...)` — re-running
+   it inserts zero additional rows and never touches any pre-existing
+   `scope='site'` row, including one that happens to share a seed row's
+   *name* (name is never the dedup key). Never touches `scope='personal'`
+   rows. Depends on 004 (tables), 006 (`recipes_site_not_private_ck` and
+   the `published_at` trigger — every seeded recipe is inserted
+   `status='published'` and gets `published_at` stamped by that trigger,
+   never supplied directly by this file) and 007 being applied first, same
+   as the rest of this list. `category_code`/`product_code`/`recipe_code`
+   (`YCT-`/`YPR-`/`YCR-`) are always generated by 004's existing triggers,
+   never supplied by this file.
 
 Do **not** run `supabase/003_profiles_display_name_phase2_not_null.sql`
 yet — see "Phase 2 checkpoint" below. It refuses to run early on its own
@@ -198,6 +313,22 @@ pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/002_catalog_sc
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/003_creation_mode_sharing.pg.sql
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/004_admin_catalog_publishing.pg.sql
 pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/005_change_requests.pg.sql
+
+# supabase/tests/006_seed_default_catalog.pg.sql applies 008 itself (twice,
+# for its own idempotency proof) as part of the test, against a database
+# that does NOT yet have 008 applied — run it separately, after the five
+# pg_prove calls above, not folded into the same yourcipe_test run as them
+# unless you rebuild the database fresh first (008 is not idempotent to
+# call more than once in the exact same way 001-005 assume a pristine
+# scope='site' table set — see the file's own header comment):
+pg_prove -h localhost -U postgres -d yourcipe_test supabase/tests/006_seed_default_catalog.pg.sql
+
+# Idempotency re-check, run once more standalone against the same,
+# already-seeded database, outside pgTAP entirely:
+psql -U postgres -h localhost -d yourcipe_test -v ON_ERROR_STOP=1 -f supabase/008_seed_default_catalog.sql
+# -> every INSERT reports 0 rows added; counts of scope='site' rows with a
+#    non-null seed_key/legacy_id are unchanged (22 categories / 63 products
+#    / 28 recipes / 153 recipe_ingredients / 59 recipe_categories).
 ```
 
 `supabase/tests/004_admin_catalog_publishing.pg.sql` (20 assertions) covers:
@@ -224,6 +355,28 @@ partial writes.
 All 5 files together: **157 pgTAP assertions passing** locally against
 Postgres 16 + pgTAP, with no cross-file interference (each wraps its own
 fixtures in `begin;...rollback;`).
+
+`supabase/tests/006_seed_default_catalog.pg.sql` (34 assertions, all
+passing) covers `supabase/008_seed_default_catalog.sql`: runs against
+empty `scope='site'` catalog tables, seeds exactly 22 categories (10
+`proteina`/6 `receita`/6 `secao`), 63 products, 28 recipes, 153
+`recipe_ingredients` rows and 59 `recipe_categories` (section-tag) rows —
+every one of those counts derived from `data.js`'s actual arrays, not
+guessed — running the migration file a second time adds zero additional
+rows of any kind, every seeded row is `scope='site'`/`owner_id is null`
+(and `active=true` for categories/products, `status='published'` +
+`published_at is not null` for recipes), the `featured` flag is preserved
+for exactly the 11 recipes tagged `'destaque'` in `data.js`, a recipe's
+ingredients/section tags and their original sort order survive intact,
+every row gets a well-formed `YCT-####`/`YPR-####`/`YCR-####` code, and a
+pre-existing, manually-inserted admin category/product/recipe that
+collides by *name* with a seed row (see the file's header comment for why
+the colliding category fixture uses a different `type` than its seeded
+counterpart — `categories_site_slug_uk` from 004 would otherwise reject two
+`scope='site'` categories of the *same* type sharing a slug outright) is
+left completely untouched by the migration, existing side by side with the
+migration's own separately-seeded row. All 6 pgTAP files together:
+**191 assertions passing.**
 
 `supabase/tests/003_creation_mode_sharing.pg.sql` (44 assertions, all
 passing against local Postgres 16 + pgTAP) covers: isolation before

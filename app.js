@@ -175,6 +175,12 @@ class App extends Component {
       // ---- Modo de Criação: personal recipes/products/categories (Supabase-backed) ----
       myCreationLoading: false, myCreationError: '',
       myCategories: [], myProducts: [], myRecipes: [], sharedLibrary: [],
+      // Public (scope='site', active=true) categories/products, loaded
+      // alongside the caller's own personal rows so every category/product
+      // picker in "Modo de Criação" can offer "public active UNION my own
+      // active", per type — never only the caller's own rows, and never
+      // requiring the caller to have created anything of their own first.
+      pickerPublicCategories: [], pickerPublicProducts: [],
       showMyCategoryForm: false, myCategoryFormMode: 'new', myCategoryForm: null,
       showMyProductForm: false, myProductFormMode: 'new', myProductForm: null,
       showMyRecipeForm: false, myRecipeFormMode: 'new', myRecipeForm: null,
@@ -786,9 +792,23 @@ class App extends Component {
   flashAdmin = (msg) => { this.setState({ adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 4000); };
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
 
-  myRecipeCategories = () => this.state.myCategories.filter(c => c.type === 'receita');
-  mySectionCategories = () => this.state.myCategories.filter(c => c.type === 'secao');
-  myProteinCategories = () => this.state.myCategories.filter(c => c.type === 'proteina');
+  // Category/product pickers for personal recipe/product forms show public
+  // (scope='site', active=true) rows UNION the caller's own active personal
+  // rows of the matching type — never another user's personal rows
+  // (pickerPublicCategories/pickerPublicProducts only ever contain
+  // scope='site' rows, per fetchPublicCategories/fetchPublicProducts'
+  // RLS-backed filters; this.state.myCategories/myProducts only ever
+  // contain the caller's own rows, per fetchMyCategories/fetchMyProducts'
+  // owner_id filter) — and never require the caller to have created their
+  // own category/product first.
+  pickerCategoriesByType = (type) => [
+    ...this.state.pickerPublicCategories.filter(c => c.type === type),
+    ...this.state.myCategories.filter(c => c.type === type),
+  ];
+  myRecipeCategories = () => this.pickerCategoriesByType('receita');
+  mySectionCategories = () => this.pickerCategoriesByType('secao');
+  myProteinCategories = () => this.pickerCategoriesByType('proteina');
+  pickerProducts = () => [...this.state.pickerPublicProducts, ...this.state.myProducts];
 
   // ---- Modo de Criação: load "Minhas Receitas / Meus Produtos / Minhas
   // Categorias" + the shared-with-me library, all scoped to the caller's own
@@ -811,10 +831,16 @@ class App extends Component {
   loadMyCreationData = async (uid) => {
     if (!uid) return;
     this.setState({ myCreationLoading: true, myCreationError: '' });
-    const [cats, prods, recs, shared] = await Promise.all([
+    const [cats, prods, recs, shared, publicCats, publicProds] = await Promise.all([
       catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid), catalog.fetchSharedLibrary(uid),
+      // Public (scope='site', active=true) categories/products — every
+      // category/product picker below unions these with the caller's own
+      // personal rows, so pickers work immediately from a freshly-seeded
+      // catalog (supabase/008_seed_default_catalog.sql) with no dependency
+      // on the caller having created anything personal first.
+      catalog.fetchPublicCategories(), catalog.fetchPublicProducts(),
     ]);
-    const failed = cats.error || prods.error || recs.error || shared.error;
+    const failed = cats.error || prods.error || recs.error || shared.error || publicCats.error || publicProds.error;
     if (failed) {
       // catalog.js already logged the full { code, message, details, hint }
       // to the console (see logSupabaseError) — this is the same real
@@ -829,6 +855,7 @@ class App extends Component {
       myCreationLoading: false,
       myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
       sharedLibrary: (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at })),
+      pickerPublicCategories: publicCats.data || [], pickerPublicProducts: publicProds.data || [],
     });
   };
 
@@ -873,7 +900,7 @@ class App extends Component {
     myRecipeForm: {
       id: null, name: '', categoryId: (this.myRecipeCategories()[0] && this.myRecipeCategories()[0].id) || '',
       prepTime: 30, servings: 4, difficulty: 'Fácil', imageUrl: '',
-      ingredients: [{ productId: this.state.myProducts[0] ? this.state.myProducts[0].id : '', quantity: 1 }],
+      ingredients: [{ productId: this.pickerProducts()[0] ? this.pickerProducts()[0].id : '', quantity: 1 }],
       sectionCategoryIds: [], extrasText: '', instructionsText: '', tipsText: '',
     },
   });
@@ -899,7 +926,7 @@ class App extends Component {
   onCancelMyRecipeForm = () => this.setState({ showMyRecipeForm: false, myRecipeForm: null, myFormError: '' });
   myRecipeFormField = (field) => (e) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, [field]: e.target.value } }));
   onMyRecipeIngredientChange = (idx, field, value) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.map((row, i) => i === idx ? { ...row, [field]: value } : row) } }));
-  addMyRecipeIngredient = () => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: [...s.myRecipeForm.ingredients, { productId: this.state.myProducts[0] ? this.state.myProducts[0].id : '', quantity: 1 }] } }));
+  addMyRecipeIngredient = () => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: [...s.myRecipeForm.ingredients, { productId: this.pickerProducts()[0] ? this.pickerProducts()[0].id : '', quantity: 1 }] } }));
   removeMyRecipeIngredient = (idx) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.filter((_, i) => i !== idx) } }));
   toggleMyRecipeSection = (categoryId) => this.setState(s => {
     const cur = s.myRecipeForm.sectionCategoryIds;
@@ -2259,7 +2286,7 @@ class App extends Component {
       checked: !!(s.myRecipeForm && s.myRecipeForm.sectionCategoryIds.includes(c.id)),
       onToggle: () => this.toggleMyRecipeSection(c.id),
     }));
-    const myProductOptionsForIngredients = s.myProducts.map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
+    const myProductOptionsForIngredients = this.pickerProducts().map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
     const myRecipeIngredientRows = s.myRecipeForm ? s.myRecipeForm.ingredients.map((row, idx) => ({
       idx, productId: row.productId, quantity: row.quantity,
       onProductSet: (v) => this.onMyRecipeIngredientChange(idx, 'productId', v),

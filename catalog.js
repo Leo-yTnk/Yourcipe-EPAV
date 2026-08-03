@@ -19,6 +19,60 @@ const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, version, created_at, updated_at';
 const CATEGORY_SELECT = 'id, category_code, owner_id, scope, type, name, slug, sort_order, active, version';
 
+// ---------------------------------------------------------------------
+// Shared, FK-hinted embed selects.
+//
+// `recipes` and `categories` have TWO relationship paths PostgREST can see:
+// (1) the direct FK recipes.category_id -> categories.id
+//     (constraint `recipes_category_id_fkey`), and
+// (2) an implicit many-to-many path via the `recipe_categories` bridge
+//     table (constraints `recipe_categories_recipe_id_fkey` and
+//     `recipe_categories_category_id_fkey`).
+// Any `.from('recipes').select('..., categories(...)')` without an explicit
+// FK hint is therefore genuinely ambiguous to PostgREST's embedding
+// resolver, which is exactly what produces `PGRST201` ("Could not embed
+// because more than one relationship was found"). The fix is always the
+// same shape: `categories!<constraint_name>(...)`.
+//
+// `products`/`recipe_ingredients`/`recipe_categories` each only have a
+// single direct FK to `categories`/`products`/`recipes` respectively (no
+// bridge table connects them a second way), so those embeds are not
+// actually ambiguous today — but every embed below still names its FK
+// constraint explicitly anyway, both for symmetry/readability and as a
+// hedge against a *future* schema change (e.g. a second FK) silently
+// reintroducing PGRST201 somewhere. Every FK name here was verified against
+// `pg_constraint` on a from-scratch local Postgres 16 instance with
+// schema.sql + 002 + 004 + 005 + 006 + 007 applied (see supabase/STAGING.md).
+//
+// All embeds use ordinary left-join semantics (never `!inner`) so a recipe
+// with zero `recipe_categories` rows or zero `recipe_ingredients` rows is
+// still returned by every query below — never silently dropped.
+//
+// Every caller that needs one of these shapes uses the constant exported
+// here instead of hand-rolling its own select string, so there is exactly
+// one place to fix if a shape or FK hint ever needs to change.
+// ---------------------------------------------------------------------
+const CATEGORY_MINI_SELECT = 'id, name';
+const CATEGORY_DETAIL_SELECT = 'id, name, type, owner_id, scope, active';
+
+export const PRODUCT_WITH_CATEGORY_SELECT =
+  `${PRODUCT_SELECT}, category:categories!products_category_id_fkey(${CATEGORY_MINI_SELECT})`;
+
+export const RECIPE_WITH_CATEGORY_SELECT =
+  `${RECIPE_SELECT}, category:categories!recipes_category_id_fkey(${CATEGORY_MINI_SELECT})`;
+
+export const RECIPE_DETAIL_WITH_CATEGORY_SELECT =
+  `${RECIPE_SELECT}, category:categories!recipes_category_id_fkey(${CATEGORY_DETAIL_SELECT})`;
+
+export const RECIPE_INGREDIENT_DETAIL_SELECT =
+  `id, product_id, quantity, sort_order, product:products!recipe_ingredients_product_id_fkey(${PRODUCT_SELECT}, category:categories!products_category_id_fkey(${CATEGORY_MINI_SELECT}))`;
+
+export const RECIPE_SECTION_DETAIL_SELECT =
+  `category_id, sort_order, category:categories!recipe_categories_category_id_fkey(${CATEGORY_DETAIL_SELECT})`;
+
+export const RECIPE_SECTION_SLUG_SELECT =
+  `recipe_id, category:categories!recipe_categories_category_id_fkey(slug)`;
+
 // Every failed Supabase call is logged here with its real code/message/
 // details/hint (never only a generic string) and returns a normalized
 // `{ error: { code, message, details, hint, operation } }` so the UI can
@@ -57,7 +111,7 @@ export async function deleteCategory(id) {
 
 // ---- Products (personal) ----
 export async function fetchMyProducts(userId) {
-  return unwrap(await supabase.from('products').select(`${PRODUCT_SELECT}, category:categories(id, name)`).eq('owner_id', userId).eq('scope', 'personal').order('name'), 'fetchMyProducts');
+  return unwrap(await supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('owner_id', userId).eq('scope', 'personal').order('name'), 'fetchMyProducts');
 }
 export async function createProduct(ownerId, { name, categoryId, unit, price }) {
   return unwrap(await supabase.from('products').insert({ owner_id: ownerId, scope: 'personal', name, category_id: categoryId, unit, price }).select(PRODUCT_SELECT).single(), 'createProduct');
@@ -71,7 +125,7 @@ export async function deleteProduct(id) {
 
 // ---- Recipes (personal): list + full detail ----
 export async function fetchMyRecipes(userId) {
-  return unwrap(await supabase.from('recipes').select(`${RECIPE_SELECT}, category:categories(id, name)`).eq('owner_id', userId).eq('scope', 'personal').order('name'), 'fetchMyRecipes');
+  return unwrap(await supabase.from('recipes').select(RECIPE_WITH_CATEGORY_SELECT).eq('owner_id', userId).eq('scope', 'personal').order('name'), 'fetchMyRecipes');
 }
 
 // Recipes the caller has active read-only access to via a share (their
@@ -79,18 +133,18 @@ export async function fetchMyRecipes(userId) {
 export async function fetchSharedLibrary(userId) {
   return unwrap(await supabase
     .from('recipe_access_grants')
-    .select(`granted_at, recipe:recipes(${RECIPE_SELECT}, category:categories(id, name))`)
+    .select(`granted_at, recipe:recipes(${RECIPE_WITH_CATEGORY_SELECT})`)
     .eq('grantee_id', userId)
     .is('revoked_at', null)
     .order('granted_at', { ascending: false }), 'fetchSharedLibrary');
 }
 
 export async function fetchRecipeDetail(recipeId) {
-  const { data: recipe, error: recipeError } = await supabase.from('recipes').select(`${RECIPE_SELECT}, category:categories(id, name, type, owner_id, scope, active)`).eq('id', recipeId).single();
+  const { data: recipe, error: recipeError } = await supabase.from('recipes').select(RECIPE_DETAIL_WITH_CATEGORY_SELECT).eq('id', recipeId).single();
   if (recipeError) { logSupabaseError('fetchRecipeDetail:recipe', recipeError); return { error: { code: recipeError.code, message: recipeError.message, details: recipeError.details, hint: recipeError.hint, operation: 'fetchRecipeDetail' } }; }
   const [{ data: ingredients, error: ingError }, { data: sections, error: secError }] = await Promise.all([
-    supabase.from('recipe_ingredients').select(`id, product_id, quantity, sort_order, product:products(${PRODUCT_SELECT}, category:categories(id, name))`).eq('recipe_id', recipeId).order('sort_order'),
-    supabase.from('recipe_categories').select('category_id, sort_order, category:categories(id, name, type, owner_id, scope, active)').eq('recipe_id', recipeId).order('sort_order'),
+    supabase.from('recipe_ingredients').select(RECIPE_INGREDIENT_DETAIL_SELECT).eq('recipe_id', recipeId).order('sort_order'),
+    supabase.from('recipe_categories').select(RECIPE_SECTION_DETAIL_SELECT).eq('recipe_id', recipeId).order('sort_order'),
   ]);
   if (ingError) { logSupabaseError('fetchRecipeDetail:ingredients', ingError); return { error: { code: ingError.code, message: ingError.message, details: ingError.details, hint: ingError.hint, operation: 'fetchRecipeDetail' } }; }
   if (secError) { logSupabaseError('fetchRecipeDetail:sections', secError); return { error: { code: secError.code, message: secError.message, details: secError.details, hint: secError.hint, operation: 'fetchRecipeDetail' } }; }
@@ -218,10 +272,10 @@ export async function fetchPublicCategories() {
   return unwrap(await supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('name'), 'fetchPublicCategories');
 }
 export async function fetchPublicProducts() {
-  return unwrap(await supabase.from('products').select(`${PRODUCT_SELECT}, category:categories(id, name)`).eq('scope', 'site').eq('active', true).order('name'), 'fetchPublicProducts');
+  return unwrap(await supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('name'), 'fetchPublicProducts');
 }
 export async function fetchPublicRecipes() {
-  return unwrap(await supabase.from('recipes').select(`${RECIPE_SELECT}, category:categories(id, name)`).eq('scope', 'site').eq('status', 'published').order('name'), 'fetchPublicRecipes');
+  return unwrap(await supabase.from('recipes').select(RECIPE_WITH_CATEGORY_SELECT).eq('scope', 'site').eq('status', 'published').order('name'), 'fetchPublicRecipes');
 }
 // Bulk-fetch ingredients/section tags for a set of published recipe ids —
 // used to hydrate the full Home/Search catalog in two extra round trips
@@ -232,7 +286,7 @@ export async function fetchRecipeIngredientsBulk(recipeIds) {
 }
 export async function fetchRecipeSectionsBulk(recipeIds) {
   if (!recipeIds.length) return { data: [] };
-  return unwrap(await supabase.from('recipe_categories').select('recipe_id, category:categories(slug)').in('recipe_id', recipeIds), 'fetchRecipeSectionsBulk');
+  return unwrap(await supabase.from('recipe_categories').select(RECIPE_SECTION_SLUG_SELECT).in('recipe_id', recipeIds), 'fetchRecipeSectionsBulk');
 }
 
 // ---- Admin: full visibility into the public catalog (any status/active),
@@ -241,10 +295,10 @@ export async function fetchAdminCategories() {
   return unwrap(await supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').order('name'), 'fetchAdminCategories');
 }
 export async function fetchAdminProducts() {
-  return unwrap(await supabase.from('products').select(`${PRODUCT_SELECT}, category:categories(id, name)`).eq('scope', 'site').order('name'), 'fetchAdminProducts');
+  return unwrap(await supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('scope', 'site').order('name'), 'fetchAdminProducts');
 }
 export async function fetchAdminRecipes() {
-  return unwrap(await supabase.from('recipes').select(`${RECIPE_SELECT}, category:categories(id, name)`).eq('scope', 'site').order('name'), 'fetchAdminRecipes');
+  return unwrap(await supabase.from('recipes').select(RECIPE_WITH_CATEGORY_SELECT).eq('scope', 'site').order('name'), 'fetchAdminRecipes');
 }
 
 // ---- Admin: direct catalog authoring (scope='site', owner_id=NULL) ----
