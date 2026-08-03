@@ -35,6 +35,8 @@ export function renderApp(app) {
         ${v.showImportModal && renderImportModal(app, v)}
         ${v.showLoginModal && renderLoginModal(app, v)}
         ${v.showSignupModal && renderSignupModal(app, v)}
+        ${v.showCompleteProfileModal && renderCompleteProfileModal(app, v)}
+        ${v.showChangeNameModal && renderChangeNameModal(app, v)}
         ${v.showSplash && renderSplash(app, v)}
       </div>
     </div>
@@ -473,7 +475,7 @@ function renderProfile(app, v) {
         <div style="display:flex;align-items:center;gap:20px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:24px;box-shadow:var(--shadow-sm)">
           <div style="width:72px;height:72px;border-radius:var(--radius-full);background:var(--brand-700);color:#F4F2F1;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex-shrink:0">${v.profileInitial}</div>
           <div style="flex:1">
-            <div style="font-size:22px;font-weight:700">${v.profile.nome}</div>
+            <div style="font-size:22px;font-weight:700">${v.authDisplayName || 'Visitante'}</div>
             <div style="font-size:14px;color:var(--neutral-600);margin-top:4px">${v.profile.cargo} · ${v.profile.idade} anos · ${v.profile.genero}</div>
             <div style="font-size:13px;color:var(--brand-700);font-weight:600;margin-top:8px">${v.favoritesCount} receitas favoritas</div>
           </div>
@@ -546,11 +548,14 @@ function renderProfile(app, v) {
           <div style="display:flex;align-items:center;gap:14px">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><path d="M16 17l5-5-5-5M21 12H9M13 21H7a2 2 0 01-2-2V5a2 2 0 012-2h6"></path></svg>
             <div>
-              <div style="font-size:16px;font-weight:600">Conta Conectada</div>
+              <div style="font-size:16px;font-weight:600">${v.authDisplayName || 'Conta Conectada'}</div>
               <div style="font-size:13px;color:var(--neutral-600)">${v.connectedCredentialLabel}</div>
             </div>
           </div>
-          <div onClick=${v.onLogout} style="font-size:13px;font-weight:700;color:var(--red-600);cursor:pointer;border:1.5px solid var(--red-600);padding:8px 14px;border-radius:var(--radius-full)">Sair</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div onClick=${v.onOpenChangeNameModal} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-700);padding:8px 14px;border-radius:var(--radius-full)">Editar nome</div>
+            <div onClick=${v.onLogout} style="font-size:13px;font-weight:700;color:var(--red-600);cursor:pointer;border:1.5px solid var(--red-600);padding:8px 14px;border-radius:var(--radius-full)">Sair</div>
+          </div>
         </div>
       `}
     </div>
@@ -689,7 +694,6 @@ function renderProfileSetupModal(app, v) {
         <div style="font-size:22px;font-weight:700;margin-bottom:6px">Bem-vindo ao Yourcipe</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:24px">Conte um pouco sobre você para personalizar sua experiência.</div>
         <div style="display:flex;flex-direction:column;gap:14px">
-          <input type="text" placeholder="Nome" value=${f.nome} onInput=${v.onProfileNomeChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
           <input type="number" placeholder="Idade" value=${f.idade} onInput=${v.onProfileIdadeChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
           <${CustomSelect} options=${v.generoOptions} value=${f.genero} onChange=${v.onProfileGeneroSet} />
           <input type="text" placeholder="Cargo (ex: Dono de Açougue, Chef, Comprador)" value=${f.cargo} onInput=${v.onProfileCargoChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
@@ -733,8 +737,10 @@ function renderSignupModal(app, v) {
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         ${!v.signupResult ? html`
           <div style="font-size:22px;font-weight:700;margin-bottom:6px">Criar Credencial</div>
-          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Defina uma senha. Sua credencial de acesso é gerada automaticamente.</div>
+          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Informe seu nome e defina uma senha. Sua credencial de acesso é gerada automaticamente.</div>
           <div style="display:flex;flex-direction:column;gap:14px">
+            <input type="text" placeholder="Nome" autocomplete="name" value=${v.signupDisplayName} onInput=${v.onSignupDisplayNameChange} style=${AUTH_INPUT_STYLE}/>
+            <div style="font-size:12px;color:var(--neutral-600);margin-top:-8px">Seu nome será exibido ao administrador quando você enviar solicitações — não usamos seu e-mail para isso.</div>
             <input type="password" placeholder="Senha" autocomplete="new-password" value=${v.signupPassword} onInput=${v.onSignupPasswordChange} style=${AUTH_INPUT_STYLE}/>
             <input type="password" placeholder="Confirmar senha" autocomplete="new-password" value=${v.signupConfirmPassword} onInput=${v.onSignupConfirmChange} style=${AUTH_INPUT_STYLE}/>
             ${v.showSignupTurnstileLoading && html`<div style="font-size:12px;color:var(--neutral-600)">Carregando verificação de segurança...</div>`}
@@ -754,6 +760,49 @@ function renderSignupModal(app, v) {
           <div style="background:rgba(207,176,23,0.14);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:14px 16px;font-size:13px;font-weight:600;line-height:1.5;margin-bottom:20px">Guarde sua credencial e sua senha. Sem elas, não será possível recuperar o acesso.</div>
           <div onClick=${v.onFinishSignup} style="text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Concluir</div>
         `}
+      </div>
+    </div>
+  `;
+}
+
+// Legacy accounts created before display_name existed (see
+// supabase/002_profiles_display_name_phase1.sql) are routed here right
+// after their session resolves — no Cancelar/close action on purpose: the
+// account must complete its profile before continuing to use the app.
+function renderCompleteProfileModal(app, v) {
+  const submitStyle = `text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitCompleteProfile ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:22px;font-weight:700;margin-bottom:6px">Complete seu perfil</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Sua conta ainda não tem um nome cadastrado. Informe seu nome para continuar — ele será exibido ao administrador quando você enviar solicitações.</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <input type="text" placeholder="Nome" autocomplete="name" value=${v.completeProfileName} onInput=${v.onCompleteProfileNameChange} style=${AUTH_INPUT_STYLE}/>
+          ${v.hasCompleteProfileError && html`<div style="font-size:13px;color:var(--red-600);font-weight:600">${v.completeProfileError}</div>`}
+        </div>
+        <div onClick=${v.canSubmitCompleteProfile ? v.onCompleteProfileSubmit : null} style=${`margin-top:22px;${submitStyle}`}>${v.completeProfileSubmitting ? 'Salvando...' : 'Salvar e continuar'}</div>
+      </div>
+    </div>
+  `;
+}
+
+// Self-service rename (point 6 of the plan) — same validation as signup,
+// enforced again server-side by trg_validate_display_name_on_update.
+function renderChangeNameModal(app, v) {
+  const submitStyle = `flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitChangeName ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="font-size:22px;font-weight:700;margin-bottom:6px">Alterar nome</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Este nome é usado para identificação — inclusive nas solicitações que você enviar ao administrador.</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <input type="text" placeholder="Nome" autocomplete="name" value=${v.changeNameValue} onInput=${v.onChangeNameValueChange} style=${AUTH_INPUT_STYLE}/>
+          ${v.hasChangeNameError && html`<div style="font-size:13px;color:var(--red-600);font-weight:600">${v.changeNameError}</div>`}
+        </div>
+        <div style="display:flex;gap:10px;margin-top:22px">
+          <div onClick=${v.onCloseChangeNameModal} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.canSubmitChangeName ? v.onChangeNameSubmit : null} style=${submitStyle}>${v.changeNameSubmitting ? 'Salvando...' : 'Salvar'}</div>
+        </div>
       </div>
     </div>
   `;

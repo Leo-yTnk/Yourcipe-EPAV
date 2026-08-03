@@ -7,8 +7,9 @@ import {
 } from './data.js';
 import { generateCredential, normalizeCredential } from './credential.js';
 import { supabase } from './supabase-client.js';
-import { signUpAttempt, signInWithCredential, fetchProfileRole, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js';
 import { runSignupRetryLoop } from './signup-retry.js';
+import { normalizeDisplayName } from './display-name.js';
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAAED4OOkYJr1mKBgo';
 const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente novamente.';
@@ -103,7 +104,7 @@ class App extends Component {
       },
       indicatorsUpdatedAt: Date.now(),
       showProfileSetup: false,
-      profileForm: { nome: '', idade: '', genero: 'Prefiro não informar', cargo: '' },
+      profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' },
       searchQuery: '',
       activeFilter: 'Todas',
       selectedRecipeId: null,
@@ -136,12 +137,25 @@ class App extends Component {
       adminFlash: '',
       session: null,
       authRole: null,
+      authDisplayName: null,
       adminDeniedFlash: '',
       showLoginModal: false,
       loginCredential: '', loginPassword: '', loginError: '', loginSubmitting: false, loginTurnstileToken: '', loginTurnstileReady: false,
       showSignupModal: false,
+      signupDisplayName: '',
       signupPassword: '', signupConfirmPassword: '', signupError: '', signupSubmitting: false, signupTurnstileToken: '', signupTurnstileReady: false,
       signupResult: null, credentialCopied: false,
+      // Legacy accounts created before display_name existed (see
+      // supabase/002_profiles_display_name_phase1.sql) have authDisplayName
+      // = null. This modal is shown right after session resolution (fresh
+      // login/signup, or session restore on reload) whenever that's true,
+      // and cannot be dismissed without submitting a valid name — it is the
+      // "complete your profile at next login" side of the phased migration.
+      showCompleteProfileModal: false,
+      completeProfileName: '', completeProfileError: '', completeProfileSubmitting: false,
+      // Self-service rename (point 6): change my own display_name.
+      showChangeNameModal: false,
+      changeNameValue: '', changeNameError: '', changeNameSubmitting: false,
     };
   })();
 
@@ -182,15 +196,30 @@ class App extends Component {
     if (this._authSub) this._authSub.data.subscription.unsubscribe();
   }
 
+  // Shared by initial session resolution and every future auth state change
+  // (fresh login, fresh signup, session restored on reload). Whenever a
+  // session resolves to a profile with no display_name — a legacy account
+  // created before supabase/002_profiles_display_name_phase1.sql, or the
+  // brief nullable-migration window — this is the "direcionar para concluir
+  // o perfil no próximo login" gate: the modal cannot be dismissed without
+  // submitting a valid name (see renderCompleteProfileModal/
+  // onCompleteProfileSubmit).
+  applySessionProfile = (session, profile) => {
+    this.setState({ session, authRole: profile.role, authDisplayName: profile.displayName });
+    if (session && !profile.displayName) {
+      this.setState({ showCompleteProfileModal: true, completeProfileName: '', completeProfileError: '' });
+    }
+  };
+
   initAuth = async () => {
     const { data } = await supabase.auth.getSession();
     const session = data.session || null;
-    const authRole = session ? await fetchProfileRole(session.user.id) : null;
-    this.setState({ session, authRole });
+    const profile = session ? await fetchProfile(session.user.id) : { role: null, displayName: null };
+    this.applySessionProfile(session, profile);
     this._authSub = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!session) { this.setState({ session: null, authRole: null }); return; }
-      const authRole = await fetchProfileRole(session.user.id);
-      this.setState({ session, authRole });
+      if (!session) { this.setState({ session: null, authRole: null, authDisplayName: null }); return; }
+      const profile = await fetchProfile(session.user.id);
+      this.applySessionProfile(session, profile);
     });
   };
   updateDeviceMode = (w, h) => {
@@ -372,7 +401,7 @@ class App extends Component {
 
   onSplashContinue = () => {
     this.setState({ showSplash: false });
-    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { nome: '', idade: '', genero: 'Prefiro não informar', cargo: '' } });
+    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' } });
   };
   goHome = () => { this.animateTo('home'); this.setState({ screen: 'home' }); };
   goSearch = () => { this.animateTo('search'); this.setState({ screen: 'search' }); };
@@ -382,7 +411,7 @@ class App extends Component {
   goProfile = () => {
     this.animateTo('profile');
     this.setState({ screen: 'profile' });
-    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { nome: '', idade: '', genero: 'Prefiro não informar', cargo: '' } });
+    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' } });
   };
 
   selectRecipe = (id) => { this.animateTo('detail'); this.setState({ screen: 'detail', selectedRecipeId: id }); };
@@ -402,7 +431,6 @@ class App extends Component {
   onSearchChange = (e) => this.setState({ searchQuery: e.target.value });
   setFilter = (cat) => this.setState({ activeFilter: cat });
 
-  onProfileNomeChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, nome: e.target.value } }));
   onProfileIdadeChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, idade: e.target.value } }));
   onProfileCargoChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, cargo: e.target.value } }));
   onEditProfile = () => this.setState({ showProfileSetup: true, profileForm: { ...this.state.profile } });
@@ -551,20 +579,27 @@ class App extends Component {
       this.setState({ loginSubmitting: false, loginError: AUTH_GENERIC_ERROR, loginPassword: '' });
       return;
     }
-    const authRole = await fetchProfileRole(result.user.id);
-    this.setState({ loginSubmitting: false, showLoginModal: false, session: result.session, authRole, loginCredential: '', loginPassword: '' });
-    if (authRole === 'admin') { this.animateTo('admin'); this.setState({ screen: 'admin' }); }
+    const profile = await fetchProfile(result.user.id);
+    this.applySessionProfile(result.session, profile);
+    this.setState({ loginSubmitting: false, showLoginModal: false, loginCredential: '', loginPassword: '' });
+    if (profile.role === 'admin') { this.animateTo('admin'); this.setState({ screen: 'admin' }); }
     else {
       this.setState({ adminDeniedFlash: 'Esta credencial não possui acesso administrativo.' });
       setTimeout(() => this.setState({ adminDeniedFlash: '' }), 4000);
     }
   };
 
+  onSignupDisplayNameChange = (e) => this.setState({ signupDisplayName: e.target.value });
   onSignupPasswordChange = (e) => this.setState({ signupPassword: e.target.value });
   onSignupConfirmChange = (e) => this.setState({ signupConfirmPassword: e.target.value });
   onSignupSubmit = async () => {
-    const { signupPassword, signupConfirmPassword, signupTurnstileToken, signupSubmitting } = this.state;
+    const { signupDisplayName, signupPassword, signupConfirmPassword, signupTurnstileToken, signupSubmitting } = this.state;
     if (signupSubmitting) return;
+    // Client-side check only, for immediate feedback — supabase/002_...sql's
+    // handle_new_user() trigger re-validates independently and is what
+    // actually enforces this; see display-name.js.
+    const cleanName = normalizeDisplayName(signupDisplayName);
+    if (!cleanName) { this.setState({ signupError: 'Informe um nome entre 2 e 80 caracteres.' }); return; }
     if (!signupTurnstileToken) { this.setState({ signupError: 'Confirme o CAPTCHA para continuar.' }); return; }
     if (!signupPassword || signupPassword.length < 6) { this.setState({ signupError: 'A senha deve ter pelo menos 6 caracteres.' }); return; }
     if (signupPassword !== signupConfirmPassword) { this.setState({ signupError: 'As senhas não coincidem.' }); return; }
@@ -574,7 +609,12 @@ class App extends Component {
       initialToken: signupTurnstileToken,
       maxAttempts: MAX_SIGNUP_ATTEMPTS,
       generateCredential,
-      attemptSignUp: (credential, token) => signUpAttempt(signupPassword, token, credential),
+      // cleanName is bound once here and sent identically on every retry
+      // attempt — a fresh credential and a fresh Turnstile token per
+      // attempt, but the same password and the same display_name every
+      // time. See auth.js signUpAttempt for why a retry can never end up
+      // creating a profile with a different (or missing) name.
+      attemptSignUp: (credential, token) => signUpAttempt(signupPassword, token, credential, cleanName),
       requestFreshToken: () => this.requestFreshTurnstileToken('signup'),
     });
     this.resetTurnstileWidget('signup');
@@ -588,11 +628,11 @@ class App extends Component {
       this.setState({ signupSubmitting: false, signupError: 'Não foi possível concluir o cadastro. Tente novamente.' });
       return;
     }
-    const authRole = outcome.session ? await fetchProfileRole(outcome.user.id) : null;
+    const profile = outcome.session ? await fetchProfile(outcome.user.id) : { role: null, displayName: null };
+    this.applySessionProfile(outcome.session, profile);
     this.setState({
       signupSubmitting: false, signupResult: { credential: outcome.credential },
-      session: outcome.session, authRole,
-      signupPassword: '', signupConfirmPassword: '',
+      signupPassword: '', signupConfirmPassword: '', signupDisplayName: '',
     });
   };
   onCopyCredential = () => {
@@ -605,8 +645,45 @@ class App extends Component {
   };
   onLogout = async () => {
     await signOut();
-    this.setState({ session: null, authRole: null });
+    this.setState({ session: null, authRole: null, authDisplayName: null });
     if (this.state.screen === 'admin') { this.animateTo('profile'); this.setState({ screen: 'profile' }); }
+  };
+
+  // ---- Complete-profile gate for legacy accounts without display_name ----
+  onCompleteProfileNameChange = (e) => this.setState({ completeProfileName: e.target.value });
+  onCompleteProfileSubmit = async () => {
+    const { completeProfileName, completeProfileSubmitting, session } = this.state;
+    if (completeProfileSubmitting || !session) return;
+    const cleanName = normalizeDisplayName(completeProfileName);
+    if (!cleanName) { this.setState({ completeProfileError: 'Informe um nome entre 2 e 80 caracteres.' }); return; }
+    this.setState({ completeProfileSubmitting: true, completeProfileError: '' });
+    const result = await updateDisplayName(session.user.id, cleanName);
+    if (result.error) {
+      this.setState({ completeProfileSubmitting: false, completeProfileError: 'Não foi possível salvar o nome. Tente novamente.' });
+      return;
+    }
+    this.setState({
+      completeProfileSubmitting: false, showCompleteProfileModal: false,
+      completeProfileName: '', authDisplayName: result.displayName,
+    });
+  };
+
+  // ---- Self-service rename (point 6) ----
+  onOpenChangeNameModal = () => this.setState({ showChangeNameModal: true, changeNameValue: this.state.authDisplayName || '', changeNameError: '' });
+  onCloseChangeNameModal = () => this.setState({ showChangeNameModal: false });
+  onChangeNameValueChange = (e) => this.setState({ changeNameValue: e.target.value });
+  onChangeNameSubmit = async () => {
+    const { changeNameValue, changeNameSubmitting, session } = this.state;
+    if (changeNameSubmitting || !session) return;
+    const cleanName = normalizeDisplayName(changeNameValue);
+    if (!cleanName) { this.setState({ changeNameError: 'Informe um nome entre 2 e 80 caracteres.' }); return; }
+    this.setState({ changeNameSubmitting: true, changeNameError: '' });
+    const result = await updateDisplayName(session.user.id, cleanName);
+    if (result.error) {
+      this.setState({ changeNameSubmitting: false, changeNameError: 'Não foi possível salvar o nome. Tente novamente.' });
+      return;
+    }
+    this.setState({ changeNameSubmitting: false, showChangeNameModal: false, authDisplayName: result.displayName });
   };
   onSetWeekStartDay = (v) => { this.setState({ weekStartDay: Number(v) }); this.persist(LS_KEYS.weekStartDay, Number(v)); };
   onBackFromAdmin = () => { this.animateTo('profile'); this.setState({ screen: 'profile' }); };
@@ -1290,8 +1367,12 @@ class App extends Component {
     })) : [];
 
     const favoritesCount = s.favoriteIds.length;
-    const profileInitial = s.profile && s.profile.nome ? s.profile.nome.trim()[0].toUpperCase() : '?';
-    const userGreetingName = s.profile && s.profile.nome ? s.profile.nome.split(' ')[0] : 'Chef';
+    // Display name comes exclusively from public.profiles.display_name now
+    // (see auth.js fetchProfile) — the local device "profile" (idade,
+    // gênero, cargo) no longer carries a name of its own, so there is only
+    // ever one name shown anywhere in the app.
+    const profileInitial = s.authDisplayName ? s.authDisplayName.trim()[0].toUpperCase() : '?';
+    const userGreetingName = s.authDisplayName ? s.authDisplayName.split(' ')[0] : 'Chef';
 
     const weekBuckets = [];
     { const now = new Date(); for (let i = 7; i >= 0; i--) { const ws = this.weekStart(now); ws.setDate(ws.getDate() - i * 7); weekBuckets.push({ start: ws, total: 0 }); } }
@@ -1441,7 +1522,7 @@ class App extends Component {
       navFavColor: screen === 'favorites' ? 'var(--brand-700)' : 'var(--neutral-400)',
       navDadosColor: screen === 'dados' ? 'var(--brand-700)' : 'var(--neutral-400)',
       navProfileColor: screen === 'profile' ? 'var(--brand-700)' : 'var(--neutral-400)',
-      showSplash: s.showSplash, onSplashContinue: this.onSplashContinue, splashButtonLabel: s.profile ? `Bem-vindo de volta, ${s.profile.nome.split(' ')[0]}` : 'Criar meu perfil',
+      showSplash: s.showSplash, onSplashContinue: this.onSplashContinue, splashButtonLabel: s.profile ? 'Bem-vindo de volta' : 'Criar meu perfil',
       userGreetingName, profileInitial,
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
       recommendedList, practicalList, occasionList, quickList, churrascoList, snackList, homeCategoryChips, customHomeSectionBlocks,
@@ -1451,8 +1532,18 @@ class App extends Component {
       adminStatusLabel: !s.session ? 'Toque para fazer login' : (s.authRole === 'admin' ? 'Toque para abrir o painel' : 'Sem acesso administrativo'),
       hasAdminDeniedFlash: !!s.adminDeniedFlash, adminDeniedFlash: s.adminDeniedFlash,
       hasSession: !!s.session, onLogout: this.onLogout,
+      authDisplayName: s.authDisplayName,
       connectedCredentialLabel: (s.session && s.session.user && s.session.user.user_metadata && s.session.user.user_metadata.credential) || 'Sessão ativa',
       onOpenAdminAttempt: this.onOpenAdminAttempt, onEditProfile: this.onEditProfile,
+      onOpenChangeNameModal: this.onOpenChangeNameModal,
+      showChangeNameModal: s.showChangeNameModal, changeNameValue: s.changeNameValue,
+      hasChangeNameError: !!s.changeNameError, changeNameError: s.changeNameError, changeNameSubmitting: s.changeNameSubmitting,
+      canSubmitChangeName: !!(normalizeDisplayName(s.changeNameValue) && !s.changeNameSubmitting),
+      onChangeNameValueChange: this.onChangeNameValueChange, onChangeNameSubmit: this.onChangeNameSubmit, onCloseChangeNameModal: this.onCloseChangeNameModal,
+      showCompleteProfileModal: s.showCompleteProfileModal, completeProfileName: s.completeProfileName,
+      hasCompleteProfileError: !!s.completeProfileError, completeProfileError: s.completeProfileError, completeProfileSubmitting: s.completeProfileSubmitting,
+      canSubmitCompleteProfile: !!(normalizeDisplayName(s.completeProfileName) && !s.completeProfileSubmitting),
+      onCompleteProfileNameChange: this.onCompleteProfileNameChange, onCompleteProfileSubmit: this.onCompleteProfileSubmit,
       showLoginModal: s.showLoginModal, loginCredential: s.loginCredential, loginPassword: s.loginPassword,
       hasLoginError: !!s.loginError, loginError: s.loginError, loginSubmitting: s.loginSubmitting,
       canSubmitLogin: !!(s.loginTurnstileToken && s.loginCredential.trim() && s.loginPassword && !s.loginSubmitting),
@@ -1460,16 +1551,17 @@ class App extends Component {
       turnstileLoginRef: this.turnstileLoginRef,
       onLoginCredentialChange: this.onLoginCredentialChange, onLoginPasswordChange: this.onLoginPasswordChange,
       onLoginSubmit: this.onLoginSubmit, onCloseLoginModal: this.closeLoginModal, onGoSignupFromLogin: this.openSignupModal,
-      showSignupModal: s.showSignupModal, signupPassword: s.signupPassword, signupConfirmPassword: s.signupConfirmPassword,
+      showSignupModal: s.showSignupModal, signupDisplayName: s.signupDisplayName, signupPassword: s.signupPassword, signupConfirmPassword: s.signupConfirmPassword,
       hasSignupError: !!s.signupError, signupError: s.signupError, signupSubmitting: s.signupSubmitting,
-      canSubmitSignup: !!(s.signupTurnstileToken && s.signupPassword && s.signupConfirmPassword && !s.signupSubmitting),
+      canSubmitSignup: !!(normalizeDisplayName(s.signupDisplayName) && s.signupTurnstileToken && s.signupPassword && s.signupConfirmPassword && !s.signupSubmitting),
       signupTurnstileReady: s.signupTurnstileReady, showSignupTurnstileLoading: !s.signupTurnstileReady && !s.signupError,
       turnstileSignupRef: this.turnstileSignupRef,
+      onSignupDisplayNameChange: this.onSignupDisplayNameChange,
       onSignupPasswordChange: this.onSignupPasswordChange, onSignupConfirmChange: this.onSignupConfirmChange,
       onSignupSubmit: this.onSignupSubmit, onCloseSignupModal: this.closeSignupModal, onBackToLoginFromSignup: this.backToLoginFromSignup,
       signupResult: s.signupResult, credentialCopied: s.credentialCopied, onCopyCredential: this.onCopyCredential, onFinishSignup: this.onFinishSignup,
       showProfileSetup: s.showProfileSetup, profileForm: s.profileForm,
-      onProfileNomeChange: this.onProfileNomeChange, onProfileIdadeChange: this.onProfileIdadeChange, onProfileCargoChange: this.onProfileCargoChange,
+      onProfileIdadeChange: this.onProfileIdadeChange, onProfileCargoChange: this.onProfileCargoChange,
       onSaveProfile: this.onSaveProfile, generoOptions: ['Feminino', 'Masculino', 'Outro', 'Prefiro não informar'], onProfileGeneroSet: this.setFormField('profileForm', 'genero'),
       selectedRecipe: selectedRecipe || { imagem: FALLBACK_IMG, nome: '', tempoLabel: '', porcoesLabel: '', dificuldade: '', heartFill: 'none', onToggleFavorite: () => {}, onBack: this.backFromDetail, canEdit: false, onEdit: () => {} },
       ingredientRows, extrasList, hasExtras, modoPreparoList, dicasList, totalABuyLabel, totalAllLabel,
