@@ -1,16 +1,25 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js';
-import { CustomSelect } from './custom-select.js';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260803-1';
+import { CustomSelect } from './custom-select.js?v=20260803-1';
 import {
   LS_KEYS, SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js';
-import { generateCredential, normalizeCredential } from './credential.js';
-import { supabase } from './supabase-client.js';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js';
-import { runSignupRetryLoop } from './signup-retry.js';
-import { normalizeDisplayName } from './display-name.js';
-import * as catalog from './catalog.js';
+} from './data.js?v=20260803-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260803-1';
+import { supabase } from './supabase-client.js?v=20260803-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260803-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260803-1';
+import { normalizeDisplayName } from './display-name.js?v=20260803-1';
+import * as catalog from './catalog.js?v=20260803-1';
+
+// Cache-busting version stamp — see the comment block at the top of
+// index.html for the full explanation and the bump procedure. This literal
+// must be identical to every `?v=...` query string in index.html and in
+// every local import specifier below/in catalog.js/auth.js/custom-select.js/
+// template.js (tests/js/cache-busting.test.js checks this can't drift).
+const FRONTEND_VERSION = '20260803-1';
+// eslint-disable-next-line no-console
+console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
 const TURNSTILE_SITE_KEY = '0x4AAAAAAED4OOkYJr1mKBgo';
 const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente novamente.';
@@ -174,7 +183,7 @@ class App extends Component {
 
       // ---- Modo de Criação: personal recipes/products/categories (Supabase-backed) ----
       myCreationLoading: false, myCreationError: '',
-      myCategories: [], myProducts: [], myRecipes: [], sharedLibrary: [],
+      myCategories: [], myProducts: [], myRecipes: [], sharedLibrary: [], sharedLibraryAuthorNames: {},
       // Public (scope='site', active=true) categories/products, loaded
       // alongside the caller's own personal rows so every category/product
       // picker in "Modo de Criação" can offer "public active UNION my own
@@ -828,8 +837,15 @@ class App extends Component {
   // below now passes the uid it already has in hand from a resolved value
   // (session.user.id it just received, or the current session it already
   // confirmed truthy), never from a just-set piece of state.
+  // Returns `{ ok: true }` or `{ ok: false, error }` — every caller that
+  // needs to know whether THIS refetch itself succeeded (as opposed to
+  // reading `this.state.myCreationError` right after calling this, which
+  // would be stale in the same tick for the same reason bug #2 was: Preact's
+  // setState only flushes into `this.state` on the next microtask-scheduled
+  // render) uses this return value instead. See
+  // refreshAfterMyCreationMutation below for why this matters.
   loadMyCreationData = async (uid) => {
-    if (!uid) return;
+    if (!uid) return { ok: false, error: 'missing uid' };
     this.setState({ myCreationLoading: true, myCreationError: '' });
     try {
       const [cats, prods, recs, shared, publicCats, publicProds] = await Promise.all([
@@ -850,13 +866,27 @@ class App extends Component {
         // requirement.
         const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
         this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
-        return;
+        return { ok: false, error: detail };
       }
+      const sharedLibrary = (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at }));
+      // Author display_name for every shared-with-me recipe, so the "Receitas
+      // Compartilhadas" tab can show whose recipe it is — never invented or
+      // read off `owner_id` directly (RLS already hides other users' rows
+      // outright), always resolved through the same safe RPC the recipe
+      // detail screen already uses. Best-effort: a failure here must not
+      // fail the whole load (the recipe list itself already succeeded above)
+      // — a row simply falls back to no author label if its lookup fails.
+      const authorEntries = await Promise.all(sharedLibrary.map(async (r) => {
+        const res = await catalog.getRecipeAuthorName(r.id);
+        return [r.id, res.error ? '' : (res.data || '')];
+      }));
+      const sharedLibraryAuthorNames = Object.fromEntries(authorEntries);
       this.setState({
         myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
-        sharedLibrary: (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at })),
+        sharedLibrary, sharedLibraryAuthorNames,
         pickerPublicCategories: publicCats.data || [], pickerPublicProducts: publicProds.data || [],
       });
+      return { ok: true };
     } catch (e) {
       // Defensive net for an unexpected synchronous throw elsewhere in this
       // body (e.g. a `.map()` over an unexpectedly-shaped response) — every
@@ -864,10 +894,35 @@ class App extends Component {
       // value via catalog.js's unwrap() and is handled by the branch above;
       // this only guards against something genuinely unforeseen so the UI
       // never gets stuck on "Carregando..." forever.
-      this.setState({ myCreationError: `Não foi possível carregar seus dados: ${(e && e.message) || 'erro inesperado'}` });
+      const detail = (e && e.message) || 'erro inesperado';
+      this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
+      return { ok: false, error: detail };
     } finally {
       this.setState({ myCreationLoading: false });
     }
+  };
+
+  // Shared post-mutation refresh for every "Modo de Criação" personal
+  // mutation path (recipe/product/category create, edit, delete; copy;
+  // share-code redemption). By the time this runs, the mutation itself has
+  // ALREADY succeeded — every caller only reaches this after its own
+  // create/update/delete call came back without an error. If THIS refetch
+  // fails (e.g. a transient network error right after a successful insert),
+  // the user must not be told "a criação falhou": that would be misleading,
+  // since the write already landed. Instead this surfaces a distinct,
+  // explicitly-worded, retryable `myCreationError` banner (already rendered
+  // with a "Tentar novamente" button wired to `onRetryMyCreationData` — see
+  // template.js) that says the save worked and only the list refresh needs
+  // a retry, instead of silently doing nothing or reusing the generic
+  // "não foi possível carregar" wording that would read as if the save
+  // itself had failed.
+  refreshAfterMyCreationMutation = async (uid, successMessage) => {
+    const result = await this.loadMyCreationData(uid);
+    if (result && result.ok === false) {
+      this.setState({ myCreationError: `${successMessage} A lista não pôde ser atualizada automaticamente: ${result.error}` });
+      return;
+    }
+    this.flashAdmin(successMessage);
   };
 
   // ---- Minhas Categorias ----
@@ -882,7 +937,7 @@ class App extends Component {
     const res = f.id ? await catalog.updateCategoryName(f.id, f.name.trim()) : await catalog.createCategory(uid, { type: f.type, name: f.name.trim() });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar a categoria.' }); return; }
     this.setState({ showMyCategoryForm: false, myCategoryForm: null });
-    this.loadMyCreationData(this.state.session.user.id);
+    this.refreshAfterMyCreationMutation(uid, 'Categoria salva com sucesso.');
   };
   askDeleteMyCategory = (id, name) => this.setState({ confirmDelete: { type: 'myCategory', id, message: `Excluir a categoria "${name}"? Produtos ou receitas que a usam podem deixar de funcionar corretamente.` } });
 
@@ -901,7 +956,7 @@ class App extends Component {
       : await catalog.createProduct(uid, { name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar o produto.' }); return; }
     this.setState({ showMyProductForm: false, myProductForm: null });
-    this.loadMyCreationData(this.state.session.user.id);
+    this.refreshAfterMyCreationMutation(uid, 'Produto salvo com sucesso.');
   };
   askDeleteMyProduct = (id, name) => this.setState({ confirmDelete: { type: 'myProduct', id, message: `Excluir o produto "${name}"? Ele será removido também das receitas que o usam.` } });
 
@@ -973,9 +1028,18 @@ class App extends Component {
       catalog.replaceRecipeIngredients(recipeId, validIngredients.map(i => ({ productId: i.productId, quantity: parseFloat(String(i.quantity).replace(',', '.')) || 0 }))),
       catalog.replaceRecipeCategories(recipeId, f.sectionCategoryIds),
     ]);
-    if (ingRes.error || catRes.error) this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
     this.setState({ showMyRecipeForm: false, myRecipeForm: null });
-    this.loadMyCreationData(this.state.session.user.id);
+    if (ingRes.error || catRes.error) {
+      // Ingredients/sections failed to save, but the recipe row itself did
+      // save — same "don't imply the whole save failed" reasoning as
+      // refreshAfterMyCreationMutation below, just for a different half of
+      // the same mutation. Still refresh the list afterwards so whatever
+      // did save is visible.
+      this.flashAdmin('A receita foi salva, mas houve um erro ao salvar ingredientes ou seções.');
+      this.loadMyCreationData(uid);
+      return;
+    }
+    this.refreshAfterMyCreationMutation(uid, 'Receita salva com sucesso.');
   };
   askDeleteMyRecipe = (id, name) => this.setState({ confirmDelete: { type: 'myRecipe', id, message: `Excluir a receita "${name}"? Esta ação não pode ser desfeita.` } });
 
@@ -1055,7 +1119,14 @@ class App extends Component {
     const { error } = await catalog.redeemShareCode(code);
     if (error) { this.setState({ redeemBusy: false, redeemMessage: error.friendly || 'Código inválido.', redeemMessageKind: 'error' }); return; }
     this.setState({ redeemBusy: false, redeemMessage: 'Receita adicionada à sua biblioteca, em modo somente leitura.', redeemMessageKind: 'success', redeemCode: '' });
-    this.loadMyCreationData(this.state.session.user.id);
+    // Redemption already succeeded (redeemMessage above already says so) —
+    // if the refetch that populates "Receitas Compartilhadas" fails, that
+    // must not read as if the redemption itself failed. Same differentiation
+    // as every other personal-data mutation (see refreshAfterMyCreationMutation).
+    const refresh = await this.loadMyCreationData(this.state.session.user.id);
+    if (refresh && refresh.ok === false) {
+      this.setState({ myCreationError: `Código resgatado com sucesso. A lista não pôde ser atualizada automaticamente: ${refresh.error}` });
+    }
   };
 
   // ---- "Criar cópia própria" + resolução de referências ----
@@ -1069,8 +1140,7 @@ class App extends Component {
       const { error } = await catalog.createRecipeCopy(detail.id, []);
       this.setState({ copyBusy: false });
       if (error) { this.setState({ copyError: 'Não foi possível criar a cópia.' }); return; }
-      this.flashAdmin('Cópia própria criada em Minhas Receitas.');
-      this.loadMyCreationData(this.state.session.user.id);
+      this.refreshAfterMyCreationMutation(uid, 'Cópia própria criada em Minhas Receitas.');
       this.onCloseMyRecipeDetail();
       return;
     }
@@ -1100,8 +1170,7 @@ class App extends Component {
     this.setState({ copyBusy: false });
     if (error) { this.setState({ copyError: 'Não foi possível criar a cópia. Verifique as associações escolhidas.' }); return; }
     this.setState({ copyModalOpen: false, copyRefs: [], copyDecisions: {} });
-    this.flashAdmin('Cópia própria criada em Minhas Receitas.');
-    this.loadMyCreationData(this.state.session.user.id);
+    this.refreshAfterMyCreationMutation(this.state.session.user.id, 'Cópia própria criada em Minhas Receitas.');
     this.onCloseMyRecipeDetail();
   };
 
@@ -1684,11 +1753,21 @@ class App extends Component {
   onConfirmDeleteYes = async () => {
     const cd = this.state.confirmDelete; if (!cd) return;
     if (cd.type === 'myRecipe' || cd.type === 'myProduct' || cd.type === 'myCategory') {
+      const uid = this.state.session.user.id;
       const fn = cd.type === 'myRecipe' ? catalog.deleteRecipe : cd.type === 'myProduct' ? catalog.deleteProduct : catalog.deleteCategory;
       const { error } = await fn(cd.id);
       this.setState({ confirmDelete: null });
-      if (error) { this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.'); }
-      this.loadMyCreationData(this.state.session.user.id);
+      if (error) {
+        // The delete itself failed (e.g. FK restriction from another row
+        // still referencing it) — nothing to refetch differently for, the
+        // list on screen is already accurate since nothing changed server-side.
+        this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.');
+        return;
+      }
+      // Delete succeeded — refetch to drop it from every list, differentiating
+      // a refresh-only failure from a delete failure the same way every other
+      // personal mutation does (see refreshAfterMyCreationMutation).
+      this.refreshAfterMyCreationMutation(uid, 'Item excluído com sucesso.');
       return;
     }
     if (cd.type === 'recipe') {
@@ -2320,8 +2399,20 @@ class App extends Component {
     const updatedAtLabel = new Date(s.indicatorsUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
     // ---- Modo de Criação: "Minhas Receitas / Meus Produtos / Minhas Categorias" ----
+    // Badge/label helper shared by every recipe-row source below (personal,
+    // shared, admin/site) so a user can tell at a glance which of the four
+    // genuinely-separate data sources (myRecipes/sharedLibrary/public
+    // catalog/admin site catalog — never merged into one array anywhere in
+    // state or here) a given row came from, on top of its own status.
+    const statusBadge = (label, color) => `font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${color}22;color:${color}`;
+    const SOURCE_BADGE_COLORS = { personal: '#8A5CF6', shared: '#2E90D6', public: '#34B23E', draft: '#CFB017', archived: '#8A8580' };
+    // recipes.recipes_personal_requires_private_ck (supabase/004_catalog_schema.sql)
+    // guarantees every scope='personal' recipe is always status='private' —
+    // verified against the live schema (see supabase/STAGING.md), so "Privada"
+    // is always correct here, never derived from a guess.
     const myRecipeRows = s.myRecipes.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
+      source: 'personal', sourceLabel: 'Privada', sourceBadgeStyle: statusBadge('Privada', SOURCE_BADGE_COLORS.personal),
       onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteMyRecipe(r.id, r.name),
     }));
     const myProductRows = s.myProducts.map(p => ({
@@ -2337,6 +2428,8 @@ class App extends Component {
     }));
     const sharedLibraryRows = s.sharedLibrary.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
+      source: 'shared', sourceLabel: 'Compartilhada', sourceBadgeStyle: statusBadge('Compartilhada', SOURCE_BADGE_COLORS.shared),
+      authorName: (s.sharedLibraryAuthorNames && s.sharedLibraryAuthorNames[r.id]) || '',
       onOpen: () => this.onOpenMyRecipeDetail(r.id),
     }));
 
@@ -2395,26 +2488,31 @@ class App extends Component {
       };
     });
 
-    // ---- Catálogo Público (admin) ----
-    const statusBadge = (label, color) => `font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${color}22;color:${color}`;
+    // ---- Catálogo Público (admin) ---- (statusBadge/SOURCE_BADGE_COLORS
+    // defined above, shared with myRecipeRows/sharedLibraryRows so every
+    // recipe-row source uses the exact same badge look)
     const siteRecipeRows = s.siteRecipes.map(r => {
       const isPublished = r.status === 'published';
+      const statusLabel = isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada';
       return {
         id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '', featured: !!r.featured,
-        statusLabel: isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada',
-        statusBadgeStyle: statusBadge(isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada', isPublished ? '#34B23E' : r.status === 'draft' ? '#CFB017' : '#8A8580'),
+        source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
+        statusLabel,
+        statusBadgeStyle: statusBadge(statusLabel, isPublished ? SOURCE_BADGE_COLORS.public : r.status === 'draft' ? SOURCE_BADGE_COLORS.draft : SOURCE_BADGE_COLORS.archived),
         toggleStatusLabel: isPublished ? 'Despublicar' : 'Publicar',
         onToggleStatus: () => this.onToggleSiteRecipeStatus(r), onEdit: () => this.onEditSiteRecipe(r),
       };
     });
     const siteProductRows = s.siteProducts.map(p => ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
+      source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
     }));
     const siteCategoryRows = s.siteCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
+      source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: c.active ? 'Ativa' : 'Inativa', statusBadgeStyle: statusBadge('', c.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
@@ -2764,7 +2862,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js';
+import { renderApp } from './template.js?v=20260803-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

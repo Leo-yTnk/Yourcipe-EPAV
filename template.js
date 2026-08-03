@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js';
-import { CustomSelect } from './custom-select.js';
+import { html } from './vendor/htm-preact-standalone.js?v=20260803-1';
+import { CustomSelect } from './custom-select.js?v=20260803-1';
 
 export function renderApp(app) {
   const v = app.computeViewModel();
@@ -1010,7 +1010,7 @@ function renderSiteRecipesTab(app, v) {
       ${v.siteRecipeRows.map((row) => html`
         <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
           <div style="flex:1">
-            <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span>${row.featured ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">★ Receita do Dia</span>` : ''}</div>
+            <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span> <span style=${row.statusBadgeStyle}>${row.statusLabel}</span>${row.featured ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">★ Receita do Dia</span>` : ''}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}</div>
           </div>
           <div onClick=${row.onToggleStatus} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleStatusLabel}</div>
@@ -1137,7 +1137,10 @@ function renderMyRecipesTab(app, v) {
       ${v.myRecipeRows.map((row) => html`
         <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
           <div onClick=${row.onOpen} style="flex:1;cursor:pointer">
-            <div style="font-size:15px;font-weight:600">${row.name}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:15px;font-weight:600">${row.name}</span>
+              <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span>
+            </div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}</div>
           </div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
@@ -1482,8 +1485,11 @@ function renderSharedRecipesTab(app, v) {
       ${v.sharedLibraryRows.map((row) => html`
         <div key=${row.id} onClick=${row.onOpen} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;cursor:pointer">
           <div>
-            <div style="font-size:15px;font-weight:600">${row.name}</div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code} · somente leitura</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:15px;font-weight:600">${row.name}</span>
+              <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span>
+            </div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code} · somente leitura${row.authorName ? ` · por ${row.authorName}` : ''}</div>
           </div>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2"><path d="M9 6l6 6-6 6"></path></svg>
         </div>

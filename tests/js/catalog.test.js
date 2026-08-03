@@ -5,7 +5,13 @@ import { describe, it, expect, vi } from 'vitest';
 // offline) test environment. Stubbed here so the pure, non-network logic in
 // catalog.js (computeForeignReferences) can be unit-tested in isolation,
 // same reasoning as supabase/STAGING.md's documented esm.sh limitation.
-vi.mock('../../supabase-client.js', () => ({ supabase: {} }));
+//
+// catalog.js imports supabase-client.js with a `?v=...` cache-busting query
+// string (see the comment block at the top of index.html), so vi.mock's
+// specifier must match that exact string — including the query — or the
+// mock silently misses and the real module (which reaches out to esm.sh)
+// gets loaded instead. Keep this in sync whenever the version is bumped.
+vi.mock('../../supabase-client.js?v=20260803-1', () => ({ supabase: {} }));
 
 const catalogModule = await import('../../catalog.js');
 const { computeForeignReferences } = catalogModule;
@@ -61,6 +67,56 @@ describe('shared select constants always specify an explicit FK hint', () => {
   // (or drop the hint back to a bare `categories(`) without failing CI.
   it('RECIPE_WITH_CATEGORY_SELECT names the real recipes_category_id_fkey constraint', () => {
     expect(catalogModule.RECIPE_WITH_CATEGORY_SELECT).toContain('recipes_category_id_fkey');
+  });
+
+  // RECIPE_DETAIL_WITH_CATEGORY_SELECT is the same recipes->categories embed,
+  // just with a wider column set (used by fetchRecipeDetail) — must name the
+  // exact same real FK constraint, never a different/typo'd one.
+  it('RECIPE_DETAIL_WITH_CATEGORY_SELECT names the real recipes_category_id_fkey constraint', () => {
+    expect(catalogModule.RECIPE_DETAIL_WITH_CATEGORY_SELECT).toContain('recipes_category_id_fkey');
+  });
+
+  // Regression guard against the specific failure mode a pure "is there any
+  // bare embed anywhere in the string" check (BARE_EMBED_RE.test above) can
+  // miss: a select string that embeds the SAME table more than once (e.g. a
+  // doubly-nested embed reaching `categories` both directly and through a
+  // nested `product`/`recipe_ingredients` path) could have its FIRST
+  // occurrence hinted and a LATER occurrence left bare, and a naive
+  // "contains at least one hinted occurrence" assertion would still pass.
+  // PostgREST requires a hint at EVERY embed occurrence of an ambiguous
+  // pair, not just the first, so this enumerates every single
+  // `categories(`/`products(` occurrence in each constant (via a global
+  // regex, not .test()) and asserts EACH ONE individually carries its own
+  // "!" hint immediately before it.
+  const EMBED_OCCURRENCE_RE = /\b(categories|products)(!\w+)?\(/g;
+  SELECT_CONSTANT_NAMES.forEach((name) => {
+    it(`${name}: every categories(/products( occurrence (not just the first) is hinted`, () => {
+      const value = catalogModule[name];
+      const occurrences = [...value.matchAll(EMBED_OCCURRENCE_RE)];
+      // Sanity check: every one of these constants is expected to actually
+      // embed at least one of these tables — if this ever becomes 0 for a
+      // given constant, the test below would vacuously pass without
+      // checking anything, which would be worse than not having the test.
+      expect(occurrences.length).toBeGreaterThan(0);
+      occurrences.forEach(([fullMatch, table, hint]) => {
+        expect(hint, `un-hinted "${table}(" occurrence in ${name} (matched "${fullMatch}")`).toBeTruthy();
+      });
+    });
+  });
+
+  // Hedge for a *future* embed of `recipe_ingredients(...)` (none of the six
+  // exported constants embeds it today — recipe_ingredients is only ever
+  // the FROM table, never nested inside another select here) — if one is
+  // ever added, it must carry one of `recipe_ingredients`'s two real FK
+  // hints (verified against pg_constraint — see supabase/STAGING.md),
+  // whichever side is being embedded from, not a bare or wrong-named hint.
+  it('any select string that embeds recipe_ingredients( names one of its two real FK constraints', () => {
+    SELECT_CONSTANT_NAMES.forEach((name) => {
+      const value = catalogModule[name];
+      if (!/\brecipe_ingredients\(/.test(value)) return;
+      const namesRealFk = value.includes('recipe_ingredients_recipe_id_fkey') || value.includes('recipe_ingredients_product_id_fkey');
+      expect(namesRealFk, `${name} embeds recipe_ingredients( but names neither real FK constraint`).toBe(true);
+    });
   });
 });
 
