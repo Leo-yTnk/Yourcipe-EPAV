@@ -1,5 +1,104 @@
 # Staging setup and PR 1 runbook
 
+## Round: sharing/approval hardening, admin pagination, refresh strategy, share-modal redesign, modal keyboard/a11y
+
+**No new migration in this round.** Every server-side requirement in this
+round's spec (own-code redemption rejected, duplicate redemption idempotent,
+invalid code rejected generically, `regenerate_recipe_share_code` never
+revoking existing grants, `deactivate_recipe_sharing`/`revoke_recipe_access`
+each doing exactly what their names say and nothing more, `create_recipe_copy`
+being one atomic SECURITY DEFINER call that refuses to finalize with an
+unresolved reference, `review_change_request` being atomic with no nested
+BEGIN/EXCEPTION block that could let a partial approval survive, the
+draft-vs-published visibility split, `target_id`/`target_code` population)
+was already correctly implemented in `005_creation_mode_sharing.sql` and
+`007_change_requests.sql` from prior rounds — re-read in full, then verified
+by NEW pgTAP assertions added to the EXISTING test files (not a new
+migration or a new test file), since nothing in the SQL itself needed to
+change:
+- `supabase/tests/003_creation_mode_sharing.pg.sql` already covered every
+  sharing-hardening case this round's spec asked to double check (own-code
+  rejection, duplicate-redeem idempotency, invalid/rotated-code rejection,
+  regenerate-doesn't-revoke, deactivate-doesn't-revoke, revoke-removes-only-
+  that-grant-and-never-the-copy) — confirmed by re-reading it line by line
+  against the SQL; no gap found, so no new `007_sharing_hardening.pg.sql`
+  file was created (the task's own instructions say to add one only "if the
+  existing 003 doesn't already cover a case" — it did).
+- `supabase/tests/005_change_requests.pg.sql` gained 10 new assertions
+  (plan bumped 53 → 63): a recipe request with TWO ingredients and TWO
+  section tags approved via "Aprovar como rascunho" ends up `status='draft'`,
+  `published_at IS NULL`, with ingredient/section relation counts matching
+  the source exactly (2 and 2), is absent from the public-library-equivalent
+  query (`scope='site' AND status='published'`) and present in the
+  admin-catalog-equivalent query (`scope='site'`, unfiltered); and a second
+  recipe request is submitted, then one of its two referenced products is
+  deactivated AFTER submission (simulating a reference going stale between
+  submit and review) so `review_change_request`'s own `stale_dependency:
+  product` re-validation fires partway through the ingredient-insert loop —
+  proving the whole approval (the recipe row itself, not just the
+  ingredients) rolls back, the request stays `status='submitted'`, and
+  `target_id` stays `NULL`. `review_change_request` has no nested
+  BEGIN/EXCEPTION block anywhere in its body (confirmed by reading the whole
+  function again), so this is Postgres' default whole-function atomicity
+  doing the work, not a hand-rolled savepoint/rollback the migration itself
+  needed to add.
+
+**Frontend-only changes this round** (no schema impact, nothing new to run
+in staging beyond what sections 1–8 below already list):
+- `catalog.js`: `fetchAdminCategories`/`Products`/`Recipes` now page through
+  results via a new exported `fetchAllPages` helper (`.range()` loop,
+  accumulates until a short page), so the admin catalog view can't silently
+  truncate once a table passes PostgREST's default row cap. Still no
+  `.eq('active', true)`/`.eq('status', 'published')` filter on any admin
+  fetch (confirmed by re-reading them) — public equivalents are the only
+  ones that filter.
+- `app.js`/`template.js`: "Compartilhadas Comigo" (shared-with-me library)
+  now has its own `sharedLibraryLoading`/`sharedLibraryError` state,
+  independent of `myCreationLoading`/`myCreationError` (previously
+  conflated — a single `loadMyCreationData()` call fetched personal
+  categories/products/recipes AND the shared library together). A shared
+  `_guardedLoad`/`_inFlight` mechanism now backs every loader
+  (`loadMyCreationData`, `loadSharedLibrary`, `loadPublicCatalog`,
+  `loadSiteCatalogData`, `loadMyRequests`, `loadAllRequests`) so a
+  focus/visibilitychange-triggered refetch can never stack a second
+  overlapping request on top of one already running for the same area.
+  `refetchActiveArea()` (called on window `focus` and
+  `document.visibilitychange`) refetches only whichever screen/tab is
+  actually on-screen right now.
+- Redeeming a share code now refreshes only `loadSharedLibrary` (not the
+  whole personal-data blob), and highlights the newly-added recipe ("Adicionada
+  agora") in both the Profile screen's inline list and the "Compartilhadas
+  Comigo" tab for ~15s after redemption.
+- A shared `modal-keyboard.js` module + `getModalStack()`/
+  `onGlobalModalKeydown` in `app.js` now drive Escape/Enter/Ctrl+Enter for
+  every modal in the app from one place (see Part 11 in the round's PR
+  description / final report for the full reasoning on why this is a plain
+  module + one global keydown listener rather than a Preact hook, given this
+  app's single-class-component architecture).
+- The share section inside the recipe-detail modal (`renderMyRecipeDetailModal`
+  in `template.js`) was redesigned per Part 10 — monospace code card, an
+  explicit active/inactive status pill, a "Copiar código"/"Código copiado"
+  toggle (Clipboard API with an `execCommand('copy')` fallback), a
+  confirmation step before "Revogar acessos existentes" actually fires, and
+  inline copy distinguishing "desativar o código" vs. "gerar novo código" vs.
+  "revogar acessos" (paraphrased from this file's own section-5 comments).
+- "Meus Pedidos"/"Solicitações Recebidas" request-detail modal now shows an
+  "Abrir receita publicada" link next to `target_code` whenever the request
+  approved to a recipe that is actually visible in the loaded public catalog
+  (never a dead link for a draft-only approval).
+
+Full pgTAP results from this round (fresh local Postgres 16 + pgTAP,
+`schema.sql` → 002 → 004 → 005 → 006 → 007, no 008 applied yet for
+001–005): **167 assertions passing** (14 + 26 + 44 + 20 + 63). Then
+`006_seed_default_catalog.pg.sql` (which applies 008 itself, twice, as
+documented in its own header) adds **34 more, all passing** — **201
+assertions total across every `.pg.sql` file this round**, plus a third,
+fully-standalone re-run of `008_seed_default_catalog.sql` confirmed idempotent
+(every real dedup-guarded `INSERT` — categories/products/recipes/
+recipe_ingredients/recipe_categories — reports `INSERT 0 0`; the temp
+staging tables that feed those inserts are repopulated with the same literal
+seed values every run, which is expected and unrelated to idempotency).
+
 ## PR 4 follow-up: re-verified after a post-merge bug report on staging
 
 A follow-up report on PR 4 (still open, not yet merged) said the browser
@@ -611,6 +710,88 @@ hand with one plain-`user` account and one `role='admin'` account
   and unaffected by the change-request flow.
 - Existing YCR/YPR/YCT codes on any previously-created catalog rows are
   untouched.
+
+## 9. This round's manual checklist ("PARTE 14") — **[HUMAN]**, not click-tested here
+
+Same sandbox network limitation as every prior round (no route to `esm.sh`
+or a real Supabase project) — nothing in this section was click-tested in a
+browser. Verified instead: a full read-through of every changed
+`app.js`/`catalog.js`/`template.js` code path against this checklist, the
+full pgTAP suite (which is what actually proves the RLS/RPC/atomicity
+properties this checklist exercises through the UI), and the Vitest suite
+for the newly-extracted pure logic (`modal-keyboard.js`'s topmost-modal/
+Escape/Enter/Ctrl+Enter/double-submit functions, `catalog.js`'s
+`fetchAllPages` pagination loop). Once staging has this branch's app pointed
+at it (see section 3 above), verify by hand with an admin account, a plain
+user account, and an anonymous/logged-out session:
+
+**Admin:**
+- Opens "Catálogo Público" and sees every category/product/recipe
+  regardless of status/active state (drafts, archived, inactive — all
+  visible, with status/active badges, code, name, and "atualizado em"
+  columns).
+- Creates a published recipe → visible to a logged-out visitor without a
+  reload (refetch happens next time that visitor's tab regains focus,
+  becomes visible again, or the Home/Search screen is (re)opened).
+- Creates a draft recipe → visible only in "Catálogo Público" as admin,
+  never on Home/Search for anyone else.
+- Receives a new change request (as a plain user submits one) without
+  refreshing — open "Solicitações Recebidas" and it appears once that tab
+  regains focus/visibility or is (re)opened, no manual reload.
+- Approves a request ("Aprovar como rascunho" and "Aprovar e publicar") →
+  the request list, the admin catalog, and (for a published approval) the
+  public library all reflect it without a manual reload.
+- Returns a request for edit (note required) and rejects a request (note
+  required) → both reflected in "Meus Pedidos" for the requester without a
+  manual reload on their end (next focus/visibility/tab-open refetch).
+
+**User:**
+- Creates a product/category/recipe — each appears immediately in "Minhas
+  Receitas/Produtos/Categorias" without a reload (already the case from
+  prior rounds, re-verified this round).
+- Sends a publication request; receives a status update ("Devolvido" with a
+  note, "Aprovado", or "Rejeitado" with a note) without a manual reload.
+- Redeems a YSH share code (own code rejected; a genuinely invalid code
+  shows the generic message; redeeming the same valid code twice does not
+  create a duplicate grant or show a misleading error) → the recipe appears
+  in "Compartilhadas Comigo" immediately (no reload), visually highlighted
+  ("Adicionada agora") for a short while.
+- Creates a personal copy of a shared/public recipe (one atomic
+  `create_recipe_copy` RPC call; cannot finalize with an unresolved
+  reference) → appears immediately in "Minhas Receitas", fully independent
+  of the source (editing the copy never touches the original).
+- As the recipe's owner: revoking access removes exactly that grantee's
+  read access to the original and nothing else — their independent copy (if
+  they made one) and its own ingredients stay completely untouched.
+- Regenerating the share code invalidates the OLD code for future
+  redemptions but does not revoke any access already granted; deactivating
+  sharing blocks future redemptions without touching existing grants.
+
+**Visitor (anonymous/logged out):**
+- Sees only `status='published'` recipes and `active=true` products/
+  categories on Home/Search — never a draft, an archived row, or an
+  inactive row.
+- A newly-published recipe appears without any of the author's *private*
+  data ever being exposed (`fetchPublicRecipes`/`fetchAdminRecipes`'s own
+  RLS-gated queries never reach into another user's `scope='personal'`
+  rows; the shared-recipe read path (`recipe_access_grants`-scoped RLS
+  policies in 005) is the only other read surface, and it is granted
+  per-recipe to a specific authenticated grantee — never to anon, and never
+  a general SELECT into the owner's other data).
+
+**Keyboard/accessibility (any account):**
+- Esc closes only the frontmost open modal (e.g. with "Revogar acessos
+  existentes"'s confirmation bar open inside the recipe-detail modal, Esc
+  should close the confirmation's parent modal only after being dismissed,
+  never skip past an open modal to one behind it).
+- Enter submits a simple modal's primary action when focus isn't in a
+  textarea (e.g. the login modal); it does not submit while focus is inside
+  a multiline field (e.g. a recipe's "Instruções" textarea) — use
+  Ctrl/Cmd+Enter there instead, which submits regardless of which field has
+  focus.
+- Tab/Shift+Tab stays within the open modal; the background is not
+  clickable while a modal is open; closing a modal returns focus to
+  whatever triggered it.
 
 ## Secrets policy
 

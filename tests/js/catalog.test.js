@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from 'vitest';
 // specifier must match that exact string — including the query — or the
 // mock silently misses and the real module (which reaches out to esm.sh)
 // gets loaded instead. Keep this in sync whenever the version is bumped.
-vi.mock('../../supabase-client.js?v=20260803-1', () => ({ supabase: {} }));
+vi.mock('../../supabase-client.js?v=20260803-2', () => ({ supabase: {} }));
 
 const catalogModule = await import('../../catalog.js');
 const { computeForeignReferences } = catalogModule;
@@ -189,5 +189,85 @@ describe('computeForeignReferences', () => {
     };
     const refs = computeForeignReferences(detail, OWNER_ID);
     expect(refs.map(r => r.purpose).sort()).toEqual(['ingredient', 'primary', 'section']);
+  });
+});
+
+// ---------------------------------------------------------------------
+// fetchAllPages: the pagination LOOP LOGIC used by fetchAdminCategories/
+// Products/Recipes so the admin catalog view never silently truncates once
+// a table grows past PostgREST's default row cap. Tested here against a
+// stubbed query-builder function (no live database needed) — exactly the
+// approach the task calls for.
+// ---------------------------------------------------------------------
+const { fetchAllPages } = catalogModule;
+
+function pagedQuery(pages) {
+  // Returns a `(from, to) => Promise<{data, error}>` stand-in for a real
+  // supabase query builder's `.range(from, to)` call, backed by a plain
+  // array of pre-baked pages (each page is itself an array of "rows").
+  let call = 0;
+  return async (from, to) => {
+    const page = pages[call] || [];
+    call += 1;
+    return { data: page, error: null };
+  };
+}
+
+describe('fetchAllPages', () => {
+  it('returns every row from a single short page without looping again', async () => {
+    const query = pagedQuery([[{ id: 1 }, { id: 2 }]]);
+    const result = await fetchAllPages(query, 'test', 5);
+    expect(result.error).toBeUndefined();
+    expect(result.data).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  it('keeps paging while a page comes back exactly full-sized, and stops on the first short page', async () => {
+    const pageSize = 2;
+    const pages = [
+      [{ id: 1 }, { id: 2 }], // full page — keep going
+      [{ id: 3 }, { id: 4 }], // full page — keep going
+      [{ id: 5 }],            // short page — stop here
+    ];
+    const query = pagedQuery(pages);
+    const result = await fetchAllPages(query, 'test', pageSize);
+    expect(result.data).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+  });
+
+  it('never loses rows across many full pages before the final short page (no truncation as data grows)', async () => {
+    const pageSize = 3;
+    // 7 full-size-multiple rows across 3 full pages + 1 short final page.
+    const allRows = Array.from({ length: 10 }, (_, i) => ({ id: i + 1 }));
+    const pages = [];
+    for (let i = 0; i < allRows.length; i += pageSize) pages.push(allRows.slice(i, i + pageSize));
+    const query = pagedQuery(pages);
+    const result = await fetchAllPages(query, 'test', pageSize);
+    expect(result.data).toHaveLength(10);
+    expect(result.data).toEqual(allRows);
+  });
+
+  it('stops immediately and returns an empty array for a table with zero rows', async () => {
+    const query = pagedQuery([[]]);
+    const result = await fetchAllPages(query, 'test', 5);
+    expect(result.data).toEqual([]);
+  });
+
+  it('passes the correct (from, to) range to the query builder on each call', async () => {
+    const pageSize = 2;
+    const seenRanges = [];
+    const query = async (from, to) => {
+      seenRanges.push([from, to]);
+      if (seenRanges.length === 1) return { data: [{ id: 1 }, { id: 2 }], error: null };
+      return { data: [{ id: 3 }], error: null };
+    };
+    await fetchAllPages(query, 'test', pageSize);
+    expect(seenRanges).toEqual([[0, 1], [2, 3]]);
+  });
+
+  it('surfaces an error from any page immediately, without swallowing it or returning partial data as success', async () => {
+    const err = { code: 'PGRST000', message: 'boom', details: null, hint: null };
+    const query = async () => ({ data: null, error: err });
+    const result = await fetchAllPages(query, 'fetchAdminRecipes', 5);
+    expect(result.data).toBeUndefined();
+    expect(result.error).toEqual({ code: 'PGRST000', message: 'boom', details: null, hint: null, operation: 'fetchAdminRecipes' });
   });
 });

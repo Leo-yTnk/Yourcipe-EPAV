@@ -5,7 +5,7 @@
 -- supabase/006_admin_catalog_publishing.sql already applied.
 -- Never run against a real Supabase project.
 begin;
-select plan(53);
+select plan(63);
 
 select test.act_as(null, null);
 insert into auth.users (id, raw_user_meta_data) values
@@ -316,6 +316,100 @@ select throws_like(
 );
 select is((select status from public.change_requests where id = :'conflict_req_id'), 'submitted', 'a version-conflict rollback leaves the request untouched (still submitted, not approved)');
 select is((select name from public.categories where id = :'u1_public_prod_cat'), 'Prot Pessoal User1', 'a version-conflict rollback leaves the target category untouched');
+
+-- ---------------------------------------------------------------------
+-- 12. Draft-vs-published visibility split + ingredient/section relation
+--     counts matching the source exactly, for a recipe request with
+--     MORE than one ingredient and section this time (the section-6/7
+--     fixture above only exercised one of each).
+-- ---------------------------------------------------------------------
+select test.act_as(null, null);
+insert into public.categories (scope, type, name, active) values ('site', 'secao', 'Seção Pública A', true)
+  returning id as pub_section_a \gset
+insert into public.categories (scope, type, name, active) values ('site', 'secao', 'Seção Pública B', true)
+  returning id as pub_section_b \gset
+insert into public.products (scope, name, category_id, unit, price, active) values ('site', 'Produto Público Extra', :'u1_public_prod_cat', 'kg', 7.00, true)
+  returning id as pub_product_extra \gset
+
+select test.act_as(:user1, 'authenticated');
+insert into public.recipes (scope, owner_id, status, name, category_id, difficulty)
+  values ('personal', :user1, 'private', 'Receita Multi Draft', :'u1_public_recipe_cat', 'Fácil')
+  returning id as u1_recipe_multi \gset
+insert into public.recipe_ingredients (recipe_id, product_id, quantity) values
+  (:'u1_recipe_multi', :'u1_public_product', 1),
+  (:'u1_recipe_multi', :'pub_product_extra', 2);
+insert into public.recipe_categories (recipe_id, category_id) values
+  (:'u1_recipe_multi', :'pub_section_a'),
+  (:'u1_recipe_multi', :'pub_section_b');
+select public.submit_recipe_request(:'u1_recipe_multi', null) as multi_req_id \gset
+
+select test.act_as(:admin1, 'authenticated');
+select public.review_change_request(:'multi_req_id', 'approve', null, 'draft');
+select target_id as u1_public_recipe_multi from public.change_requests where id = :'multi_req_id' \gset
+
+select is((select status from public.recipes where id = :'u1_public_recipe_multi'), 'draft', '"Aprovar como rascunho" creates the recipe with status=draft');
+select is((select published_at from public.recipes where id = :'u1_public_recipe_multi'), null, 'a draft approval never sets published_at');
+select is((select count(*)::int from public.recipe_ingredients where recipe_id = :'u1_public_recipe_multi'), 2, 'the published-as-draft recipe has exactly as many ingredient rows as its source (2)');
+select is((select count(*)::int from public.recipe_categories where recipe_id = :'u1_public_recipe_multi'), 2, 'the published-as-draft recipe has exactly as many section-tag rows as its source (2)');
+
+-- Public-library-equivalent query (scope='site' and status='published',
+-- what fetchPublicRecipes in catalog.js actually runs) must NOT include a
+-- draft-approved recipe.
+select is(
+  (select count(*)::int from public.recipes where scope = 'site' and status = 'published' and id = :'u1_public_recipe_multi'),
+  0,
+  'a draft-approved recipe never appears in the public-library-equivalent query (scope=site AND status=published)'
+);
+-- Admin-catalog-equivalent query (scope='site', no status/active filter at
+-- all, what fetchAdminRecipes in catalog.js actually runs) MUST include it.
+select is(
+  (select count(*)::int from public.recipes where scope = 'site' and id = :'u1_public_recipe_multi'),
+  1,
+  'a draft-approved recipe DOES appear in the admin-catalog-equivalent query (scope=site, unfiltered by status)'
+);
+
+-- ---------------------------------------------------------------------
+-- 13. Simulated partial failure: a reference goes stale (mid-review) and
+--     review_change_request must roll back the WHOLE approval — no
+--     recipe row, no partial ingredients/sections survive, and the
+--     change_requests row itself is untouched. review_change_request has
+--     no nested BEGIN/EXCEPTION block anywhere in its body, so Postgres'
+--     default whole-function atomicity is what's actually being proven
+--     here (a raised exception unwinds every write the call made).
+-- ---------------------------------------------------------------------
+select test.act_as(:user1, 'authenticated');
+insert into public.recipes (scope, owner_id, status, name, category_id, difficulty)
+  values ('personal', :user1, 'private', 'Receita Falha Parcial', :'u1_public_recipe_cat', 'Fácil')
+  returning id as u1_recipe_broken \gset
+insert into public.recipe_ingredients (recipe_id, product_id, quantity) values
+  (:'u1_recipe_broken', :'u1_public_product', 1),
+  (:'u1_recipe_broken', :'pub_product_extra', 1);
+insert into public.recipe_categories (recipe_id, category_id) values (:'u1_recipe_broken', :'pub_section_a');
+select public.submit_recipe_request(:'u1_recipe_broken', null) as broken_req_id \gset
+
+-- Deactivate one of the two referenced products AFTER submission (the
+-- snapshot already captured it) so review_change_request's own re-validation
+-- (`stale_dependency:product`) fires partway through the ingredient loop —
+-- by which point the recipe row and the first ingredient/section would
+-- already have been inserted if this were not a single atomic transaction.
+select test.act_as(:admin1, 'authenticated');
+update public.products set active = false where id = :'pub_product_extra';
+
+select throws_like(
+  format($$select public.review_change_request(%L, 'approve', null, 'published')$$, :'broken_req_id'),
+  'stale_dependency:product',
+  'review_change_request detects a reference that went stale between submission and review'
+);
+select is((select status from public.change_requests where id = :'broken_req_id'), 'submitted', 'a rolled-back approval leaves the request itself untouched (still submitted, not approved)');
+select is((select target_id from public.change_requests where id = :'broken_req_id'), null, 'a rolled-back approval never sets target_id');
+select is(
+  (select count(*)::int from public.recipes where scope = 'site' and name = 'Receita Falha Parcial'),
+  0,
+  'a rolled-back approval leaves NO recipe row behind at all — not even a partial one with some but not all ingredients/sections'
+);
+
+select test.act_as(null, null);
+update public.products set active = true where id = :'pub_product_extra';
 
 select test.act_as(null, null);
 select * from finish();

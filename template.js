@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260803-1';
-import { CustomSelect } from './custom-select.js?v=20260803-1';
+import { html } from './vendor/htm-preact-standalone.js?v=20260803-2';
+import { CustomSelect } from './custom-select.js?v=20260803-2';
 
 export function renderApp(app) {
   const v = app.computeViewModel();
@@ -589,9 +589,9 @@ function renderProfile(app, v) {
           <div style="margin-top:24px">
             <div style="font-size:13px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--neutral-600);margin-bottom:10px">Biblioteca Compartilhada Comigo</div>
             ${v.sharedLibraryRows.map((row) => html`
-              <div key=${row.id} onClick=${row.onOpen} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:pointer">
+              <div key=${row.id} onClick=${row.onOpen} style=${`display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid ${row.justRedeemed ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:pointer${row.justRedeemed ? ';box-shadow:0 0 0 3px rgba(52,178,62,0.18)' : ''}`}>
                 <div>
-                  <div style="font-size:15px;font-weight:600">${row.name}</div>
+                  <div style="font-size:15px;font-weight:600">${row.name}${row.justRedeemed ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">Adicionada agora</span>` : ''}</div>
                   <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code} · somente leitura</div>
                 </div>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2"><path d="M9 6l6 6-6 6"></path></svg>
@@ -909,7 +909,7 @@ function renderAltModal(app, v) {
 function renderConfirmDeleteModal(app, v) {
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div ref=${app.modalFocusRef('confirmDelete')} role="dialog" aria-modal="true" aria-label="Confirmar exclusão" tabindex="-1" style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="font-size:18px;font-weight:700;margin-bottom:8px">Confirmar exclusão</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">${v.confirmDeleteMessage}</div>
         <div style="display:flex;gap:10px">
@@ -1011,7 +1011,7 @@ function renderSiteRecipesTab(app, v) {
         <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span> <span style=${row.statusBadgeStyle}>${row.statusLabel}</span>${row.featured ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">★ Receita do Dia</span>` : ''}</div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
           <div onClick=${row.onToggleStatus} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleStatusLabel}</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
@@ -1036,7 +1036,7 @@ function renderSiteProductsTab(app, v) {
         <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
           <div style="font-size:15px;font-weight:700;color:var(--brand-700)">${row.priceLabel}</div>
           <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
@@ -1062,7 +1062,7 @@ function renderSiteCategoriesTab(app, v) {
         <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
           <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
@@ -1389,10 +1389,10 @@ function renderMyRecipeDetailModal(app, v) {
   const d = v.myRecipeDetail;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:22;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div className="yc-scroll" style="width:640px;max-width:100%;max-height:90%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div ref=${app.modalFocusRef('myRecipeDetail')} role="dialog" aria-modal="true" aria-label=${d ? d.name : 'Receita'} tabindex="-1" className="yc-scroll" style="width:640px;max-width:100%;max-height:90%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div style="font-size:22px;font-weight:700">${d ? d.name : 'Receita'}</div>
-          <div onClick=${v.onCloseMyRecipeDetail} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <div onClick=${v.onCloseMyRecipeDetail} aria-label="Fechar" role="button" tabindex="0" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
           </div>
         </div>
@@ -1424,20 +1424,44 @@ function renderMyRecipeDetailModal(app, v) {
 
           ${d.isOwner ? html`
             <div style="margin-top:22px;border-top:1px solid var(--neutral-100);padding-top:18px">
-              <div style="font-size:15px;font-weight:700;margin-bottom:6px">Compartilhamento</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px">
+                <div style="font-size:15px;font-weight:700">Compartilhamento — ${d.name}</div>
+                <span style=${`font-size:11px;font-weight:700;padding:4px 10px;border-radius:var(--radius-full);white-space:nowrap;background:${v.shareActive ? 'rgba(52,178,62,0.14)' : 'var(--neutral-50)'};color:${v.shareActive ? 'var(--green-600)' : 'var(--neutral-600)'}`}>${v.shareActive ? 'Ativo' : 'Inativo'}</span>
+              </div>
               <div style="font-size:13px;color:var(--neutral-600);margin-bottom:12px">${v.shareStatusLabel}</div>
               ${v.hasShareFlash && html`<div style="background:rgba(52,178,62,0.12);border:1px solid var(--green-500);color:var(--green-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:12px">${v.shareFlash}</div>`}
+
               ${v.hasShareCode && html`
-                <div style="background:var(--neutral-50);border:1.5px dashed var(--brand-500);border-radius:var(--radius-md);padding:14px;text-align:center;font-size:18px;font-weight:700;letter-spacing:0.03em;color:var(--brand-700);margin-bottom:12px">${v.shareCode}</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--neutral-50);border:1.5px solid var(--brand-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:6px">
+                  <div style="font-family:ui-monospace,SFMono-Regular,Consolas,'Courier New',monospace;font-size:18px;font-weight:700;letter-spacing:0.06em;color:var(--brand-700);user-select:all">${v.shareCode}</div>
+                  <div onClick=${v.onCopyShareCode} style="flex-shrink:0;padding:8px 14px;border-radius:var(--radius-full);background:${v.shareCopyConfirmed ? 'var(--green-600)' : 'var(--brand-700)'};color:#F4F2F1;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap">${v.shareCopyConfirmed ? 'Código copiado ✓' : 'Copiar código'}</div>
+                </div>
+                <div style="font-size:12px;color:var(--neutral-600);margin-bottom:12px">Este é o código YSH — compartilhe-o com quem deve ter acesso somente leitura a esta receita.</div>
               `}
-              <div style="font-size:13px;color:var(--neutral-600);margin-bottom:12px">${v.shareGrantCount} acesso(s) ativo(s).</div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                ${!v.shareActive && html`<div onClick=${v.onActivateSharing} style="padding:10px 16px;border-radius:var(--radius-full);background:var(--brand-700);color:#F4F2F1;font-weight:600;font-size:13px;cursor:pointer">Ativar compartilhamento</div>`}
-                ${v.hasShareCode && html`<div onClick=${v.onCopyShareCode} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--brand-700);color:var(--brand-700);font-weight:600;font-size:13px;cursor:pointer">Copiar ID</div>`}
-                ${v.hasShareCode && html`<div onClick=${v.onRegenerateShareCode} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--brand-700);color:var(--brand-700);font-weight:600;font-size:13px;cursor:pointer">Gerar novo ID</div>`}
-                ${v.shareActive && html`<div onClick=${v.onDeactivateSharing} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--neutral-400);color:var(--neutral-800);font-weight:600;font-size:13px;cursor:pointer">Desativar novos compartilhamentos</div>`}
-                ${v.shareGrantCount > 0 && html`<div onClick=${v.onRevokeAllAccess} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--red-600);color:var(--red-600);font-weight:600;font-size:13px;cursor:pointer">Revogar acessos</div>`}
+              <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">${v.shareGrantCount} acesso(s) ativo(s) concedido(s) por este código.</div>
+
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                ${!v.shareActive && !v.hasShareCode && html`<div onClick=${v.shareBusy ? null : v.onActivateSharing} style="padding:10px 16px;border-radius:var(--radius-full);background:var(--brand-700);color:#F4F2F1;font-weight:600;font-size:13px;cursor:pointer">Ativar compartilhamento</div>`}
+                ${v.hasShareCode && html`<div onClick=${v.shareBusy ? null : v.onRegenerateShareCode} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--brand-700);color:var(--brand-700);font-weight:600;font-size:13px;cursor:pointer">Gerar novo código</div>`}
+                ${v.shareActive && html`<div onClick=${v.shareBusy ? null : v.onDeactivateSharing} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--neutral-400);color:var(--neutral-800);font-weight:600;font-size:13px;cursor:pointer">Desativar novos acessos</div>`}
+                ${!v.shareActive && v.hasShareCode && html`<div onClick=${v.shareBusy ? null : v.onActivateSharing} style="padding:10px 16px;border-radius:var(--radius-full);background:var(--brand-700);color:#F4F2F1;font-weight:600;font-size:13px;cursor:pointer">Reativar código</div>`}
+                ${v.shareGrantCount > 0 && !v.shareRevokeConfirming && html`<div onClick=${v.shareBusy ? null : v.onAskRevokeAllAccess} style="padding:10px 16px;border-radius:var(--radius-full);border:1.5px solid var(--red-600);color:var(--red-600);font-weight:600;font-size:13px;cursor:pointer">Revogar acessos existentes</div>`}
               </div>
+
+              ${v.shareRevokeConfirming && html`
+                <div style="background:rgba(195,61,34,0.08);border:1px solid var(--red-500);border-radius:var(--radius-md);padding:14px;margin-bottom:12px">
+                  <div style="font-size:13px;color:var(--red-600);font-weight:600;margin-bottom:10px">Revogar agora removerá o acesso de ${v.shareGrantCount} pessoa(s) imediatamente. Cópias que já foram criadas a partir desta receita não são afetadas. Confirma?</div>
+                  <div style="display:flex;gap:8px">
+                    <div onClick=${v.onCancelRevokeAllAccess} style="flex:1;text-align:center;padding:10px;border-radius:var(--radius-md);font-weight:600;font-size:13px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-0)">Cancelar</div>
+                    <div onClick=${v.shareBusy ? null : v.onRevokeAllAccess} style="flex:1;text-align:center;padding:10px;border-radius:var(--radius-md);font-weight:700;font-size:13px;cursor:pointer;color:#F4F2F1;background:var(--red-600)">${v.shareBusy ? 'Revogando...' : 'Sim, revogar acessos'}</div>
+                  </div>
+                </div>
+              `}
+
+              <div style="font-size:12px;color:var(--neutral-600);line-height:1.5;background:var(--neutral-50);border-radius:var(--radius-md);padding:12px 14px">
+                <strong>Desativar o código</strong> bloqueia novos resgates, mas mantém quem já tem acesso. <strong>Gerar novo código</strong> troca o código para novos resgates, sem afetar acessos já concedidos. <strong>Revogar acessos</strong> remove o acesso de quem já resgatou — nenhuma dessas ações apaga cópias próprias que outras pessoas já tenham criado.
+              </div>
+
               <div onClick=${d.onOpenPublishRequest} style="margin-top:14px;text-align:center;padding:12px;border-radius:var(--radius-md);font-weight:700;font-size:14px;cursor:pointer;color:var(--brand-700);border:1.5px solid var(--brand-500)">Solicitar publicação no catálogo</div>
             </div>
           ` : html`
@@ -1481,13 +1505,21 @@ function renderCopyResolveModal(app, v) {
 function renderSharedRecipesTab(app, v) {
   return html`
     <div style="padding:8px 40px 24px">
-      ${!v.hasSharedLibraryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita compartilhada com você ainda. Use "Cadastrar Receita por ID" no Perfil.</div>`}
+      ${v.sharedLibraryLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.hasSharedLibraryError && html`
+        <div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <span>${v.sharedLibraryError}</span>
+          <span onClick=${v.onRetrySharedLibrary} style="cursor:pointer;text-decoration:underline;white-space:nowrap">Tentar novamente</span>
+        </div>
+      `}
+      ${!v.sharedLibraryLoading && !v.hasSharedLibraryError && !v.hasSharedLibraryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita compartilhada com você ainda. Use "Cadastrar Receita por ID" no Perfil.</div>`}
       ${v.sharedLibraryRows.map((row) => html`
-        <div key=${row.id} onClick=${row.onOpen} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;cursor:pointer">
+        <div key=${row.id} onClick=${row.onOpen} style=${`display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid ${row.justRedeemed ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;cursor:pointer${row.justRedeemed ? ';box-shadow:0 0 0 3px rgba(52,178,62,0.18)' : ''}`}>
           <div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-size:15px;font-weight:600">${row.name}</span>
               <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span>
+              ${row.justRedeemed && html`<span style="font-size:11px;font-weight:700;color:var(--brand-700)">Adicionada agora</span>`}
             </div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code} · somente leitura${row.authorName ? ` · por ${row.authorName}` : ''}</div>
           </div>
@@ -1604,10 +1636,10 @@ function renderRequestDetailModal(app, v) {
   const d = v.requestDetail;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div ref=${app.modalFocusRef('requestDetail')} role="dialog" aria-modal="true" aria-label=${d ? `Pedido ${d.code}` : 'Pedido'} tabindex="-1" className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <div style="font-size:20px;font-weight:700">${d ? d.code : 'Pedido'}</div>
-          <div onClick=${v.onCloseRequestDetail} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <div onClick=${v.onCloseRequestDetail} aria-label="Fechar" role="button" tabindex="0" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
           </div>
         </div>
@@ -1622,7 +1654,12 @@ function renderRequestDetailModal(app, v) {
           <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">${d.entityLabel} · ${d.actionLabel} · ${d.statusLabel}</div>
           <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">Solicitado por: <strong>${d.requesterName}</strong></div>
           ${d.sourceCode && html`<div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">Item original: ${d.sourceCode}</div>`}
-          ${d.hasTargetCode && html`<div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">Item público: ${d.targetCode}</div>`}
+          ${d.hasTargetCode && html`
+            <div style="font-size:13px;color:var(--neutral-600);margin-bottom:4px">
+              Item público: ${d.targetCode}
+              ${d.canOpenTargetRecipe && html` · <span onClick=${d.onOpenTargetRecipe} style="color:var(--brand-700);font-weight:700;cursor:pointer;text-decoration:underline">Abrir receita publicada</span>`}
+            </div>
+          `}
           ${d.hasReason && html`<div style="font-size:13px;color:var(--neutral-800);margin-top:10px"><strong>Justificativa:</strong> ${d.reason}</div>`}
           ${d.hasAdminNote && html`<div style="font-size:13px;color:var(--red-600);margin-top:10px"><strong>Nota do admin:</strong> ${d.adminNote}</div>`}
 
