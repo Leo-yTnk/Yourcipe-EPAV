@@ -175,12 +175,18 @@ class App extends Component {
       // ---- Modo de Criação: personal recipes/products/categories (Supabase-backed) ----
       myCreationLoading: false, myCreationError: '',
       myCategories: [], myProducts: [], myRecipes: [], sharedLibrary: [],
+      // Public (scope='site', active=true) categories/products, loaded
+      // alongside the caller's own personal rows so every category/product
+      // picker in "Modo de Criação" can offer "public active UNION my own
+      // active", per type — never only the caller's own rows, and never
+      // requiring the caller to have created anything of their own first.
+      pickerPublicCategories: [], pickerPublicProducts: [],
       showMyCategoryForm: false, myCategoryFormMode: 'new', myCategoryForm: null,
       showMyProductForm: false, myProductFormMode: 'new', myProductForm: null,
       showMyRecipeForm: false, myRecipeFormMode: 'new', myRecipeForm: null,
       myFormError: '',
       // Recipe detail (own or shared-with-me) — sharing controls, authorship, copy.
-      selectedMyRecipe: null, myRecipeDetailLoading: false, myRecipeDetailError: '',
+      selectedMyRecipe: null, myRecipeDetailLoading: false, myRecipeDetailError: '', myRecipeDetailRequestedId: null,
       recipeAuthorName: '',
       shareStatus: null, shareGrantCount: 0, shareBusy: false, shareFlash: '',
       // "Cadastrar Receita por ID" (Perfil).
@@ -786,9 +792,23 @@ class App extends Component {
   flashAdmin = (msg) => { this.setState({ adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 4000); };
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
 
-  myRecipeCategories = () => this.state.myCategories.filter(c => c.type === 'receita');
-  mySectionCategories = () => this.state.myCategories.filter(c => c.type === 'secao');
-  myProteinCategories = () => this.state.myCategories.filter(c => c.type === 'proteina');
+  // Category/product pickers for personal recipe/product forms show public
+  // (scope='site', active=true) rows UNION the caller's own active personal
+  // rows of the matching type — never another user's personal rows
+  // (pickerPublicCategories/pickerPublicProducts only ever contain
+  // scope='site' rows, per fetchPublicCategories/fetchPublicProducts'
+  // RLS-backed filters; this.state.myCategories/myProducts only ever
+  // contain the caller's own rows, per fetchMyCategories/fetchMyProducts'
+  // owner_id filter) — and never require the caller to have created their
+  // own category/product first.
+  pickerCategoriesByType = (type) => [
+    ...this.state.pickerPublicCategories.filter(c => c.type === type),
+    ...this.state.myCategories.filter(c => c.type === type),
+  ];
+  myRecipeCategories = () => this.pickerCategoriesByType('receita');
+  mySectionCategories = () => this.pickerCategoriesByType('secao');
+  myProteinCategories = () => this.pickerCategoriesByType('proteina');
+  pickerProducts = () => [...this.state.pickerPublicProducts, ...this.state.myProducts];
 
   // ---- Modo de Criação: load "Minhas Receitas / Meus Produtos / Minhas
   // Categorias" + the shared-with-me library, all scoped to the caller's own
@@ -811,25 +831,43 @@ class App extends Component {
   loadMyCreationData = async (uid) => {
     if (!uid) return;
     this.setState({ myCreationLoading: true, myCreationError: '' });
-    const [cats, prods, recs, shared] = await Promise.all([
-      catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid), catalog.fetchSharedLibrary(uid),
-    ]);
-    const failed = cats.error || prods.error || recs.error || shared.error;
-    if (failed) {
-      // catalog.js already logged the full { code, message, details, hint }
-      // to the console (see logSupabaseError) — this is the same real
-      // message, just also surfaced in the UI instead of only a generic
-      // string, per the explicit "não manter somente a mensagem genérica"
-      // requirement.
-      const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
-      this.setState({ myCreationLoading: false, myCreationError: `Não foi possível carregar seus dados: ${detail}` });
-      return;
+    try {
+      const [cats, prods, recs, shared, publicCats, publicProds] = await Promise.all([
+        catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid), catalog.fetchSharedLibrary(uid),
+        // Public (scope='site', active=true) categories/products — every
+        // category/product picker below unions these with the caller's own
+        // personal rows, so pickers work immediately from a freshly-seeded
+        // catalog (supabase/008_seed_default_catalog.sql) with no dependency
+        // on the caller having created anything personal first.
+        catalog.fetchPublicCategories(), catalog.fetchPublicProducts(),
+      ]);
+      const failed = cats.error || prods.error || recs.error || shared.error || publicCats.error || publicProds.error;
+      if (failed) {
+        // catalog.js already logged the full { code, message, details, hint }
+        // to the console (see logSupabaseError) — this is the same real
+        // message, just also surfaced in the UI instead of only a generic
+        // string, per the explicit "não manter somente a mensagem genérica"
+        // requirement.
+        const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
+        this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
+        return;
+      }
+      this.setState({
+        myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
+        sharedLibrary: (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at })),
+        pickerPublicCategories: publicCats.data || [], pickerPublicProducts: publicProds.data || [],
+      });
+    } catch (e) {
+      // Defensive net for an unexpected synchronous throw elsewhere in this
+      // body (e.g. a `.map()` over an unexpectedly-shaped response) — every
+      // ordinary Supabase error already comes back as a normal `{ error }`
+      // value via catalog.js's unwrap() and is handled by the branch above;
+      // this only guards against something genuinely unforeseen so the UI
+      // never gets stuck on "Carregando..." forever.
+      this.setState({ myCreationError: `Não foi possível carregar seus dados: ${(e && e.message) || 'erro inesperado'}` });
+    } finally {
+      this.setState({ myCreationLoading: false });
     }
-    this.setState({
-      myCreationLoading: false,
-      myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
-      sharedLibrary: (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at })),
-    });
   };
 
   // ---- Minhas Categorias ----
@@ -873,7 +911,7 @@ class App extends Component {
     myRecipeForm: {
       id: null, name: '', categoryId: (this.myRecipeCategories()[0] && this.myRecipeCategories()[0].id) || '',
       prepTime: 30, servings: 4, difficulty: 'Fácil', imageUrl: '',
-      ingredients: [{ productId: this.state.myProducts[0] ? this.state.myProducts[0].id : '', quantity: 1 }],
+      ingredients: [{ productId: this.pickerProducts()[0] ? this.pickerProducts()[0].id : '', quantity: 1 }],
       sectionCategoryIds: [], extrasText: '', instructionsText: '', tipsText: '',
     },
   });
@@ -899,7 +937,7 @@ class App extends Component {
   onCancelMyRecipeForm = () => this.setState({ showMyRecipeForm: false, myRecipeForm: null, myFormError: '' });
   myRecipeFormField = (field) => (e) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, [field]: e.target.value } }));
   onMyRecipeIngredientChange = (idx, field, value) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.map((row, i) => i === idx ? { ...row, [field]: value } : row) } }));
-  addMyRecipeIngredient = () => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: [...s.myRecipeForm.ingredients, { productId: this.state.myProducts[0] ? this.state.myProducts[0].id : '', quantity: 1 }] } }));
+  addMyRecipeIngredient = () => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: [...s.myRecipeForm.ingredients, { productId: this.pickerProducts()[0] ? this.pickerProducts()[0].id : '', quantity: 1 }] } }));
   removeMyRecipeIngredient = (idx) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.filter((_, i) => i !== idx) } }));
   toggleMyRecipeSection = (categoryId) => this.setState(s => {
     const cur = s.myRecipeForm.sectionCategoryIds;
@@ -943,18 +981,28 @@ class App extends Component {
 
   // ---- Recipe detail (own or shared-with-me): sharing controls, authorship, copy ----
   onOpenMyRecipeDetail = async (recipeId) => {
-    this.setState({ myRecipeDetailLoading: true, myRecipeDetailError: '', selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '' });
-    const uid = this.state.session.user.id;
-    const [detailRes, authorRes] = await Promise.all([catalog.fetchRecipeDetail(recipeId), catalog.getRecipeAuthorName(recipeId)]);
-    if (detailRes.error || !detailRes.data) { this.setState({ myRecipeDetailLoading: false, myRecipeDetailError: 'Não foi possível carregar a receita.' }); return; }
-    const isOwner = detailRes.data.recipe.owner_id === uid;
-    this.setState({ myRecipeDetailLoading: false, selectedMyRecipe: { ...detailRes.data, id: recipeId, isOwner }, recipeAuthorName: authorRes.data || '' });
-    if (isOwner) {
-      const [shareRes, countRes] = await Promise.all([catalog.fetchShareStatus(recipeId), catalog.fetchActiveGrantCount(recipeId)]);
-      this.setState({ shareStatus: shareRes.data || null, shareGrantCount: countRes.data || 0 });
+    this.setState({
+      myRecipeDetailLoading: true, myRecipeDetailError: '', myRecipeDetailRequestedId: recipeId,
+      selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '',
+    });
+    try {
+      const uid = this.state.session.user.id;
+      const [detailRes, authorRes] = await Promise.all([catalog.fetchRecipeDetail(recipeId), catalog.getRecipeAuthorName(recipeId)]);
+      if (detailRes.error || !detailRes.data) { this.setState({ myRecipeDetailError: 'Não foi possível carregar a receita.' }); return; }
+      const isOwner = detailRes.data.recipe.owner_id === uid;
+      this.setState({ selectedMyRecipe: { ...detailRes.data, id: recipeId, isOwner }, recipeAuthorName: authorRes.data || '' });
+      if (isOwner) {
+        const [shareRes, countRes] = await Promise.all([catalog.fetchShareStatus(recipeId), catalog.fetchActiveGrantCount(recipeId)]);
+        this.setState({ shareStatus: shareRes.data || null, shareGrantCount: countRes.data || 0 });
+      }
+    } catch (e) {
+      this.setState({ myRecipeDetailError: `Não foi possível carregar a receita: ${(e && e.message) || 'erro inesperado'}` });
+    } finally {
+      this.setState({ myRecipeDetailLoading: false });
     }
   };
-  onCloseMyRecipeDetail = () => this.setState({ selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '', shareFlash: '' });
+  onRetryMyRecipeDetail = () => { if (this.state.myRecipeDetailRequestedId) this.onOpenMyRecipeDetail(this.state.myRecipeDetailRequestedId); };
+  onCloseMyRecipeDetail = () => this.setState({ selectedMyRecipe: null, shareStatus: null, shareGrantCount: 0, recipeAuthorName: '', shareFlash: '', myRecipeDetailError: '', myRecipeDetailRequestedId: null });
 
   onActivateSharing = async () => {
     const rid = this.state.selectedMyRecipe.id;
@@ -1069,58 +1117,74 @@ class App extends Component {
   // pages either. This is the actual fix for both halves of that gap.
   // =========================================================================
   loadPublicCatalog = async () => {
-    const [catsRes, prodsRes, recsRes] = await Promise.all([
-      catalog.fetchPublicCategories(), catalog.fetchPublicProducts(), catalog.fetchPublicRecipes(),
-    ]);
-    const firstError = catsRes.error || prodsRes.error || recsRes.error;
-    if (firstError) {
-      // Fallback is explicit and visible (see hasPublicCatalogFallback/
-      // publicCatalogError in computeViewModel + the banner in
-      // renderHome) — never a silent substitution, and the real Supabase
-      // error is both logged (catalog.js) and kept here for the banner.
-      this.setState({
-        publicCatalogSource: 'demo-fallback',
-        publicCatalogError: `${firstError.message || 'erro desconhecido'}${firstError.code ? ` (${firstError.code})` : ''}`,
-        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
-      });
-      return;
-    }
-    const recipeIds = (recsRes.data || []).map(r => r.id);
-    const [ingRes, secRes] = await Promise.all([
-      catalog.fetchRecipeIngredientsBulk(recipeIds), catalog.fetchRecipeSectionsBulk(recipeIds),
-    ]);
-    const secondError = ingRes.error || secRes.error;
-    if (secondError) {
-      this.setState({
-        publicCatalogSource: 'demo-fallback',
-        publicCatalogError: `${secondError.message || 'erro desconhecido'}${secondError.code ? ` (${secondError.code})` : ''}`,
-        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
-      });
-      return;
-    }
-    const ingByRecipe = {};
-    (ingRes.data || []).forEach(i => { (ingByRecipe[i.recipe_id] = ingByRecipe[i.recipe_id] || []).push(i); });
-    const secByRecipe = {};
-    (secRes.data || []).forEach(s => { (secByRecipe[s.recipe_id] = secByRecipe[s.recipe_id] || []).push(s); });
+    // Reset to 'loading' on every call (not just the very first, initial
+    // one) so a retry after a demo-fallback error shows the loading state
+    // again instead of leaving the stale fallback banner up mid-request.
+    this.setState({ publicCatalogSource: 'loading', publicCatalogError: '' });
+    try {
+      const [catsRes, prodsRes, recsRes] = await Promise.all([
+        catalog.fetchPublicCategories(), catalog.fetchPublicProducts(), catalog.fetchPublicRecipes(),
+      ]);
+      const firstError = catsRes.error || prodsRes.error || recsRes.error;
+      if (firstError) {
+        // Fallback is explicit and visible (see hasPublicCatalogFallback/
+        // publicCatalogError in computeViewModel + the banner in
+        // renderHome) — never a silent substitution, and the real Supabase
+        // error is both logged (catalog.js) and kept here for the banner.
+        this.setState({
+          publicCatalogSource: 'demo-fallback',
+          publicCatalogError: `${firstError.message || 'erro desconhecido'}${firstError.code ? ` (${firstError.code})` : ''}`,
+          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+        });
+        return;
+      }
+      const recipeIds = (recsRes.data || []).map(r => r.id);
+      const [ingRes, secRes] = await Promise.all([
+        catalog.fetchRecipeIngredientsBulk(recipeIds), catalog.fetchRecipeSectionsBulk(recipeIds),
+      ]);
+      const secondError = ingRes.error || secRes.error;
+      if (secondError) {
+        this.setState({
+          publicCatalogSource: 'demo-fallback',
+          publicCatalogError: `${secondError.message || 'erro desconhecido'}${secondError.code ? ` (${secondError.code})` : ''}`,
+          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+        });
+        return;
+      }
+      const ingByRecipe = {};
+      (ingRes.data || []).forEach(i => { (ingByRecipe[i.recipe_id] = ingByRecipe[i.recipe_id] || []).push(i); });
+      const secByRecipe = {};
+      (secRes.data || []).forEach(s => { (secByRecipe[s.recipe_id] = secByRecipe[s.recipe_id] || []).push(s); });
 
-    // Mapped into the exact same shape data.js's DEFAULT_PRODUCTS/
-    // DEFAULT_RECIPES already used, so the rest of the (already extensive)
-    // Home/Search/Detail rendering pipeline needs no changes at all — only
-    // the data source changes, from a local seed to live Supabase data.
-    const products = (prodsRes.data || []).map(p => ({
-      id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
-    }));
-    const recipes = (recsRes.data || []).map(r => {
-      const tags = (secByRecipe[r.id] || []).map(s => s.category && s.category.slug).filter(Boolean);
-      if (r.featured) tags.push('destaque');
-      return {
-        id: r.id, nome: r.name, categoria: (r.category && r.category.name) || '', tempo: r.prep_time, porcoes: r.servings,
-        dificuldade: r.difficulty, imagem: r.image_url || FALLBACK_IMG, tags,
-        ingredientes: (ingByRecipe[r.id] || []).map(i => ({ produtoId: i.product_id, qtd: Number(i.quantity) || 0 })),
-        extras: r.extras || [], modoPreparo: r.instructions || [], dicas: r.tips || [],
-      };
-    });
-    this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes });
+      // Mapped into the exact same shape data.js's DEFAULT_PRODUCTS/
+      // DEFAULT_RECIPES already used, so the rest of the (already extensive)
+      // Home/Search/Detail rendering pipeline needs no changes at all — only
+      // the data source changes, from a local seed to live Supabase data.
+      const products = (prodsRes.data || []).map(p => ({
+        id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
+      }));
+      const recipes = (recsRes.data || []).map(r => {
+        const tags = (secByRecipe[r.id] || []).map(s => s.category && s.category.slug).filter(Boolean);
+        if (r.featured) tags.push('destaque');
+        return {
+          id: r.id, nome: r.name, categoria: (r.category && r.category.name) || '', tempo: r.prep_time, porcoes: r.servings,
+          dificuldade: r.difficulty, imagem: r.image_url || FALLBACK_IMG, tags,
+          ingredientes: (ingByRecipe[r.id] || []).map(i => ({ produtoId: i.product_id, qtd: Number(i.quantity) || 0 })),
+          extras: r.extras || [], modoPreparo: r.instructions || [], dicas: r.tips || [],
+        };
+      });
+      this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes });
+    } catch (e) {
+      // Same defensive net as loadMyCreationData: an unexpected synchronous
+      // throw here (not a normal Supabase `{ error }` response, which is
+      // already handled above) must still resolve publicCatalogSource out
+      // of 'loading' instead of leaving Home stuck.
+      this.setState({
+        publicCatalogSource: 'demo-fallback',
+        publicCatalogError: (e && e.message) || 'erro inesperado',
+        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES,
+      });
+    }
   };
 
   // =========================================================================
@@ -1142,16 +1206,22 @@ class App extends Component {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
     this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
-    const [cats, prods, recs] = await Promise.all([
-      catalog.fetchAdminCategories(), catalog.fetchAdminProducts(), catalog.fetchAdminRecipes(),
-    ]);
-    const failed = cats.error || prods.error || recs.error;
-    if (failed) {
-      const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
-      this.setState({ siteCatalogLoading: false, siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
-      return;
+    try {
+      const [cats, prods, recs] = await Promise.all([
+        catalog.fetchAdminCategories(), catalog.fetchAdminProducts(), catalog.fetchAdminRecipes(),
+      ]);
+      const failed = cats.error || prods.error || recs.error;
+      if (failed) {
+        const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
+        this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
+        return;
+      }
+      this.setState({ siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
+    } catch (e) {
+      this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${(e && e.message) || 'erro inesperado'}` });
+    } finally {
+      this.setState({ siteCatalogLoading: false });
     }
-    this.setState({ siteCatalogLoading: false, siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
   };
 
   onNewSiteCategory = () => this.setState({ showSiteCategoryForm: true, siteCategoryFormMode: 'new', siteFormError: '', siteCategoryForm: { id: null, type: 'receita', name: '', active: true } });
@@ -1323,12 +1393,18 @@ class App extends Component {
   loadMyRequests = async (uid) => {
     if (!uid) return;
     this.setState({ myRequestsLoading: true, myRequestsError: '' });
-    const { data, error } = await catalog.fetchMyChangeRequests(uid);
-    if (error) {
-      this.setState({ myRequestsLoading: false, myRequestsError: `Não foi possível carregar seus pedidos: ${error.message || 'erro desconhecido'}` });
-      return;
+    try {
+      const { data, error } = await catalog.fetchMyChangeRequests(uid);
+      if (error) {
+        this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${error.message || 'erro desconhecido'}` });
+        return;
+      }
+      this.setState({ myRequests: data || [] });
+    } catch (e) {
+      this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${(e && e.message) || 'erro inesperado'}` });
+    } finally {
+      this.setState({ myRequestsLoading: false });
     }
-    this.setState({ myRequestsLoading: false, myRequests: data || [] });
   };
   setAdminTabMyRequests = () => { this.setState({ adminTab: 'myRequests' }); if (this.state.session) this.loadMyRequests(this.state.session.user.id); };
   setRequestFilterStatus = (status) => this.setState({ requestFilterStatus: status });
@@ -1361,11 +1437,17 @@ class App extends Component {
   // ---- Request detail (shared by "Meus Pedidos" and "Solicitações Recebidas") ----
   onOpenRequestDetail = async (id) => {
     this.setState({ selectedRequestId: id, requestDetailLoading: true, requestDetailError: '', selectedRequestRevisions: [], requestActionError: '' });
-    const { data, error } = await catalog.fetchChangeRequestRevisions(id);
-    this.setState({ requestDetailLoading: false });
-    if (error) { this.setState({ requestDetailError: `Não foi possível carregar o histórico: ${error.message || 'erro desconhecido'}` }); return; }
-    this.setState({ selectedRequestRevisions: data || [] });
+    try {
+      const { data, error } = await catalog.fetchChangeRequestRevisions(id);
+      if (error) { this.setState({ requestDetailError: `Não foi possível carregar o histórico: ${error.message || 'erro desconhecido'}` }); return; }
+      this.setState({ selectedRequestRevisions: data || [] });
+    } catch (e) {
+      this.setState({ requestDetailError: `Não foi possível carregar o histórico: ${(e && e.message) || 'erro inesperado'}` });
+    } finally {
+      this.setState({ requestDetailLoading: false });
+    }
   };
+  onRetryRequestDetail = () => { if (this.state.selectedRequestId) this.onOpenRequestDetail(this.state.selectedRequestId); };
   onCloseRequestDetail = () => this.setState({ selectedRequestId: null, selectedRequestRevisions: [], requestDetailError: '' });
 
   // ---- "Solicitações Recebidas" (admin only) ----
@@ -1373,12 +1455,18 @@ class App extends Component {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
     this.setState({ allRequestsLoading: true, allRequestsError: '' });
-    const { data, error } = await catalog.fetchAllChangeRequests();
-    if (error) {
-      this.setState({ allRequestsLoading: false, allRequestsError: `Não foi possível carregar as solicitações: ${error.message || 'erro desconhecido'}` });
-      return;
+    try {
+      const { data, error } = await catalog.fetchAllChangeRequests();
+      if (error) {
+        this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${error.message || 'erro desconhecido'}` });
+        return;
+      }
+      this.setState({ allRequests: data || [] });
+    } catch (e) {
+      this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${(e && e.message) || 'erro inesperado'}` });
+    } finally {
+      this.setState({ allRequestsLoading: false });
     }
-    this.setState({ allRequestsLoading: false, allRequests: data || [] });
   };
   setAdminTabRequestsInbox = () => { this.setState({ adminTab: 'requestsInbox' }); this.loadAllRequests(); };
 
@@ -2259,7 +2347,7 @@ class App extends Component {
       checked: !!(s.myRecipeForm && s.myRecipeForm.sectionCategoryIds.includes(c.id)),
       onToggle: () => this.toggleMyRecipeSection(c.id),
     }));
-    const myProductOptionsForIngredients = s.myProducts.map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
+    const myProductOptionsForIngredients = this.pickerProducts().map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
     const myRecipeIngredientRows = s.myRecipeForm ? s.myRecipeForm.ingredients.map((row, idx) => ({
       idx, productId: row.productId, quantity: row.quantity,
       onProductSet: (v) => this.onMyRecipeIngredientChange(idx, 'productId', v),
@@ -2439,6 +2527,14 @@ class App extends Component {
         };
       }),
       screen, dataLoaded: s.dataLoaded, notLoaded: !s.dataLoaded,
+      // Public catalog (Home/Search source) load state — see loadPublicCatalog.
+      // 'loading' never renders as an error; 'demo-fallback' is the only
+      // state with a visible banner+retry, since it means the real
+      // Supabase fetch failed and DEFAULT_PRODUCTS/DEFAULT_RECIPES are
+      // standing in instead of the live catalog.
+      publicCatalogLoading: s.publicCatalogSource === 'loading',
+      hasPublicCatalogFallback: s.publicCatalogSource === 'demo-fallback', publicCatalogError: s.publicCatalogError,
+      onRetryPublicCatalog: () => this.loadPublicCatalog(),
       isHome: s.dataLoaded && screen === 'home', isSearch: s.dataLoaded && screen === 'search', isFavorites: s.dataLoaded && screen === 'favorites', isDados: s.dataLoaded && screen === 'dados', isProfile: s.dataLoaded && screen === 'profile', isDetail: s.dataLoaded && screen === 'detail', isAdmin: s.dataLoaded && screen === 'admin', isSalesHistory: s.dataLoaded && screen === 'salesHistory',
       hasSelectedRecipe: !!selectedRecipe,
       deviceMode, isCompact, isWide, navRailWidth, frameMaxWidth, frameMaxHeight, stagePadLeft, stagePadRight, scrollBottomPad, navRailSideStyle, navRailBorderStyle,
@@ -2508,8 +2604,10 @@ class App extends Component {
       adminTabRequestsInboxStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'requestsInbox' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'requestsInbox' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       hasPendingRequestsBadge: pendingRequestsCount > 0, pendingRequestsCount,
       myCreationLoading: s.myCreationLoading, hasMyCreationError: !!s.myCreationError, myCreationError: s.myCreationError,
+      onRetryMyCreationData: () => { if (s.session) this.loadMyCreationData(s.session.user.id); },
       // Catálogo Público (admin)
       siteCatalogLoading: s.siteCatalogLoading, hasSiteCatalogErrorBanner: !!s.siteCatalogError, siteCatalogError: s.siteCatalogError,
+      onRetrySiteCatalogData: () => this.loadSiteCatalogData(),
       siteRecipeRows, siteProductRows, siteCategoryRows,
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
@@ -2540,13 +2638,16 @@ class App extends Component {
       onOpenPublishRequestForBlocker: (refType, id, name) => this.onOpenPublishRequest(refType, id, name),
       // "Meus Pedidos"
       myRequestsLoading: s.myRequestsLoading, hasMyRequestsError: !!s.myRequestsError, myRequestsError: s.myRequestsError,
+      onRetryMyRequests: () => { if (s.session) this.loadMyRequests(s.session.user.id); },
       myRequestRows, hasMyRequestRows: myRequestRows.length > 0,
       // "Solicitações Recebidas"
       allRequestsLoading: s.allRequestsLoading, hasAllRequestsError: !!s.allRequestsError, allRequestsError: s.allRequestsError,
+      onRetryAllRequests: () => this.loadAllRequests(),
       allRequestRows, hasAllRequestRows: allRequestRows.length > 0,
       requestFilterOptions, requestFilterStatus: s.requestFilterStatus, onSetRequestFilterStatus: (v) => this.setRequestFilterStatus(v),
       // Request detail modal (shared)
       requestDetailOpen: !!s.selectedRequestId, requestDetailLoading: s.requestDetailLoading, hasRequestDetailError: !!s.requestDetailError, requestDetailError: s.requestDetailError,
+      onRetryRequestDetail: this.onRetryRequestDetail,
       requestDetail, hasRequestDetail: !!requestDetail, onCloseRequestDetail: this.onCloseRequestDetail,
       requestActionBusy: s.requestActionBusy, hasRequestActionError: !!s.requestActionError, requestActionError: s.requestActionError,
       onOpenReturnRequestModal: this.onOpenReturnRequestModal, onOpenRejectRequestModal: this.onOpenRejectRequestModal,
@@ -2580,8 +2681,8 @@ class App extends Component {
       myCategoryTypeOptions: [{ value: 'receita', label: 'Receita' }, { value: 'secao', label: 'Seção' }, { value: 'proteina', label: 'Proteína/Produto' }],
       onCancelMyCategoryForm: this.onCancelMyCategoryForm, onSaveMyCategoryForm: this.onSaveMyCategoryForm,
       // Detalhe de receita própria/compartilhada: sharing, autoria, cópia
-      showMyRecipeDetail: !!s.selectedMyRecipe || s.myRecipeDetailLoading, myRecipeDetailLoading: s.myRecipeDetailLoading,
-      hasMyRecipeDetailError: !!s.myRecipeDetailError, myRecipeDetailError: s.myRecipeDetailError,
+      showMyRecipeDetail: !!s.selectedMyRecipe || s.myRecipeDetailLoading || !!s.myRecipeDetailError, myRecipeDetailLoading: s.myRecipeDetailLoading,
+      hasMyRecipeDetailError: !!s.myRecipeDetailError, myRecipeDetailError: s.myRecipeDetailError, onRetryMyRecipeDetail: this.onRetryMyRecipeDetail,
       myRecipeDetail: myRecipeDetailView, recipeAuthorName: s.recipeAuthorName,
       onCloseMyRecipeDetail: this.onCloseMyRecipeDetail,
       shareActive, shareCode, shareStatusLabel, hasShareCode: !!shareCode, shareGrantCount: s.shareGrantCount, shareBusy: s.shareBusy,
