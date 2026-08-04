@@ -151,11 +151,24 @@ class App extends Component {
       productFormMode: 'new',
       productForm: null,
       confirmDelete: null,
-      // Reference-checked recipe deletion (supabase/009_recipe_deletion.sql)
-      // — see askDeleteRecipeChecked/renderReferencesModal.
-      deleteImpact: null, deleteImpactLoading: false,
+      // Reference-checked deletion (supabase/009_recipe_deletion.sql,
+      // supabase/010_hard_delete_and_reference_resolution.sql) — see
+      // askDeleteRecipeChecked/openProductDeleteImpact/
+      // openCategoryDeleteImpact and renderReferencesModal.
+      // deleteImpactKind distinguishes which RPC family deleteImpact/
+      // deleteBusy/deleteImpactLoading currently refer to, since a recipe,
+      // product, and category impact each have a different shape and a
+      // different confirm handler (onConfirmDeleteFromReferences /
+      // onConfirmProductDeleteFromReferences / onConfirmCategoryDeleteFromReferences).
+      deleteImpact: null, deleteImpactKind: null, deleteImpactLoading: false,
       ingredientRemoveConfirm: null,
       deleteResolutions: { revokeShares: false, cancelPendingRequests: false },
+      // Per-row resolution choices for the product/category references
+      // modal — never prefilled, the user must explicitly pick "replace" +
+      // a replacement, or "remove", for every live row before the confirm
+      // button becomes enabled (see canConfirm below).
+      deleteRows: [], productResolutions: {},
+      deleteCategoryRows: { products: [], recipes: [], sections: [] }, categoryResolutions: { products: {}, recipes: {}, sections: {} },
       deleteBusy: false,
       editingProductId: null,
       editPriceValue: '',
@@ -1263,7 +1276,8 @@ class App extends Component {
     this.setState({ showMyCategoryForm: false, myCategoryForm: null });
     this.refreshAfterMyCreationMutation(uid, 'Categoria salva com sucesso.');
   };
-  askDeleteMyCategory = (id, name) => this.setState({ confirmDelete: { type: 'myCategory', id, message: `Excluir a categoria "${name}"? Produtos ou receitas que a usam podem deixar de funcionar corretamente.` } });
+  // askDeleteMyCategory: see the reference-checked version defined below,
+  // alongside askDeleteRecipeChecked (openCategoryDeleteImpact).
 
   // ---- Meus Produtos ----
   onNewMyProduct = () => this.setState({ showMyProductForm: true, myProductFormMode: 'new', myFormError: '', myProductForm: { id: null, name: '', categoryId: (this.myProteinCategories()[0] && this.myProteinCategories()[0].id) || '', unit: 'kg', price: 0 } });
@@ -1282,7 +1296,8 @@ class App extends Component {
     this.setState({ showMyProductForm: false, myProductForm: null });
     this.refreshAfterMyCreationMutation(uid, 'Produto salvo com sucesso.');
   };
-  askDeleteMyProduct = (id, name) => this.setState({ confirmDelete: { type: 'myProduct', id, message: `Excluir o produto "${name}"? Ele será removido também das receitas que o usam.` } });
+  // askDeleteMyProduct: see the reference-checked version defined below,
+  // alongside askDeleteRecipeChecked (openProductDeleteImpact).
 
   // ---- Minhas Receitas ----
   onNewMyRecipe = () => this.setState({
@@ -1417,7 +1432,7 @@ class App extends Component {
   // (showing its YCR code and name, "não pode ser desfeita") instead of
   // opening the references popup for nothing.
   askDeleteRecipeChecked = async (id) => {
-    this.setState({ deleteImpactLoading: true, deleteImpact: null });
+    this.setState({ deleteImpactLoading: true, deleteImpact: null, deleteImpactKind: null });
     let data, error;
     try {
       ({ data, error } = await catalog.getRecipeDeleteImpact(id));
@@ -1430,14 +1445,33 @@ class App extends Component {
       this.flashAdmin('Não foi possível verificar as referências desta receita. Tente novamente.');
       return;
     }
+    // A scope='site' recipe always goes through the explicit archive-vs-
+    // delete choice (renderReferencesModal's recipeActionChoice), even
+    // with zero live references — this is the "o botão Excluir não deve
+    // transformar-se automaticamente em Arquivar" requirement: an admin
+    // must always be offered "Excluir permanentemente" as a distinct
+    // option, never silently redirected to archive just because the
+    // recipe was once published. A personal recipe has no archived state
+    // at all, so it keeps the simpler fast-path confirm below.
+    if (data.scope === 'site') {
+      this.setState({
+        deleteImpact: data, deleteImpactKind: 'recipe',
+        deleteResolutions: { revokeShares: false, cancelPendingRequests: false, recipeAction: data.recommend_archive ? 'archive' : 'delete' },
+      });
+      return;
+    }
     const hasRefs = data.active_share || data.active_grant_count > 0 || data.pending_request_count > 0;
     if (!hasRefs) {
       this.setState({ confirmDelete: { type: 'recipeChecked', id, message: `Excluir a receita "${data.name}" (código ${data.recipe_code})? Esta ação não pode ser desfeita.` } });
       return;
     }
-    this.setState({ deleteImpact: data, deleteResolutions: { revokeShares: false, cancelPendingRequests: false } });
+    this.setState({ deleteImpact: data, deleteImpactKind: 'recipe', deleteResolutions: { revokeShares: false, cancelPendingRequests: false } });
   };
-  onCloseReferencesModal = () => { if (!this.state.deleteBusy) this.setState({ deleteImpact: null }); };
+  onSetRecipeDeleteAction = (action) => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, recipeAction: action } }));
+  onCloseReferencesModal = () => {
+    if (this.state.deleteBusy) return;
+    this.setState({ deleteImpact: null, deleteImpactKind: null, deleteRows: [], productResolutions: {}, deleteCategoryRows: { products: [], recipes: [], sections: [] }, categoryResolutions: { products: {}, recipes: {}, sections: {} } });
+  };
   onToggleResolveRevokeShares = () => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, revokeShares: !s.deleteResolutions.revokeShares } }));
   onToggleResolveCancelRequests = () => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, cancelPendingRequests: !s.deleteResolutions.cancelPendingRequests } }));
   onConfirmDeleteFromReferences = async () => {
@@ -1446,11 +1480,184 @@ class App extends Component {
     if (impact.active_share && !r.revokeShares) { this.flashAdmin('Marque "Revogar compartilhamentos" para continuar.'); return; }
     if (impact.pending_request_count > 0 && !r.cancelPendingRequests) { this.flashAdmin('Marque "Cancelar solicitações pendentes" para continuar.'); return; }
     this.setState({ deleteBusy: true });
-    const { data, error } = await catalog.deleteRecipeChecked(impact.recipe_id, { revokeShares: r.revokeShares, cancelPendingRequests: r.cancelPendingRequests });
+    // scope='site' always goes through delete_recipe_action with the
+    // admin's explicit archive/delete choice (see askDeleteRecipeChecked);
+    // a personal recipe has no such choice and keeps the original RPC.
+    const { data, error } = impact.scope === 'site'
+      ? await catalog.deleteRecipeAction(impact.recipe_id, r.recipeAction || 'archive', { revokeShares: r.revokeShares, cancelPendingRequests: r.cancelPendingRequests })
+      : await catalog.deleteRecipeChecked(impact.recipe_id, { revokeShares: r.revokeShares, cancelPendingRequests: r.cancelPendingRequests });
     this.setState({ deleteBusy: false });
     if (error) { this.flashAdmin('Não foi possível excluir a receita.'); return; }
-    this.setState({ deleteImpact: null });
+    this.onCloseReferencesModal();
     this.afterRecipeDeleted(impact.recipe_id, data);
+  };
+
+  // ---- Produtos: exclusão permanente com resolução de referências
+  // (supabase/010_hard_delete_and_reference_resolution.sql) — mirrors
+  // askDeleteRecipeChecked above. Used for both a personal product ("Meus
+  // Produtos") and a site product (admin "Catálogo Público"); the RPC
+  // itself decides owner-vs-admin authorization server-side. If the
+  // product has no live references at all, this skips straight to the
+  // ordinary confirm-delete dialog instead of opening the references
+  // popup for nothing.
+  askDeleteMyProduct = (id) => this.openProductDeleteImpact(id);
+  askDeleteSiteProduct = (id) => this.openProductDeleteImpact(id);
+  openProductDeleteImpact = async (id) => {
+    this.setState({ deleteImpactLoading: true, deleteImpact: null, deleteImpactKind: null });
+    let data, error;
+    try {
+      ({ data, error } = await catalog.getProductDeleteImpact(id));
+    } catch (e) {
+      error = e;
+    } finally {
+      this.setState({ deleteImpactLoading: false });
+    }
+    if (error || !data) {
+      this.flashAdmin('Não foi possível verificar as referências deste produto. Tente novamente.');
+      return;
+    }
+    const hasRefs = data.total_ingredient_rows > 0 || data.pending_request_count > 0;
+    if (!hasRefs) {
+      this.setState({ confirmDelete: { type: 'productChecked', id, scope: data.scope, message: `Excluir o produto "${data.name}" (código ${data.product_code})? Esta ação não pode ser desfeita.` } });
+      return;
+    }
+    const { data: rows, error: rowsError } = await catalog.fetchIngredientRowsForProduct(id);
+    if (rowsError) {
+      this.flashAdmin('Não foi possível carregar os usos deste produto. Tente novamente.');
+      return;
+    }
+    const productResolutions = {};
+    (rows || []).forEach((row) => { productResolutions[row.id] = { action: '', replacementProductId: '' }; });
+    this.setState({ deleteImpact: data, deleteImpactKind: 'product', deleteRows: rows || [], productResolutions });
+  };
+  onSetProductResolutionAction = (rowId, action) => this.setState(s => ({ productResolutions: { ...s.productResolutions, [rowId]: { ...s.productResolutions[rowId], action, replacementProductId: action === 'remove' ? '' : (s.productResolutions[rowId] && s.productResolutions[rowId].replacementProductId) || '' } } }));
+  onSetProductResolutionReplacement = (rowId, replacementProductId) => this.setState(s => ({ productResolutions: { ...s.productResolutions, [rowId]: { ...s.productResolutions[rowId], action: 'replace', replacementProductId } } }));
+  onConfirmProductDeleteFromReferences = async () => {
+    const impact = this.state.deleteImpact; if (!impact) return;
+    const rows = this.state.deleteRows || [];
+    const res = this.state.productResolutions || {};
+    const unresolved = rows.some(row => {
+      const r = res[row.id];
+      return !r || !r.action || (r.action === 'replace' && !r.replacementProductId);
+    });
+    if (unresolved) { this.flashAdmin('Escolha "Substituir" ou "Remover" para cada uso do produto antes de continuar.'); return; }
+    this.setState({ deleteBusy: true });
+    const resolution = { ingredients: rows.map(row => (res[row.id].action === 'replace'
+      ? { id: row.id, action: 'replace', replacement_product_id: res[row.id].replacementProductId }
+      : { id: row.id, action: 'remove' })) };
+    const { error } = await catalog.deleteProductResolved(impact.product_id, resolution);
+    this.setState({ deleteBusy: false });
+    if (error) {
+      const detail = impact.foreign_personal_recipe_count > 0
+        ? ' Outra pessoa ainda usa este produto em uma receita pessoal dela; a exclusão continuará bloqueada até que ela deixe de usá-lo.'
+        : '';
+      this.flashAdmin(`Não foi possível excluir o produto.${detail}`);
+      return;
+    }
+    this.onCloseReferencesModal();
+    this.afterProductOrCategoryDeleted(impact.scope);
+  };
+
+  // ---- Categorias: exclusão permanente com resolução de referências ----
+  askDeleteMyCategory = (id) => this.openCategoryDeleteImpact(id);
+  askDeleteSiteCategory = (id) => this.openCategoryDeleteImpact(id);
+  openCategoryDeleteImpact = async (id) => {
+    this.setState({ deleteImpactLoading: true, deleteImpact: null, deleteImpactKind: null });
+    let data, error;
+    try {
+      ({ data, error } = await catalog.getCategoryDeleteImpact(id));
+    } catch (e) {
+      error = e;
+    } finally {
+      this.setState({ deleteImpactLoading: false });
+    }
+    if (error || !data) {
+      this.flashAdmin('Não foi possível verificar as referências desta categoria. Tente novamente.');
+      return;
+    }
+    const hasRefs = data.required_ref_count > 0 || data.optional_ref_count > 0 || data.pending_request_count > 0;
+    if (!hasRefs) {
+      this.setState({ confirmDelete: { type: 'categoryChecked', id, scope: data.scope, message: `Excluir a categoria "${data.name}" (código ${data.category_code})? Esta ação não pode ser desfeita.` } });
+      return;
+    }
+    const [productsRes, recipesRes, sectionsRes] = await Promise.all([
+      catalog.fetchProductRowsForCategory(id), catalog.fetchRecipeRowsForCategory(id), catalog.fetchSectionRowsForCategory(id),
+    ]);
+    if (productsRes.error || recipesRes.error || sectionsRes.error) {
+      this.flashAdmin('Não foi possível carregar os usos desta categoria. Tente novamente.');
+      return;
+    }
+    const deleteCategoryRows = {
+      products: productsRes.data || [], recipes: recipesRes.data || [],
+      sections: (sectionsRes.data || []).filter(row => row.recipe),
+    };
+    const categoryResolutions = {
+      products: Object.fromEntries(deleteCategoryRows.products.map(p => [p.id, ''])),
+      recipes: Object.fromEntries(deleteCategoryRows.recipes.map(r => [r.id, ''])),
+      sections: Object.fromEntries(deleteCategoryRows.sections.map(s => [s.recipe_id, { action: '', replacementCategoryId: '' }])),
+    };
+    this.setState({ deleteImpact: data, deleteImpactKind: 'category', deleteCategoryRows, categoryResolutions });
+  };
+  onSetCategoryProductReplacement = (productId, replacementCategoryId) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, products: { ...s.categoryResolutions.products, [productId]: replacementCategoryId } } }));
+  onSetCategoryRecipeReplacement = (recipeId, replacementCategoryId) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, recipes: { ...s.categoryResolutions.recipes, [recipeId]: replacementCategoryId } } }));
+  onSetCategorySectionAction = (recipeId, action) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, sections: { ...s.categoryResolutions.sections, [recipeId]: { action, replacementCategoryId: action === 'remove' ? '' : (s.categoryResolutions.sections[recipeId] && s.categoryResolutions.sections[recipeId].replacementCategoryId) || '' } } } }));
+  onSetCategorySectionReplacement = (recipeId, replacementCategoryId) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, sections: { ...s.categoryResolutions.sections, [recipeId]: { action: 'replace', replacementCategoryId } } } }));
+  onConfirmCategoryDeleteFromReferences = async () => {
+    const impact = this.state.deleteImpact; if (!impact) return;
+    const rows = this.state.deleteCategoryRows; const res = this.state.categoryResolutions;
+    const missingProduct = rows.products.some(p => !res.products[p.id]);
+    const missingRecipe = rows.recipes.some(r => !res.recipes[r.id]);
+    const missingSection = rows.sections.some(s => {
+      const sec = res.sections[s.recipe_id];
+      return !sec || !sec.action || (sec.action === 'replace' && !sec.replacementCategoryId);
+    });
+    if (missingProduct || missingRecipe || missingSection) { this.flashAdmin('Escolha uma categoria substituta (ou remova a seção) para cada uso desta categoria antes de continuar.'); return; }
+    this.setState({ deleteBusy: true });
+    const resolution = {
+      products: rows.products.map(p => ({ id: p.id, replacement_category_id: res.products[p.id] })),
+      recipes: rows.recipes.map(r => ({ id: r.id, replacement_category_id: res.recipes[r.id] })),
+      sections: rows.sections.map(s => (res.sections[s.recipe_id].action === 'replace'
+        ? { recipe_id: s.recipe_id, action: 'replace', replacement_category_id: res.sections[s.recipe_id].replacementCategoryId }
+        : { recipe_id: s.recipe_id, action: 'remove' })),
+    };
+    const { error } = await catalog.deleteCategoryResolved(impact.category_id, resolution);
+    this.setState({ deleteBusy: false });
+    if (error) {
+      const detail = impact.foreign_personal_ref_count > 0
+        ? ' Outra pessoa ainda usa esta categoria em um item pessoal dela; a exclusão continuará bloqueada até que ela deixe de usá-la.'
+        : '';
+      this.flashAdmin(`Não foi possível excluir a categoria.${detail}`);
+      return;
+    }
+    this.onCloseReferencesModal();
+    this.afterProductOrCategoryDeleted(impact.scope);
+  };
+  // Shared post-delete refresh for both product and category resolved
+  // deletes: a personal (scope='personal') row only ever affects "Modo de
+  // Criação" lists; a scope='site' row only ever affects the admin catalog
+  // tab — never both, so only the relevant loader is re-run.
+  afterProductOrCategoryDeleted = (scope) => {
+    if (scope === 'personal') {
+      this.flashAdmin('Item excluído com sucesso.');
+      this.refreshAfterMyCreationMutation(this.state.session.user.id, 'Item excluído com sucesso.');
+    } else {
+      this.loadSiteCatalogData(this.state.authRole);
+      this.flashAdmin('Item excluído com sucesso.');
+    }
+  };
+
+  // ---- Ativar/Desativar (arquivar) — separado de excluir permanentemente.
+  // Mantém o registro, preserva histórico/relações, apenas some das áreas
+  // públicas/normais de uso; sempre reversível.
+  onToggleMyProductActive = async (p) => {
+    const { error } = await catalog.setProductActive(p.id, !p.active);
+    if (error) { this.flashAdmin('Não foi possível atualizar o produto.'); return; }
+    this.refreshAfterMyCreationMutation(this.state.session.user.id, p.active ? 'Produto desativado.' : 'Produto ativado.');
+  };
+  onToggleMyCategoryActive = async (c) => {
+    const { error } = await catalog.setCategoryActive(c.id, !c.active);
+    if (error) { this.flashAdmin('Não foi possível atualizar a categoria.'); return; }
+    this.refreshAfterMyCreationMutation(this.state.session.user.id, c.active ? 'Categoria desativada.' : 'Categoria ativada.');
   };
   // Runs after either delete path (simple confirm or references-resolved)
   // succeeds — updates every list this recipe could appear in, without a
@@ -2284,22 +2491,23 @@ class App extends Component {
       this.afterRecipeDeleted(cd.id, data);
       return;
     }
-    if (cd.type === 'myRecipe' || cd.type === 'myProduct' || cd.type === 'myCategory') {
-      const uid = this.state.session.user.id;
-      const fn = cd.type === 'myRecipe' ? catalog.deleteRecipe : cd.type === 'myProduct' ? catalog.deleteProduct : catalog.deleteCategory;
-      const { error } = await fn(cd.id);
-      this.setState({ confirmDelete: null });
-      if (error) {
-        // The delete itself failed (e.g. FK restriction from another row
-        // still referencing it) — nothing to refetch differently for, the
-        // list on screen is already accurate since nothing changed server-side.
-        this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.');
-        return;
-      }
-      // Delete succeeded — refetch to drop it from every list, differentiating
-      // a refresh-only failure from a delete failure the same way every other
-      // personal mutation does (see refreshAfterMyCreationMutation).
-      this.refreshAfterMyCreationMutation(uid, 'Item excluído com sucesso.');
+    // Reference-checked, zero-references fast path for a product/category
+    // (supabase/010_hard_delete_and_reference_resolution.sql) — set by
+    // openProductDeleteImpact/openCategoryDeleteImpact when the impact
+    // check found nothing to resolve, mirroring 'recipeChecked' above. An
+    // empty p_resolution is valid for both RPCs when there is nothing to
+    // resolve.
+    if (cd.type === 'productChecked' || cd.type === 'categoryChecked') {
+      this.setState({ confirmDelete: null, deleteBusy: true });
+      const fn = cd.type === 'productChecked' ? catalog.deleteProductResolved : catalog.deleteCategoryResolved;
+      const { error } = await fn(cd.id, {});
+      this.setState({ deleteBusy: false });
+      if (error) { this.flashAdmin('Não foi possível excluir. Verifique se o item ainda está em uso em outra receita.'); return; }
+      // cd.scope was captured from the impact check (openProductDeleteImpact/
+      // openCategoryDeleteImpact) — the RPC's own return payload only has
+      // action/id, not scope, so afterProductOrCategoryDeleted needs it from
+      // here to know which loader to refresh.
+      this.afterProductOrCategoryDeleted(cd.scope);
       return;
     }
     if (cd.type === 'recipe') {
@@ -2953,13 +3161,15 @@ class App extends Component {
     }));
     const myProductRows = s.myProducts.map(p => ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
-      onEdit: () => this.onEditMyProduct(p), onDelete: () => this.askDeleteMyProduct(p.id, p.name),
+      active: p.active, activeLabel: p.active ? 'Ativo' : 'Inativo', toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
+      onEdit: () => this.onEditMyProduct(p), onToggleActive: () => this.onToggleMyProductActive(p), onDelete: () => this.askDeleteMyProduct(p.id),
       onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
     }));
     const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : 'Proteína/Produto';
     const myCategoryRows = s.myCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
-      onEdit: () => this.onEditMyCategory(c), onDelete: () => this.askDeleteMyCategory(c.id, c.name),
+      active: c.active, activeLabel: c.active ? 'Ativa' : 'Inativa', toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
+      onEdit: () => this.onEditMyCategory(c), onToggleActive: () => this.onToggleMyCategoryActive(c), onDelete: () => this.askDeleteMyCategory(c.id),
       onRequestPublish: () => this.onOpenPublishRequest('category', c.id, c.name),
     }));
     const sharedLibraryRows = s.sharedLibrary.map(r => ({
@@ -3069,6 +3279,7 @@ class App extends Component {
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(p.updated_at),
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
+      onDelete: () => this.askDeleteSiteProduct(p.id),
     }));
     const siteCategoryRows = s.siteCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
@@ -3077,6 +3288,7 @@ class App extends Component {
       toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(c.updated_at),
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
+      onDelete: () => this.askDeleteSiteCategory(c.id),
     }));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
     const siteProteinCategoryOptions = this.siteProteinCategories().map(c => ({ value: c.id, label: c.name }));
@@ -3413,10 +3625,16 @@ class App extends Component {
       darkModeThumbStyle: `width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;left:${s.darkMode ? '21px' : '3px'};transition:left 0.15s ease;box-shadow:var(--shadow-sm)`,
       adminRecipeRows, adminProductRows, onNewRecipe: this.onNewRecipe, onNewProduct: this.onNewProduct,
       confirmDeleteOpen: !!s.confirmDelete, confirmDeleteMessage: s.confirmDelete ? s.confirmDelete.message : '', onConfirmDeleteYes: this.onConfirmDeleteYes, onConfirmDeleteNo: this.onConfirmDeleteNo,
-      referencesModalOpen: !!s.deleteImpact,
-      referencesModal: s.deleteImpact ? {
+      referencesModalOpen: !!s.deleteImpact && s.deleteImpactKind === 'recipe',
+      referencesModal: (s.deleteImpact && s.deleteImpactKind === 'recipe') ? {
         recipeName: s.deleteImpact.name, recipeCode: s.deleteImpact.recipe_code,
         recommendArchive: !!s.deleteImpact.recommend_archive,
+        // Only a scope='site' recipe ever gets the explicit Arquivar/
+        // Excluir permanentemente choice — a personal recipe has no
+        // archived status to choose (see askDeleteRecipeChecked).
+        showActionChoice: s.deleteImpact.scope === 'site',
+        recipeAction: s.deleteResolutions.recipeAction || 'archive',
+        onSetRecipeAction: this.onSetRecipeDeleteAction,
         rows: [
           s.deleteImpact.active_share ? {
             key: 'share', type: 'Compartilhamento ativo', quantity: 1,
@@ -3440,6 +3658,79 @@ class App extends Component {
         onConfirm: this.onConfirmDeleteFromReferences, onCancel: this.onCloseReferencesModal, busy: s.deleteBusy,
         canConfirm: (!s.deleteImpact.active_share || s.deleteResolutions.revokeShares) && (!(s.deleteImpact.pending_request_count > 0) || s.deleteResolutions.cancelPendingRequests),
       } : null,
+      deleteImpactKind: s.deleteImpactKind,
+      // "Referências a resolver" for a product — every live recipe_ingredients
+      // row the caller can see (own personal recipes, or any site recipe if
+      // admin) needs an explicit "Substituir"/"Remover" choice before the
+      // confirm button enables. Rows the caller can't see at all (another
+      // user's personal recipe using a shared site product) are called out
+      // separately via foreignNote, never listed — there's nothing to pick
+      // for them here.
+      productReferencesModal: (s.deleteImpactKind === 'product' && s.deleteImpact) ? (() => {
+        const impact = s.deleteImpact;
+        const replacementOptions = (impact.scope === 'site' ? s.siteProducts : [...s.myProducts, ...s.pickerPublicProducts])
+          .filter(p => p.id !== impact.product_id).map(p => ({ value: p.id, label: `${p.name} (${p.product_code})` }));
+        const rows = (s.deleteRows || []).map(row => {
+          const res = s.productResolutions[row.id] || { action: '', replacementProductId: '' };
+          return {
+            key: row.id,
+            recipeName: row.recipe ? `${row.recipe.name} (${row.recipe.recipe_code})` : 'Receita',
+            quantity: row.quantity,
+            action: res.action, replacementProductId: res.replacementProductId, replacementOptions,
+            onSetAction: (action) => this.onSetProductResolutionAction(row.id, action),
+            onSetReplacement: (id) => this.onSetProductResolutionReplacement(row.id, id),
+          };
+        });
+        const canConfirm = rows.every(r => r.action === 'remove' || (r.action === 'replace' && r.replacementProductId));
+        return {
+          name: impact.name, code: impact.product_code, rows,
+          pendingRequestCount: impact.pending_request_count, pendingRequestCodes: impact.pending_request_codes || [],
+          foreignNote: impact.foreign_personal_recipe_count > 0
+            ? `${impact.foreign_personal_recipe_count} receita(s) pessoal(is) de outro(s) usuário(s) também usam este produto. Elas não podem ser resolvidas por aqui — a exclusão ficará bloqueada até que o próprio dono deixe de usá-lo.`
+            : '',
+          onConfirm: this.onConfirmProductDeleteFromReferences, onCancel: this.onCloseReferencesModal, busy: s.deleteBusy, canConfirm,
+        };
+      })() : null,
+      // "Referências a resolver" for a category — products.category_id and
+      // recipes.category_id are NOT NULL, so every row needs a replacement
+      // category of the same type (never just "remove"); recipe_categories
+      // rows (section tags) may instead be removed outright.
+      categoryReferencesModal: (s.deleteImpactKind === 'category' && s.deleteImpact) ? (() => {
+        const impact = s.deleteImpact;
+        const isSite = impact.scope === 'site';
+        const byType = (t) => (isSite ? s.siteCategories : [...s.myCategories, ...s.pickerPublicCategories])
+          .filter(c => c.type === t && c.id !== impact.category_id).map(c => ({ value: c.id, label: c.name }));
+        const productOptions = byType('proteina'), recipeOptions = byType('receita'), sectionOptions = byType('secao');
+        const productRows = (s.deleteCategoryRows.products || []).map(p => ({
+          key: p.id, label: `${p.name} (${p.product_code})`,
+          replacementCategoryId: s.categoryResolutions.products[p.id] || '', options: productOptions,
+          onSetReplacement: (id) => this.onSetCategoryProductReplacement(p.id, id),
+        }));
+        const recipeRows = (s.deleteCategoryRows.recipes || []).map(r => ({
+          key: r.id, label: `${r.name} (${r.recipe_code})`,
+          replacementCategoryId: s.categoryResolutions.recipes[r.id] || '', options: recipeOptions,
+          onSetReplacement: (id) => this.onSetCategoryRecipeReplacement(r.id, id),
+        }));
+        const sectionRows = (s.deleteCategoryRows.sections || []).map(sec => {
+          const res = s.categoryResolutions.sections[sec.recipe_id] || { action: '', replacementCategoryId: '' };
+          return {
+            key: sec.recipe_id, label: `${sec.recipe.name} (${sec.recipe.recipe_code})`,
+            action: res.action, replacementCategoryId: res.replacementCategoryId, options: sectionOptions,
+            onSetAction: (action) => this.onSetCategorySectionAction(sec.recipe_id, action),
+            onSetReplacement: (id) => this.onSetCategorySectionReplacement(sec.recipe_id, id),
+          };
+        });
+        const canConfirm = productRows.every(r => r.replacementCategoryId) && recipeRows.every(r => r.replacementCategoryId)
+          && sectionRows.every(r => r.action === 'remove' || (r.action === 'replace' && r.replacementCategoryId));
+        return {
+          name: impact.name, code: impact.category_code, productRows, recipeRows, sectionRows,
+          pendingRequestCount: impact.pending_request_count, pendingRequestCodes: impact.pending_request_codes || [],
+          foreignNote: impact.foreign_personal_ref_count > 0
+            ? `${impact.foreign_personal_ref_count} item(ns) pessoal(is) de outro(s) usuário(s) também usam esta categoria. Eles não podem ser resolvidos por aqui — a exclusão ficará bloqueada até que o próprio dono deixe de usá-la.`
+            : '',
+          onConfirm: this.onConfirmCategoryDeleteFromReferences, onCancel: this.onCloseReferencesModal, busy: s.deleteBusy, canConfirm,
+        };
+      })() : null,
       showRecipeForm: s.showRecipeForm, recipeFormTitle: s.recipeFormMode === 'new' ? 'Nova Receita' : 'Editar Receita', recipeForm: s.recipeForm || {},
       recipeFormOnNome: this.recipeFormField('nome'), recipeFormOnCategoriaSet: this.setFormField('recipeForm', 'categoria'), recipeFormOnDificuldadeSet: this.setFormField('recipeForm', 'dificuldade'),
       recipeFormOnTempo: this.recipeFormField('tempo'), recipeFormOnPorcoes: this.recipeFormField('porcoes'), recipeFormOnImagem: this.recipeFormField('imagem'),

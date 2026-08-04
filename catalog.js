@@ -139,6 +139,43 @@ export async function updateCategoryName(id, name) {
 export async function deleteCategory(id) {
   return unwrap(await supabase.from('categories').delete().eq('id', id), 'deleteCategory');
 }
+export async function setCategoryActive(id, active) {
+  return unwrap(await supabase.from('categories').update({ active }).eq('id', id).select(CATEGORY_SELECT).single(), 'setCategoryActive');
+}
+
+// Reference-checked hard deletion (supabase/010_hard_delete_and_reference_resolution.sql).
+// Prefer these over the bare deleteCategory() above for anything reachable
+// from the UI: get_category_delete_impact() reports what references the
+// category (own/public products, own/public recipes, own/public section
+// tags, pending change_requests) before anything is touched;
+// delete_category_resolved() only proceeds once every required reference
+// (products.category_id/recipes.category_id) has an explicit replacement
+// and every optional reference (recipe_categories.category_id) has either a
+// replacement or an explicit "remove" — both run server-side as a single
+// transactional RPC call.
+export async function getCategoryDeleteImpact(categoryId) {
+  return unwrap(await supabase.rpc('get_category_delete_impact', { p_category_id: categoryId }), 'getCategoryDeleteImpact');
+}
+export async function deleteCategoryResolved(categoryId, resolution) {
+  return unwrap(await supabase.rpc('delete_category_resolved', { p_category_id: categoryId, p_resolution: resolution || {} }), 'deleteCategoryResolved');
+}
+// Live rows referencing categoryId, for building the per-reference
+// "substitute or remove" resolution UI. Same RLS-visibility boundary as
+// fetchIngredientRowsForProduct above: a personal caller only ever sees
+// their own rows (or public site rows), never another user's private data —
+// get_category_delete_impact's foreign_personal_ref_count is the only
+// signal for anything beyond what these three calls can return.
+export async function fetchProductRowsForCategory(categoryId) {
+  return unwrap(await supabase.from('products').select('id, name, product_code, scope').eq('category_id', categoryId), 'fetchProductRowsForCategory');
+}
+export async function fetchRecipeRowsForCategory(categoryId) {
+  return unwrap(await supabase.from('recipes').select('id, name, recipe_code, scope').eq('category_id', categoryId), 'fetchRecipeRowsForCategory');
+}
+export async function fetchSectionRowsForCategory(categoryId) {
+  return unwrap(await supabase.from('recipe_categories')
+    .select(`recipe_id, recipe:recipes!recipe_categories_recipe_id_fkey(id, name, recipe_code, scope)`)
+    .eq('category_id', categoryId), 'fetchSectionRowsForCategory');
+}
 
 // ---- Products (personal) ----
 export async function fetchMyProducts(userId) {
@@ -152,6 +189,38 @@ export async function updateProduct(id, patch) {
 }
 export async function deleteProduct(id) {
   return unwrap(await supabase.from('products').delete().eq('id', id), 'deleteProduct');
+}
+export async function setProductActive(id, active) {
+  return unwrap(await supabase.from('products').update({ active }).eq('id', id).select(PRODUCT_SELECT).single(), 'setProductActive');
+}
+
+// Reference-checked hard deletion (supabase/010_hard_delete_and_reference_resolution.sql).
+// Prefer these over the bare deleteProduct() above for anything reachable
+// from the UI: get_product_delete_impact() reports what references the
+// product (own/public recipes, pending change_requests) before anything is
+// touched; delete_product_resolved() only proceeds past a live
+// recipe_ingredients row once the caller has explicitly resolved it
+// (substitute another product, preserving quantity/sort_order, or remove
+// the ingredient row) — both run server-side as a single transactional RPC
+// call.
+export async function getProductDeleteImpact(productId) {
+  return unwrap(await supabase.rpc('get_product_delete_impact', { p_product_id: productId }), 'getProductDeleteImpact');
+}
+export async function deleteProductResolved(productId, resolution) {
+  return unwrap(await supabase.rpc('delete_product_resolved', { p_product_id: productId, p_resolution: resolution || {} }), 'deleteProductResolved');
+}
+// Every live recipe_ingredients row currently pointing at productId, for
+// building the "replace or remove" resolution UI. Subject to RLS like any
+// other query here — a personal caller only ever sees rows on their own
+// personal recipes or published site recipes, never another user's private
+// recipes (get_product_delete_impact's own_recipe_count/public_recipe_count
+// already reflect this same boundary server-side; this is only used to
+// build the interactive per-row resolution list once the caller is already
+// allowed to see the impact).
+export async function fetchIngredientRowsForProduct(productId) {
+  return unwrap(await supabase.from('recipe_ingredients')
+    .select(`id, recipe_id, quantity, recipe:recipes!recipe_ingredients_recipe_id_fkey(id, name, recipe_code, scope, owner_id)`)
+    .eq('product_id', productId), 'fetchIngredientRowsForProduct');
 }
 
 // ---- Recipes (personal): list + full detail ----
@@ -218,6 +287,20 @@ export async function deleteRecipeChecked(recipeId, { revokeShares = false, canc
   return unwrap(await supabase.rpc('delete_recipe', {
     p_recipe_id: recipeId, p_revoke_shares: revokeShares, p_cancel_pending_requests: cancelPendingRequests,
   }), 'deleteRecipeChecked');
+}
+
+// Explicit archive-vs-delete choice (supabase/010_hard_delete_and_
+// reference_resolution.sql delete_recipe_action) — unlike deleteRecipeChecked
+// above (which auto-archives a scope='site' recipe the instant it has any
+// history), this lets an admin who has already resolved every live
+// share/grant/pending-request choose to hard-delete a published site
+// recipe instead. action must be 'archive' or 'delete'; 'archive' always
+// raises for a scope='personal' recipe (no archived status exists for
+// personal rows — see 004's recipes_personal_requires_private_ck).
+export async function deleteRecipeAction(recipeId, action, { revokeShares = false, cancelPendingRequests = false } = {}) {
+  return unwrap(await supabase.rpc('delete_recipe_action', {
+    p_recipe_id: recipeId, p_action: action, p_revoke_shares: revokeShares, p_cancel_pending_requests: cancelPendingRequests,
+  }), 'deleteRecipeAction');
 }
 
 // How many OTHER recipes (besides p_excludeRecipeId, if given) still use

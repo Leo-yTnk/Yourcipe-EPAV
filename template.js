@@ -1,6 +1,30 @@
 import { html } from './vendor/htm-preact-standalone.js?v=20260803-3';
 import { CustomSelect } from './custom-select.js?v=20260803-3';
 
+// Shared "label above control" wrapper for every form redesigned per the
+// Modo de Criação form-consistency requirement: a visible label above the
+// control (never only a placeholder), an optional required marker, and
+// span:full so long controls (name, textarea, URL) can take the whole grid
+// row while short ones (category, unit, prep time...) stay side by side —
+// see .yc-form-grid in styles.css for the actual column collapse on mobile.
+// gridColumn is only meaningful when the caller wraps this in a
+// className="yc-form-grid" container; standalone (non-grid) forms simply
+// ignore it since a plain flex/block parent has no grid-column concept.
+// Shared input/textarea styling for every redesigned form — width:100%
+// with box-sizing:border-box and min-width:0 (never a fixed px width) so a
+// grid cell can shrink to a single column on mobile without overflowing.
+const FORM_INPUT_STYLE = "background:var(--neutral-0);color:var(--neutral-900);width:100%;min-width:0;box-sizing:border-box;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px";
+const FORM_TEXTAREA_STYLE = FORM_INPUT_STYLE + ";resize:vertical";
+
+function field(label, control, { required = false, span = 1 } = {}) {
+  return html`
+    <div style=${`display:flex;flex-direction:column;gap:6px;min-width:0;${span === 2 ? 'grid-column:span 2' : ''}`}>
+      <label style="font-size:12px;font-weight:700;color:var(--neutral-600)">${label}${required ? html` <span style="color:var(--red-500)">*</span>` : ''}</label>
+      ${control}
+    </div>
+  `;
+}
+
 export function renderApp(app) {
   const v = app.computeViewModel();
   return html`
@@ -31,6 +55,8 @@ export function renderApp(app) {
         ${v.altModalOpen && renderAltModal(app, v)}
         ${v.confirmDeleteOpen && renderConfirmDeleteModal(app, v)}
         ${v.referencesModalOpen && renderReferencesModal(app, v)}
+        ${v.deleteImpactKind === 'product' && v.productReferencesModal && renderProductReferencesModal(app, v)}
+        ${v.deleteImpactKind === 'category' && v.categoryReferencesModal && renderCategoryReferencesModal(app, v)}
         ${v.showRecipeForm && renderRecipeFormModal(app, v)}
         ${v.showProductForm && renderProductFormModal(app, v)}
         ${v.showImportModal && renderImportModal(app, v)}
@@ -931,9 +957,20 @@ function renderReferencesModal(app, v) {
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div ref=${app.modalFocusRef('referencesModal')} role="dialog" aria-modal="true" aria-label="Referências a resolver" tabindex="-1" className="yc-scroll" style="width:520px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Referências a resolver</div>
-        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:6px">A receita <strong>${m ? m.recipeName : ''}</strong> (código ${m ? m.recipeCode : ''}) tem vínculos ativos. Resolva cada um antes de excluir.</div>
-        ${m && m.recommendArchive && html`
-          <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px">Esta receita já foi publicada e/ou compartilhada — em vez de excluir, ela será arquivada (mantém o histórico, deixa de aparecer no catálogo público).</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:6px">A receita <strong>${m ? m.recipeName : ''}</strong> (código ${m ? m.recipeCode : ''})${(m && m.rows.length > 0) ? ' tem vínculos ativos. Resolva cada um antes de excluir.' : '.'}</div>
+        ${m && m.showActionChoice && html`
+          <div style="border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px">O que fazer com esta receita?</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+              <div onClick=${() => m.onSetRecipeAction('archive')} style=${REF_ACTION_BTN(m.recipeAction === 'archive')}>Arquivar (mantém histórico)</div>
+              <div onClick=${() => m.onSetRecipeAction('delete')} style=${REF_ACTION_BTN(m.recipeAction === 'delete')}>Excluir permanentemente</div>
+            </div>
+            <div style="font-size:12px;color:var(--neutral-600)">${m.recipeAction === 'archive'
+              ? 'Arquivar mantém o registro, preserva histórico/relações e oculta a receita do catálogo público — reversível.'
+              : (m.recommendArchive
+                ? 'Esta receita já foi publicada e/ou compartilhada. Excluir agora é permanente e não pode ser desfeito.'
+                : 'Remove a receita definitivamente. Não pode ser desfeito.')}</div>
+          </div>
         `}
         ${(m ? m.rows : []).map(row => html`
           <div key=${row.key} style="border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px;margin-bottom:10px">
@@ -953,7 +990,102 @@ function renderReferencesModal(app, v) {
         <div style="font-size:12px;color:var(--neutral-600);margin:4px 0 18px">Favoritos locais deste dispositivo (se houver) são removidos automaticamente. Cópias próprias feitas por outras pessoas a partir desta receita, se existirem, não têm vínculo rastreável no sistema e continuam existindo de forma independente.</div>
         <div style="display:flex;gap:10px">
           <div onClick=${m ? m.onCancel : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Voltar sem excluir</div>
-          <div onClick=${(m && m.canConfirm && !m.busy) ? m.onConfirm : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:${(m && m.canConfirm && !m.busy) ? 'pointer' : 'not-allowed'};color:#F4F2F1;background:${(m && m.canConfirm && !m.busy) ? 'var(--red-600)' : 'var(--neutral-200)'};transition:transform 0.15s ease">${m && m.busy ? 'Excluindo...' : 'Resolver e excluir'}</div>
+          <div onClick=${(m && m.canConfirm && !m.busy) ? m.onConfirm : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:${(m && m.canConfirm && !m.busy) ? 'pointer' : 'not-allowed'};color:#F4F2F1;background:${(m && m.canConfirm && !m.busy) ? 'var(--red-600)' : 'var(--neutral-200)'};transition:transform 0.15s ease">${m && m.busy ? (m.recipeAction === 'archive' ? 'Arquivando...' : 'Excluindo...') : (m && m.showActionChoice && m.recipeAction === 'archive' ? 'Resolver e arquivar' : 'Resolver e excluir permanentemente')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+const REF_SELECT_STYLE = "background:var(--neutral-0);color:var(--neutral-900);padding:8px 10px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px;min-width:0;flex:1;box-sizing:border-box";
+const REF_ACTION_BTN = (active) => `padding:8px 12px;border-radius:var(--radius-full);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;border:1.5px solid ${active ? 'var(--brand-700)' : 'var(--neutral-200)'};color:${active ? '#F4F2F1' : 'var(--neutral-800)'};background:${active ? 'var(--brand-700)' : 'var(--neutral-0)'}`;
+
+// "Referências a resolver" for a product (supabase/010_hard_delete_and_
+// reference_resolution.sql) — one row per live recipe_ingredients row,
+// each requiring an explicit "Substituir"/"Remover" choice before the
+// confirm button enables (m.canConfirm, computed in app.js).
+function renderProductReferencesModal(app, v) {
+  const m = v.productReferencesModal;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div ref=${app.modalFocusRef('referencesModal')} role="dialog" aria-modal="true" aria-label="Referências a resolver" tabindex="-1" className="yc-scroll" style="width:560px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
+        <div style="font-size:18px;font-weight:700;margin-bottom:4px">Referências a resolver</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:14px">O produto <strong>${m ? m.name : ''}</strong> (código ${m ? m.code : ''}) é usado em ${m ? m.rows.length : 0} receita(s). Escolha o que fazer em cada uma antes de excluir.</div>
+        ${(m ? m.rows : []).map(row => html`
+          <div key=${row.key} style="border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px;margin-bottom:10px">
+            <div style="font-size:14px;font-weight:700;margin-bottom:2px">${row.recipeName}</div>
+            <div style="font-size:12px;color:var(--neutral-600);margin-bottom:10px">Quantidade usada: ${row.quantity}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${row.action === 'replace' ? '8px' : '0'}">
+              <div onClick=${() => row.onSetAction('replace')} style=${REF_ACTION_BTN(row.action === 'replace')}>Substituir por outro produto</div>
+              <div onClick=${() => row.onSetAction('remove')} style=${REF_ACTION_BTN(row.action === 'remove')}>Remover ingrediente da receita</div>
+            </div>
+            ${row.action === 'replace' && html`
+              <select value=${row.replacementProductId} onChange=${(e) => row.onSetReplacement(e.target.value)} style=${REF_SELECT_STYLE}>
+                <option value="">Selecione o produto substituto…</option>
+                ${row.replacementOptions.map(o => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+              </select>
+            `}
+          </div>
+        `)}
+        ${m && m.pendingRequestCount > 0 && html`
+          <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px">${m.pendingRequestCount} solicitação(ões) pendente(s) (${m.pendingRequestCodes.join(', ')}) referenciam este produto e permanecerão com seu histórico preservado.</div>
+        `}
+        ${m && m.foreignNote && html`<div style="background:rgba(195,61,34,0.08);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px">${m.foreignNote}</div>`}
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <div onClick=${m ? m.onCancel : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Voltar sem excluir</div>
+          <div onClick=${(m && m.canConfirm && !m.busy) ? m.onConfirm : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:${(m && m.canConfirm && !m.busy) ? 'pointer' : 'not-allowed'};color:#F4F2F1;background:${(m && m.canConfirm && !m.busy) ? 'var(--red-600)' : 'var(--neutral-200)'};transition:transform 0.15s ease">${m && m.busy ? 'Excluindo...' : 'Resolver e excluir permanentemente'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// "Referências a resolver" for a category — products.category_id/
+// recipes.category_id are NOT NULL (require a replacement of the same
+// type); recipe_categories rows (section tags) may instead be removed.
+function renderCategoryReferencesModal(app, v) {
+  const m = v.categoryReferencesModal;
+  const replaceRow = (row, key) => html`
+    <div key=${key} style="border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px">${row.label}</div>
+      <select value=${row.replacementCategoryId} onChange=${(e) => row.onSetReplacement(e.target.value)} style=${REF_SELECT_STYLE}>
+        <option value="">Selecione a categoria substituta…</option>
+        ${row.options.map(o => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+      </select>
+    </div>
+  `;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div ref=${app.modalFocusRef('referencesModal')} role="dialog" aria-modal="true" aria-label="Referências a resolver" tabindex="-1" className="yc-scroll" style="width:560px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
+        <div style="font-size:18px;font-weight:700;margin-bottom:4px">Referências a resolver</div>
+        <div style="font-size:14px;color:var(--neutral-600);margin-bottom:14px">A categoria <strong>${m ? m.name : ''}</strong> (código ${m ? m.code : ''}) está em uso. Toda referência obrigatória precisa de uma categoria substituta; seções podem ser apenas removidas.</div>
+        ${m && m.productRows.length > 0 && html`<div style="font-size:13px;font-weight:700;margin-bottom:6px">Produtos (obrigatório substituir)</div>`}
+        ${(m ? m.productRows : []).map(row => replaceRow(row, 'p-' + row.key))}
+        ${m && m.recipeRows.length > 0 && html`<div style="font-size:13px;font-weight:700;margin-bottom:6px">Receitas (obrigatório substituir)</div>`}
+        ${(m ? m.recipeRows : []).map(row => replaceRow(row, 'r-' + row.key))}
+        ${m && m.sectionRows.length > 0 && html`<div style="font-size:13px;font-weight:700;margin-bottom:6px">Seções em receitas (substituir ou remover)</div>`}
+        ${(m ? m.sectionRows : []).map(row => html`
+          <div key=${'s-' + row.key} style="border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px;margin-bottom:10px">
+            <div style="font-size:14px;font-weight:700;margin-bottom:8px">${row.label}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${row.action === 'replace' ? '8px' : '0'}">
+              <div onClick=${() => row.onSetAction('replace')} style=${REF_ACTION_BTN(row.action === 'replace')}>Substituir seção</div>
+              <div onClick=${() => row.onSetAction('remove')} style=${REF_ACTION_BTN(row.action === 'remove')}>Remover seção da receita</div>
+            </div>
+            ${row.action === 'replace' && html`
+              <select value=${row.replacementCategoryId} onChange=${(e) => row.onSetReplacement(e.target.value)} style=${REF_SELECT_STYLE}>
+                <option value="">Selecione a categoria substituta…</option>
+                ${row.options.map(o => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+              </select>
+            `}
+          </div>
+        `)}
+        ${m && m.pendingRequestCount > 0 && html`
+          <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px">${m.pendingRequestCount} solicitação(ões) pendente(s) (${m.pendingRequestCodes.join(', ')}) referenciam esta categoria e permanecerão com seu histórico preservado.</div>
+        `}
+        ${m && m.foreignNote && html`<div style="background:rgba(195,61,34,0.08);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px">${m.foreignNote}</div>`}
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <div onClick=${m ? m.onCancel : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Voltar sem excluir</div>
+          <div onClick=${(m && m.canConfirm && !m.busy) ? m.onConfirm : null} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:${(m && m.canConfirm && !m.busy) ? 'pointer' : 'not-allowed'};color:#F4F2F1;background:${(m && m.canConfirm && !m.busy) ? 'var(--red-600)' : 'var(--neutral-200)'};transition:transform 0.15s ease">${m && m.busy ? 'Excluindo...' : 'Resolver e excluir permanentemente'}</div>
         </div>
       </div>
     </div>
@@ -1085,6 +1217,9 @@ function renderSiteProductsTab(app, v) {
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
+          <div onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
+          </div>
         </div>
       `)}
     </div>
@@ -1109,6 +1244,9 @@ function renderSiteCategoriesTab(app, v) {
           <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </div>
+          <div onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
       `)}
@@ -1213,11 +1351,13 @@ function renderMyProductsTab(app, v) {
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
           </div>
           <div style="font-size:15px;font-weight:700;color:var(--brand-700)">${row.priceLabel}</div>
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${row.active ? '#34B23E22' : '#8A858022'};color:${row.active ? '#34B23E' : '#8A8580'};white-space:nowrap">${row.activeLabel}</span>
+          <div onClick=${row.onToggleActive} title=${row.toggleActiveLabel} style="font-size:12px;font-weight:700;color:var(--neutral-800);cursor:pointer;border:1.5px solid var(--neutral-200);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onRequestPublish} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">Solicitar publicação</div>
-          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <div onClick=${row.onEdit} title="Editar" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
-          <div onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <div onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
@@ -1241,11 +1381,13 @@ function renderMyCategoriesTab(app, v) {
             <div style="font-size:15px;font-weight:600">${row.name}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}</div>
           </div>
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${row.active ? '#34B23E22' : '#8A858022'};color:${row.active ? '#34B23E' : '#8A8580'};white-space:nowrap">${row.activeLabel}</span>
+          <div onClick=${row.onToggleActive} title=${row.toggleActiveLabel} style="font-size:12px;font-weight:700;color:var(--neutral-800);cursor:pointer;border:1.5px solid var(--neutral-200);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onRequestPublish} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">Solicitar publicação</div>
-          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <div onClick=${row.onEdit} title="Editar" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
-          <div onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <div onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
@@ -1336,12 +1478,12 @@ function renderMyRecipeFormModal(app, v) {
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.myRecipeFormTitle}</div>
         ${v.hasMyFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myFormError}</div>`}
         <div className="yc-form-grid">
-          <input type="text" placeholder="Nome da receita" value=${f.name} onInput=${v.myRecipeFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <${CustomSelect} options=${v.myRecipeCategoryOptions} value=${f.categoryId} onChange=${v.myRecipeFormOnCategorySet} />
-          <${CustomSelect} options=${v.dificuldadeOptionsMy} value=${f.difficulty} onChange=${v.myRecipeFormOnDifficultySet} />
-          <input type="number" placeholder="Tempo (min)" value=${f.prepTime} onInput=${v.myRecipeFormOnPrepTime} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <input type="number" placeholder="Porções" value=${f.servings} onInput=${v.myRecipeFormOnServings} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <input type="text" placeholder="URL da imagem (opcional)" value=${f.imageUrl} onInput=${v.myRecipeFormOnImageUrl} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          ${field('Nome da receita', html`<input type="text" value=${f.name} onInput=${v.myRecipeFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true, span: 2 })}
+          ${field('Categoria', html`<${CustomSelect} options=${v.myRecipeCategoryOptions} value=${f.categoryId} onChange=${v.myRecipeFormOnCategorySet} />`, { required: true })}
+          ${field('Nível de dificuldade', html`<${CustomSelect} options=${v.dificuldadeOptionsMy} value=${f.difficulty} onChange=${v.myRecipeFormOnDifficultySet} />`, { required: true })}
+          ${field('Tempo de preparo (minutos)', html`<input type="number" value=${f.prepTime} onInput=${v.myRecipeFormOnPrepTime} style=${FORM_INPUT_STYLE}/>`)}
+          ${field('Número de porções', html`<input type="number" value=${f.servings} onInput=${v.myRecipeFormOnServings} style=${FORM_INPUT_STYLE}/>`)}
+          ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.myRecipeFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`, { span: 2 })}
         </div>
 
         ${v.myRecipeCategoryOptions.length === 0 && html`<div style="font-size:12px;color:var(--neutral-600);margin-top:8px">Cadastre antes uma categoria do tipo "Receita" em Minhas Categorias.</div>`}
@@ -1380,18 +1522,15 @@ function renderMyRecipeFormModal(app, v) {
         ${v.myProductOptionsForIngredients.length === 0 && html`<div style="font-size:12px;color:var(--neutral-600)">Cadastre antes um produto em Meus Produtos.</div>`}
         ${v.myRecipeIngredientRows.length > 0 && html`<div style="font-size:13px;font-weight:700;color:var(--neutral-800);margin-top:4px">Custo estimado dos ingredientes: ${v.myIngredientTotalCostLabel}</div>`}
 
-        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Outros itens necessários (um por linha)</div>
-        <textarea value=${f.extrasText} onInput=${v.myRecipeFormOnExtras} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
+        ${field('Extras (um por linha)', html`<textarea value=${f.extrasText} onInput=${v.myRecipeFormOnExtras} rows="3" style=${FORM_TEXTAREA_STYLE}></textarea>`, { span: 2 })}
 
-        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Modo de preparo (um passo por linha)</div>
-        <textarea value=${f.instructionsText} onInput=${v.myRecipeFormOnInstructions} rows="5" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
+        ${field('Modo de preparo (um passo por linha)', html`<textarea value=${f.instructionsText} onInput=${v.myRecipeFormOnInstructions} rows="5" style=${FORM_TEXTAREA_STYLE}></textarea>`, { span: 2 })}
 
-        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Dicas (uma por linha)</div>
-        <textarea value=${f.tipsText} onInput=${v.myRecipeFormOnTips} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
+        ${field('Dicas (uma por linha)', html`<textarea value=${f.tipsText} onInput=${v.myRecipeFormOnTips} rows="3" style=${FORM_TEXTAREA_STYLE}></textarea>`, { span: 2 })}
 
-        <div style="display:flex;gap:10px;margin-top:24px">
-          <div onClick=${v.onCancelMyRecipeForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
-          <div onClick=${v.onSaveMyRecipeForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar Receita</div>
+        <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap">
+          <div onClick=${v.onCancelMyRecipeForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveMyRecipeForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar Receita</div>
         </div>
       </div>
     </div>
@@ -1402,19 +1541,19 @@ function renderMyProductFormModal(app, v) {
   const f = v.myProductForm;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;box-sizing:border-box">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.myProductFormTitle}</div>
         ${v.hasMyFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myFormError}</div>`}
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <input type="text" placeholder="Nome do produto" value=${f.name} onInput=${v.myProductFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <${CustomSelect} options=${v.myProteinCategoryOptions} value=${f.categoryId} onChange=${v.myProductFormOnCategorySet} />
-          <${CustomSelect} options=${v.unidadeOptionsMy} value=${f.unit} onChange=${v.myProductFormOnUnitSet} />
-          <input type="number" step="0.01" placeholder="Preço (R$)" value=${f.price} onInput=${v.myProductFormOnPrice} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          ${field('Nome do produto', html`<input type="text" value=${f.name} onInput=${v.myProductFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('Categoria (proteína/produto)', html`<${CustomSelect} options=${v.myProteinCategoryOptions} value=${f.categoryId} onChange=${v.myProductFormOnCategorySet} />`, { required: true })}
+          ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsMy} value=${f.unit} onChange=${v.myProductFormOnUnitSet} />`, { required: true })}
+          ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.myProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
         </div>
         ${v.myProteinCategoryOptions.length === 0 && html`<div style="font-size:12px;color:var(--neutral-600);margin-top:8px">Cadastre antes uma categoria do tipo "Proteína/Produto" em Minhas Categorias.</div>`}
-        <div style="display:flex;gap:10px;margin-top:22px">
-          <div onClick=${v.onCancelMyProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
-          <div onClick=${v.onSaveMyProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
+        <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
+          <div onClick=${v.onCancelMyProductForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveMyProductForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
         </div>
       </div>
     </div>
@@ -1425,16 +1564,16 @@ function renderMyCategoryFormModal(app, v) {
   const f = v.myCategoryForm;
   return html`
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;box-sizing:border-box">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.myCategoryFormTitle}</div>
         ${v.hasMyFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myFormError}</div>`}
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <input type="text" placeholder="Nome da categoria" value=${f.name} onInput=${v.myCategoryFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <${CustomSelect} options=${v.myCategoryTypeOptions} value=${f.type} onChange=${v.myCategoryFormOnTypeSet} />
+        <div style="display:flex;flex-direction:column;gap:14px">
+          ${field('Nome da categoria', html`<input type="text" value=${f.name} onInput=${v.myCategoryFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('Tipo', html`<${CustomSelect} options=${v.myCategoryTypeOptions} value=${f.type} onChange=${v.myCategoryFormOnTypeSet} />`, { required: true })}
         </div>
-        <div style="display:flex;gap:10px;margin-top:22px">
-          <div onClick=${v.onCancelMyCategoryForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
-          <div onClick=${v.onSaveMyCategoryForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
+        <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
+          <div onClick=${v.onCancelMyCategoryForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveMyCategoryForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
         </div>
       </div>
     </div>
@@ -1784,16 +1923,16 @@ function renderSiteRecipeFormModal(app, v) {
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.siteRecipeFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
         <div className="yc-form-grid">
-          <input type="text" placeholder="Nome da receita" value=${f.name} onInput=${v.siteRecipeFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <${CustomSelect} options=${v.siteRecipeCategoryOptions} value=${f.categoryId} onChange=${v.siteRecipeFormOnCategorySet} />
-          <${CustomSelect} options=${v.dificuldadeOptionsMy} value=${f.difficulty} onChange=${v.siteRecipeFormOnDifficultySet} />
-          <input type="number" placeholder="Tempo (min)" value=${f.prepTime} onInput=${v.siteRecipeFormOnPrepTime} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <input type="number" placeholder="Porções" value=${f.servings} onInput=${v.siteRecipeFormOnServings} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <${CustomSelect} options=${v.siteRecipeStatusOptions} value=${f.status} onChange=${v.siteRecipeFormOnStatusSet} />
-          <input type="text" placeholder="URL da imagem" value=${f.imageUrl} onInput=${v.siteRecipeFormOnImageUrl} style="background:var(--neutral-0);color:var(--neutral-900);grid-column:span 2;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          ${field('Nome da receita', html`<input type="text" value=${f.name} onInput=${v.siteRecipeFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true, span: 2 })}
+          ${field('Categoria', html`<${CustomSelect} options=${v.siteRecipeCategoryOptions} value=${f.categoryId} onChange=${v.siteRecipeFormOnCategorySet} />`, { required: true })}
+          ${field('Nível de dificuldade', html`<${CustomSelect} options=${v.dificuldadeOptionsMy} value=${f.difficulty} onChange=${v.siteRecipeFormOnDifficultySet} />`, { required: true })}
+          ${field('Tempo de preparo (minutos)', html`<input type="number" value=${f.prepTime} onInput=${v.siteRecipeFormOnPrepTime} style=${FORM_INPUT_STYLE}/>`)}
+          ${field('Número de porções', html`<input type="number" value=${f.servings} onInput=${v.siteRecipeFormOnServings} style=${FORM_INPUT_STYLE}/>`)}
+          ${field('Status', html`<${CustomSelect} options=${v.siteRecipeStatusOptions} value=${f.status} onChange=${v.siteRecipeFormOnStatusSet} />`, { required: true })}
+          ${field('URL da imagem', html`<input type="text" value=${f.imageUrl} onInput=${v.siteRecipeFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`, { span: 2 })}
         </div>
 
-        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);margin-top:14px"><input type="checkbox" checked=${!!f.featured} onChange=${v.siteRecipeFormOnFeatured}/> Receita do Dia (destaque na Home)</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);margin-top:14px;flex-wrap:wrap"><input type="checkbox" checked=${!!f.featured} onChange=${v.siteRecipeFormOnFeatured}/> Receita do Dia (destaque na Home)</label>
 
         <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:6px">Seções (opcional)</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">
@@ -1834,12 +1973,11 @@ function renderSiteRecipeFormModal(app, v) {
         <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Modo de preparo (um passo por linha)</div>
         <textarea value=${f.instructionsText} onInput=${v.siteRecipeFormOnInstructions} rows="5" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
 
-        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:8px">Dicas (uma por linha)</div>
-        <textarea value=${f.tipsText} onInput=${v.siteRecipeFormOnTips} rows="3" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical"></textarea>
+        ${field('Dicas (uma por linha)', html`<textarea value=${f.tipsText} onInput=${v.siteRecipeFormOnTips} rows="3" style=${FORM_TEXTAREA_STYLE}></textarea>`, { span: 2 })}
 
-        <div style="display:flex;gap:10px;margin-top:24px">
-          <div onClick=${v.onCancelSiteRecipeForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
-          <div onClick=${v.onSaveSiteRecipeForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
+        <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap">
+          <div onClick=${v.onCancelSiteRecipeForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveSiteRecipeForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
         </div>
       </div>
     </div>
@@ -1853,16 +1991,16 @@ function renderSiteProductFormModal(app, v) {
       <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.siteProductFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <input type="text" placeholder="Nome do produto" value=${f.name} onInput=${v.siteProductFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <${CustomSelect} options=${v.siteProteinCategoryOptions} value=${f.categoryId} onChange=${v.siteProductFormOnCategorySet} />
-          <${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />
-          <input type="number" step="0.01" placeholder="Preço (R$)" value=${f.price} onInput=${v.siteProductFormOnPrice} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${!!f.active} onChange=${v.siteProductFormOnActive}/> Ativo (visível publicamente)</label>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          ${field('Nome do produto', html`<input type="text" value=${f.name} onInput=${v.siteProductFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('Categoria (proteína/produto)', html`<${CustomSelect} options=${v.siteProteinCategoryOptions} value=${f.categoryId} onChange=${v.siteProductFormOnCategorySet} />`, { required: true })}
+          ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />`, { required: true })}
+          ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.siteProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);flex-wrap:wrap"><input type="checkbox" checked=${!!f.active} onChange=${v.siteProductFormOnActive}/> Ativo (visível publicamente)</label>
         </div>
-        <div style="display:flex;gap:10px;margin-top:22px">
-          <div onClick=${v.onCancelSiteProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
-          <div onClick=${v.onSaveSiteProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
+        <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
+          <div onClick=${v.onCancelSiteProductForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveSiteProductForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
         </div>
       </div>
     </div>
@@ -1876,14 +2014,14 @@ function renderSiteCategoryFormModal(app, v) {
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.siteCategoryFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <input type="text" placeholder="Nome da categoria" value=${f.name} onInput=${v.siteCategoryFormOnName} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-          <${CustomSelect} options=${v.siteCategoryTypeOptions} value=${f.type} onChange=${v.siteCategoryFormOnTypeSet} />
-          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${!!f.active} onChange=${v.siteCategoryFormOnActive}/> Ativa (visível publicamente)</label>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          ${field('Nome da categoria', html`<input type="text" value=${f.name} onInput=${v.siteCategoryFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('Tipo', html`<${CustomSelect} options=${v.siteCategoryTypeOptions} value=${f.type} onChange=${v.siteCategoryFormOnTypeSet} />`, { required: true })}
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);flex-wrap:wrap"><input type="checkbox" checked=${!!f.active} onChange=${v.siteCategoryFormOnActive}/> Ativa (visível publicamente)</label>
         </div>
-        <div style="display:flex;gap:10px;margin-top:22px">
-          <div onClick=${v.onCancelSiteCategoryForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
-          <div onClick=${v.onSaveSiteCategoryForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
+        <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
+          <div onClick=${v.onCancelSiteCategoryForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
+          <div onClick=${v.onSaveSiteCategoryForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
         </div>
       </div>
     </div>

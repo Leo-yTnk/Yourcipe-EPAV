@@ -20,7 +20,10 @@ const { mockRpc, mockFrom } = vi.hoisted(() => ({ mockRpc: vi.fn(), mockFrom: vi
 vi.mock('../../supabase-client.js?v=20260803-3', () => ({ supabase: { rpc: mockRpc, from: mockFrom } }));
 
 const catalogModule = await import('../../catalog.js');
-const { computeForeignReferences, getRecipeDeleteImpact, deleteRecipeChecked, countOtherRecipesUsingProduct } = catalogModule;
+const {
+  computeForeignReferences, getRecipeDeleteImpact, deleteRecipeChecked, deleteRecipeAction, countOtherRecipesUsingProduct,
+  getProductDeleteImpact, deleteProductResolved, getCategoryDeleteImpact, deleteCategoryResolved,
+} = catalogModule;
 
 // A minimal thenable query-builder stub mimicking supabase-js's fluent
 // `.from(...).select(...).eq(...).neq(...)` chain, resolving to `result`
@@ -322,6 +325,68 @@ describe('deleteRecipeChecked', () => {
     const result = await deleteRecipeChecked('r2', { revokeShares: true, cancelPendingRequests: true });
     expect(mockRpc).toHaveBeenCalledWith('delete_recipe', { p_recipe_id: 'r2', p_revoke_shares: true, p_cancel_pending_requests: true });
     expect(result.data.action).toBe('archived');
+  });
+});
+
+describe('deleteRecipeAction', () => {
+  it('forwards the explicit action alongside revokeShares/cancelPendingRequests to delete_recipe_action', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'deleted', recipe_id: 'r1' }, error: null });
+    const result = await deleteRecipeAction('r1', 'delete', { revokeShares: true, cancelPendingRequests: false });
+    expect(mockRpc).toHaveBeenCalledWith('delete_recipe_action', { p_recipe_id: 'r1', p_action: 'delete', p_revoke_shares: true, p_cancel_pending_requests: false });
+    expect(result.data.action).toBe('deleted');
+  });
+
+  it('defaults revokeShares/cancelPendingRequests to false when not given', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'archived', recipe_id: 'r2' }, error: null });
+    await deleteRecipeAction('r2', 'archive');
+    expect(mockRpc).toHaveBeenCalledWith('delete_recipe_action', { p_recipe_id: 'r2', p_action: 'archive', p_revoke_shares: false, p_cancel_pending_requests: false });
+  });
+});
+
+describe('getProductDeleteImpact / deleteProductResolved (supabase/010_hard_delete_and_reference_resolution.sql)', () => {
+  it('calls get_product_delete_impact with the product id and returns its data', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { product_id: 'p1', total_ingredient_rows: 0 }, error: null });
+    const result = await getProductDeleteImpact('p1');
+    expect(mockRpc).toHaveBeenCalledWith('get_product_delete_impact', { p_product_id: 'p1' });
+    expect(result.data.product_id).toBe('p1');
+  });
+
+  it('surfaces an RPC error as a normal { error } result, never a thrown exception', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'not_owner', details: null, hint: null } });
+    const result = await getProductDeleteImpact('p1');
+    expect(result.data).toBeUndefined();
+    expect(result.error.message).toBe('not_owner');
+  });
+
+  it('deleteProductResolved defaults to an empty resolution object and forwards a given one verbatim', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'deleted', product_id: 'p1' }, error: null });
+    await deleteProductResolved('p1');
+    expect(mockRpc).toHaveBeenCalledWith('delete_product_resolved', { p_product_id: 'p1', p_resolution: {} });
+
+    const resolution = { ingredients: [{ id: 'ri1', action: 'remove' }] };
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'deleted', product_id: 'p2' }, error: null });
+    await deleteProductResolved('p2', resolution);
+    expect(mockRpc).toHaveBeenCalledWith('delete_product_resolved', { p_product_id: 'p2', p_resolution: resolution });
+  });
+});
+
+describe('getCategoryDeleteImpact / deleteCategoryResolved (supabase/010_hard_delete_and_reference_resolution.sql)', () => {
+  it('calls get_category_delete_impact with the category id and returns its data', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { category_id: 'c1', required_ref_count: 0, optional_ref_count: 0 }, error: null });
+    const result = await getCategoryDeleteImpact('c1');
+    expect(mockRpc).toHaveBeenCalledWith('get_category_delete_impact', { p_category_id: 'c1' });
+    expect(result.data.category_id).toBe('c1');
+  });
+
+  it('deleteCategoryResolved defaults to an empty resolution object and forwards a given one verbatim', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'deleted', category_id: 'c1' }, error: null });
+    await deleteCategoryResolved('c1');
+    expect(mockRpc).toHaveBeenCalledWith('delete_category_resolved', { p_category_id: 'c1', p_resolution: {} });
+
+    const resolution = { products: [{ id: 'p1', replacement_category_id: 'c2' }], recipes: [], sections: [] };
+    mockRpc.mockReset().mockResolvedValueOnce({ data: { action: 'deleted', category_id: 'c3' }, error: null });
+    await deleteCategoryResolved('c3', resolution);
+    expect(mockRpc).toHaveBeenCalledWith('delete_category_resolved', { p_category_id: 'c3', p_resolution: resolution });
   });
 });
 
