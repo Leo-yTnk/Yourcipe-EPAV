@@ -223,7 +223,7 @@ class App extends Component {
       // picker in "Modo de Criação" can offer "public active UNION my own
       // active", per type — never only the caller's own rows, and never
       // requiring the caller to have created anything of their own first.
-      pickerPublicCategories: [], pickerPublicProducts: [],
+      creationCategories: [], pickerPublicProducts: [],
       showMyCategoryForm: false, myCategoryFormMode: 'new', myCategoryForm: null,
       showMyProductForm: false, myProductFormMode: 'new', myProductForm: null,
       showMyRecipeForm: false, myRecipeFormMode: 'new', myRecipeForm: null,
@@ -1066,18 +1066,13 @@ class App extends Component {
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
 
   // Category/product pickers for personal recipe/product forms show public
-  // (scope='site', active=true) rows UNION the caller's own active personal
+  // (scope='site', active=true) rows UNION all of the caller's personal
   // rows of the matching type — never another user's personal rows
-  // (pickerPublicCategories/pickerPublicProducts only ever contain
-  // scope='site' rows, per fetchPublicCategories/fetchPublicProducts'
-  // RLS-backed filters; this.state.myCategories/myProducts only ever
-  // contain the caller's own rows, per fetchMyCategories/fetchMyProducts'
-  // owner_id filter) — and never require the caller to have created their
-  // own category/product first.
-  pickerCategoriesByType = (type) => [
-    ...this.state.pickerPublicCategories.filter(c => c.type === type),
-    ...this.state.myCategories.filter(c => c.type === type),
-  ];
+  // (`creationCategories` comes from fetchCreationCategories's single safe
+  // union query; pickerPublicProducts only contains scope='site' rows;
+  // this.state.myProducts only contains the caller's own rows) — and never
+  // require the caller to have created their own category/product first.
+  pickerCategoriesByType = (type) => this.state.creationCategories.filter(c => c.type === type);
   myRecipeCategories = () => this.pickerCategoriesByType('receita');
   mySectionCategories = () => this.pickerCategoriesByType('secao');
   myProteinCategories = () => this.pickerCategoriesByType('proteina');
@@ -1156,16 +1151,16 @@ class App extends Component {
     if (!uid) return { ok: false, error: 'missing uid' };
     this.setState({ myCreationLoading: true, myCreationError: '' });
     try {
-      const [cats, prods, recs, publicCats, publicProds] = await Promise.all([
+      const [cats, prods, recs, creationCats, publicProds] = await Promise.all([
         catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid),
         // Public (scope='site', active=true) categories/products — every
         // category/product picker below unions these with the caller's own
         // personal rows, so pickers work immediately from a freshly-seeded
         // catalog (supabase/008_seed_default_catalog.sql) with no dependency
         // on the caller having created anything personal first.
-        catalog.fetchPublicCategories(), catalog.fetchPublicProducts(),
+        catalog.fetchCreationCategories(uid), catalog.fetchPublicProducts(),
       ]);
-      const failed = cats.error || prods.error || recs.error || publicCats.error || publicProds.error;
+      const failed = cats.error || prods.error || recs.error || creationCats.error || publicProds.error;
       if (failed) {
         // catalog.js already logged the full { code, message, details, hint }
         // to the console (see logSupabaseError) — this is the same real
@@ -1178,7 +1173,7 @@ class App extends Component {
       }
       this.setState({
         myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
-        pickerPublicCategories: publicCats.data || [], pickerPublicProducts: publicProds.data || [],
+        creationCategories: creationCats.data || [], pickerPublicProducts: publicProds.data || [],
       });
       return { ok: true };
     } catch (e) {
@@ -1924,7 +1919,7 @@ class App extends Component {
         id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
       }));
       const recipes = (recsRes.data || []).map(r => {
-        const tags = (secByRecipe[r.id] || []).map(s => s.category && s.category.slug).filter(Boolean);
+        const tags = (secByRecipe[r.id] || []).map(s => s.slug).filter(Boolean);
         if (r.featured) tags.push('destaque');
         return {
           id: r.id, nome: r.name, categoria: (r.category && r.category.name) || '', tempo: r.prep_time, porcoes: r.servings,
@@ -2855,14 +2850,21 @@ class App extends Component {
 
     const visibleRecipes = s.recipes.filter(r => !s.hiddenRecipeIds.includes(r.id));
     const byTag = (tag) => visibleRecipes.filter(r => r.tags.includes(tag)).map((r, i) => this.makeRecipeCard(r, 'home', i));
-    const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : false; };
+    // Public section visibility is role-independent. Local preferences may
+    // disable a known section, but an admin is never routed to a different
+    // loader and a newly-created public section defaults to visible.
+    const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : this.publicSectionCategories().some(c => c.slug === key); };
     const recommendedList = sectionOn('recomendado') ? byTag('recomendado') : [];
     const practicalList = sectionOn('pratico') ? byTag('pratico') : [];
     const occasionList = sectionOn('ocasiao') ? byTag('ocasiao') : [];
     const quickList = sectionOn('rapido') ? byTag('rapido') : [];
     const churrascoList = sectionOn('churrasco') ? byTag('churrasco') : [];
     const snackList = sectionOn('petisco') ? byTag('petisco') : [];
-    const customHomeSectionBlocks = s.homeSections.filter(h => h.custom && h.enabled).map(h => ({ key: h.key, label: h.label, items: byTag(h.key) })).filter(b => b.items.length > 0);
+    const fixedSectionKeys = new Set(['recomendado', 'pratico', 'ocasiao', 'rapido', 'churrasco', 'petisco']);
+    const customHomeSectionBlocks = this.publicSectionCategories()
+      .filter(c => !fixedSectionKeys.has(c.slug) && sectionOn(c.slug))
+      .map(c => ({ key: c.slug, label: c.name, items: byTag(c.slug) }))
+      .filter(b => b.items.length > 0);
     const heroTagged = visibleRecipes.filter(r => r.tags.includes('destaque'));
     const heroSourceList = heroTagged.length ? heroTagged : (visibleRecipes[0] ? [visibleRecipes[0]] : []);
     const heroRecipes = heroSourceList.map((r, i) => this.makeRecipeCard(r, 'home', i));
@@ -3698,7 +3700,7 @@ class App extends Component {
       categoryReferencesModal: (s.deleteImpactKind === 'category' && s.deleteImpact) ? (() => {
         const impact = s.deleteImpact;
         const isSite = impact.scope === 'site';
-        const byType = (t) => (isSite ? s.siteCategories : [...s.myCategories, ...s.pickerPublicCategories])
+        const byType = (t) => (isSite ? s.siteCategories : s.creationCategories)
           .filter(c => c.type === t && c.id !== impact.category_id).map(c => ({ value: c.id, label: c.name }));
         const productOptions = byType('proteina'), recipeOptions = byType('receita'), sectionOptions = byType('secao');
         const productRows = (s.deleteCategoryRows.products || []).map(p => ({
