@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260803-3';
-import { CustomSelect } from './custom-select.js?v=20260803-3';
+import { html } from './vendor/htm-preact-standalone.js?v=20260804-1';
+import { CustomSelect } from './custom-select.js?v=20260804-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -36,8 +36,7 @@ export function renderApp(app) {
 
             ${v.notLoaded && html`<div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--neutral-600);font-size:15px">Carregando receitas...</div>`}
             ${v.isHome && renderHome(app, v)}
-            ${v.isHome && renderCustomSections(app, v)}
-            ${v.isSearch && renderSearch(app, v)}
+                        ${v.isSearch && renderSearch(app, v)}
             ${v.isFavorites && renderFavorites(app, v)}
             ${v.isDados && renderDados(app, v)}
             ${v.isSalesHistory && renderSalesHistory(app, v)}
@@ -181,12 +180,7 @@ function renderHome(app, v) {
       `}
     </div>
 
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2L12 2z"></path></svg>`, 'Recomendados', v.recommendedList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>`, 'Práticos para o Dia a Dia', v.practicalList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M20 12v9H4v-9M2 7h20v5H2V7zM12 7v14M12 7c-1.5-3-6-3-6 0s4.5 1.5 6 0zM12 7c1.5-3 6-3 6 0s-4.5 1.5-6 0z"></path></svg>`, 'Ocasiões Especiais', v.occasionList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M13 2L5 14h6l-1 8 9-12h-6l1-8z"></path></svg>`, 'Pronto em 30 Minutos', v.quickList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 3c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 3.6-3.6 6.5-8 6.5s-8-2.9-8-6.5c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.5 5-7.5z"></path></svg>`, 'Direto da Churrasqueira', v.churrascoList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="13" r="7"></circle><path d="M12 6V3M8 3h8"></path></svg>`, 'Petiscos para Compartilhar', v.snackList, v.goSearch)}
+    ${v.homeSectionBlocks.map((section) => carouselSection(section.icon, section.title, section.items, v.goSearch))}
   `;
 }
 
@@ -1172,9 +1166,14 @@ function renderLocalHomeCustomization(app, v) {
 function renderSiteRecipesTab(app, v) {
   return html`
     <div style="padding:8px 40px 24px">
-      <div onClick=${v.onNewSiteRecipe} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
-        Nova Receita no Catálogo
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+        <div onClick=${v.onNewSiteRecipe} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;transition:transform 0.15s ease">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
+          Nova Receita no Catálogo
+        </div>
+        <div onClick=${v.onOpenImportModal} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--neutral-50);color:var(--brand-700);border:1.5px solid var(--brand-500);border-radius:var(--radius-md);padding:14px;font-weight:700;font-size:15px;cursor:pointer;transition:transform 0.15s ease">
+          Importar Planilha
+        </div>
       </div>
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
@@ -1234,13 +1233,18 @@ function renderSiteCategoriesTab(app, v) {
         Nova Categoria no Catálogo
       </div>
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.homeSectionOrderBusy && html`<div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">Sincronizando ordem das seções...</div>`}
       ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
       ${v.siteCategoryRows.map((row) => html`
-        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+        <div key=${row.id} draggable=${row.draggable} onDragStart=${row.onDragStart} onDragOver=${row.onDragOver} onDrop=${row.onDrop} style=${`display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid ${row.isDragging ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;opacity:${row.isDragging ? 0.65 : 1}`}>
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}${row.draggable ? ' · segure e arraste para ordenar na Home' : ''}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
+          ${row.draggable && html`
+            <div onClick=${row.onMoveUp} title="Mover seção para cima" style="font-size:12px;font-weight:800;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 11px;border-radius:var(--radius-full);white-space:nowrap">↑</div>
+            <div onClick=${row.onMoveDown} title="Mover seção para baixo" style="font-size:12px;font-weight:800;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 11px;border-radius:var(--radius-full);white-space:nowrap">↓</div>
+          `}
           <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
@@ -2033,7 +2037,7 @@ function renderImportModal(app, v) {
     <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:30;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div style="font-size:22px;font-weight:700">Importar Planilha (.xlsx)</div>
+          <div style="font-size:22px;font-weight:700">Importar Planilha (.xlsx, .xls, .csv)</div>
           <div onClick=${v.onCloseImportModal} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
           </div>
@@ -2078,14 +2082,20 @@ function renderImportModal(app, v) {
           <div onClick=${v.onDownloadTemplate} style="text-align:center;padding:12px;border-radius:var(--radius-md);border:1.5px solid var(--brand-500);color:var(--brand-700);font-weight:700;font-size:14px;cursor:pointer;margin-bottom:18px">Baixar modelo (.xlsx)</div>
 
           <label style="display:block;border:2px dashed var(--neutral-200);border-radius:var(--radius-md);padding:24px;text-align:center;cursor:pointer;color:var(--neutral-600);font-size:14px">
-            Clique para selecionar o arquivo .xlsx
-            <input type="file" accept=".xlsx" onChange=${v.onImportFileChange} style="display:none"/>
+            Clique para selecionar o arquivo .xlsx, .xls ou .csv
+            <input key=${v.importFileInputKey} type="file" accept=".xlsx,.xls,.csv" onChange=${v.onImportFileChange} style="display:none"/>
           </label>
           ${v.hasImportParseError && html`<div style="color:var(--red-600);font-size:13px;margin-top:10px;font-weight:600">${v.importParseError}</div>`}
         `}
 
         ${v.importStepResult && html`
           <div style="font-size:14px;color:var(--neutral-800);margin-bottom:14px">Arquivo: <strong>${v.importFileName}</strong> — ${v.importProductsCount} produtos e ${v.importRecipesCount} receitas encontrados.</div>
+          ${v.importSummary && html`
+            <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--neutral-800);line-height:1.8">
+              <strong>Resumo:</strong> ${v.importSummary.totalRows} linha(s); ${v.importSummary.valid} válida(s); ${v.importSummary.invalid} inválida(s); ${v.importSummary.newCount} nova(s); ${v.importSummary.replaceCount} a substituir; ${v.importSummary.duplicateCount} duplicada(s); ${v.importSummary.ignoredCount} ignorada(s); ${v.importSummary.removedCount} removida(s).
+            </div>
+          `}
+          ${v.importResult && html`<div style="background:rgba(52,178,62,0.1);border:1px solid var(--green-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--green-600);font-weight:700">${v.importResult}</div>`}
           ${v.hasImportNewCategories && html`
             <div style="background:rgba(52,178,62,0.1);border:1px solid var(--green-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--neutral-800)">
               Novas categorias/seções a adicionar: ${v.importNewProductCategoriesList}
@@ -2110,21 +2120,21 @@ function renderImportModal(app, v) {
             <div style="font-weight:700;font-size:14px;margin-bottom:10px">Como deseja importar?</div>
             <label style=${`display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid ${v.importModeMergeBorder};margin-bottom:10px;cursor:pointer`}>
               <input type="radio" name="importMode" checked=${v.importModeIsMerge} onChange=${v.onSetImportModeMerge}/>
-              <div><div style="font-weight:600;font-size:14px">Incluir nos cadastros existentes</div><div style="font-size:12px;color:var(--neutral-600)">Adiciona os novos itens; produtos e receitas com o mesmo nome são atualizados.</div></div>
+              <div><div style="font-weight:600;font-size:14px">Adicionar receitas</div><div style="font-size:12px;color:var(--neutral-600)">Adiciona receitas novas e ignora nomes equivalentes já existentes no catálogo público.</div></div>
             </label>
             <label style=${`display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid ${v.importModeReplaceMatchingBorder};margin-bottom:10px;cursor:pointer`}>
               <input type="radio" name="importMode" checked=${v.importModeIsReplaceMatching} onChange=${v.onSetImportModeReplaceMatching}/>
-              <div><div style="font-weight:600;font-size:14px">Substituir receitas com o mesmo nome</div><div style="font-size:12px;color:var(--neutral-600)">Receitas da planilha com nome igual a uma já cadastrada são totalmente substituídas; as demais receitas e produtos existentes são mantidos.</div></div>
+              <div><div style="font-weight:600;font-size:14px">Adicionar e substituir receitas de mesmo nome</div><div style="font-size:12px;color:var(--neutral-600)">Receitas da planilha com nome igual a uma já cadastrada são totalmente substituídas; as demais receitas e produtos existentes são mantidos.</div></div>
             </label>
             <label style=${`display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid ${v.importModeReplaceBorder};margin-bottom:6px;cursor:pointer`}>
               <input type="radio" name="importMode" checked=${v.importModeIsReplace} onChange=${v.onSetImportModeReplace}/>
-              <div><div style="font-weight:600;font-size:14px">Substituir todos os cadastros</div><div style="font-size:12px;color:var(--neutral-600)">Remove todas as receitas e produtos atuais e usa somente os desta planilha.</div></div>
+              <div><div style="font-weight:600;font-size:14px">Substituir todas as receitas</div><div style="font-size:12px;color:var(--neutral-600)">Substitui todas as receitas públicas atuais pelas receitas válidas da planilha; receitas pessoais não são alteradas.</div></div>
             </label>
           `}
 
           <div style="display:flex;gap:10px;margin-top:20px">
             <div onClick=${v.onBackToInstructions} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50)">Voltar</div>
-            ${v.importCanProceed && html`<div onClick=${v.onConfirmImport} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700)">Confirmar Importação</div>`}
+            ${v.importCanProceed && html`<div onClick=${v.onConfirmImport} style=${`flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:${v.importBusy ? 'not-allowed' : 'pointer'};color:#F4F2F1;background:${v.importBusy ? 'var(--neutral-300)' : 'var(--brand-700)'}`}>${v.importBusy ? 'Importando...' : 'Confirmar Importação'}</div>`}
           </div>
         `}
       </div>

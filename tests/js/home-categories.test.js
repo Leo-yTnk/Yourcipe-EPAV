@@ -48,12 +48,13 @@ describe('Home loads its category vocabulary from Supabase, not from static cons
 });
 
 describe('Home sections stay on the Home screen', () => {
-  it('gates custom public section rendering behind isHome', () => {
-    expect(templateJs).toMatch(/\$\{v\.isHome && renderCustomSections\(app, v\)\}/);
+  it('renders ordered public section blocks only inside renderHome', () => {
+    const renderHomeBlock = templateJs.slice(templateJs.indexOf('function renderHome'), templateJs.indexOf('function renderCustomSections'));
+    expect(renderHomeBlock).toMatch(/v\.homeSectionBlocks\.map/);
   });
 
   it('does not render custom sections unconditionally in the root screen dispatcher', () => {
     const dispatcher = templateJs.slice(templateJs.indexOf('${v.notLoaded'), templateJs.indexOf('</div>\n        </div>'));
-    expect(dispatcher).not.toMatch(/^\s*\$\{renderCustomSections\(app, v\)\}/m);
+    expect(dispatcher).not.toMatch(/homeSectionBlocks\.map/);
   });
 });

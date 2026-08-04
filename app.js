@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260803-3';
-import { CustomSelect } from './custom-select.js?v=20260803-3';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260804-1';
+import { CustomSelect } from './custom-select.js?v=20260804-1';
 import {
   LS_KEYS, SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260803-3';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260803-3';
-import { supabase } from './supabase-client.js?v=20260803-3';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260803-3';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260803-3';
-import { normalizeDisplayName } from './display-name.js?v=20260803-3';
-import * as catalog from './catalog.js?v=20260803-3';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260803-3';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260803-3';
-import { createLoadGuard } from './load-guard.js?v=20260803-3';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260803-3';
+} from './data.js?v=20260804-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260804-1';
+import { supabase } from './supabase-client.js?v=20260804-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260804-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260804-1';
+import { normalizeDisplayName } from './display-name.js?v=20260804-1';
+import * as catalog from './catalog.js?v=20260804-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260804-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260804-1';
+import { createLoadGuard } from './load-guard.js?v=20260804-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260804-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260803-3';
+const FRONTEND_VERSION = '20260804-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -186,7 +186,13 @@ class App extends Component {
       importWarnings: [],
       importNewProductCategories: [],
       importNewSections: [],
-      importMode: 'merge',
+      importMode: 'add',
+      importSummary: null,
+      importBusy: false,
+      importResult: null,
+      importFileInputKey: 0,
+      homeSectionDragKey: null,
+      homeSectionOrderBusy: false,
       adminFlash: '',
       session: null,
       authRole: null,
@@ -2430,6 +2436,41 @@ class App extends Component {
   onCancelProteinSelection = () => this.setState({ proteinSelectionMode: false, selectedProteinKeys: [] });
   askBulkDeleteProteins = () => this.setState({ confirmDelete: { type: 'bulk-delete-proteins', ids: [...this.state.selectedProteinKeys], message: `Excluir ${this.state.selectedProteinKeys.length} categoria(s) selecionada(s)? Esta ação não pode ser desfeita.` } });
 
+
+  syncHomeSectionOrder = async (sections) => {
+    const orderedSections = sections.map((c, i) => ({ ...c, sort_order: i }));
+    const sectionIds = new Set(orderedSections.map(c => c.id));
+    const mergeOrdered = (rows) => rows.map(row => sectionIds.has(row.id) ? orderedSections.find(sec => sec.id === row.id) : row);
+    this.setState(s => ({
+      siteCategories: mergeOrdered(s.siteCategories),
+      publicCategories: mergeOrdered(s.publicCategories),
+      homeSectionDragKey: null,
+      homeSectionOrderBusy: true,
+    }));
+    const { error } = await catalog.adminReorderHomeSections(orderedSections.map((c, i) => ({ id: c.id, sort_order: i })));
+    this.setState({ homeSectionOrderBusy: false });
+    if (error) { this.flashAdmin('Não foi possível sincronizar a ordem das seções.'); this.loadSiteCatalogData(); this.loadPublicCatalog(); }
+  };
+  onHomeSectionDragStart = (id) => this.setState({ homeSectionDragKey: id });
+  onHomeSectionDragOver = (e) => { if (e && e.preventDefault) e.preventDefault(); };
+  onHomeSectionDrop = (targetId) => {
+    const sourceId = this.state.homeSectionDragKey;
+    if (!sourceId || sourceId === targetId || this.state.authRole !== 'admin') { this.setState({ homeSectionDragKey: null }); return; }
+    const sections = this.siteSectionCategories().slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name));
+    const from = sections.findIndex(c => c.id === sourceId), to = sections.findIndex(c => c.id === targetId);
+    if (from < 0 || to < 0) { this.setState({ homeSectionDragKey: null }); return; }
+    const [moved] = sections.splice(from, 1); sections.splice(to, 0, moved);
+    this.syncHomeSectionOrder(sections);
+  };
+  moveHomeSection = (id, delta) => {
+    if (this.state.authRole !== 'admin' || this.state.homeSectionOrderBusy) return;
+    const sections = this.siteSectionCategories().slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name));
+    const from = sections.findIndex(c => c.id === id), to = from + delta;
+    if (from < 0 || to < 0 || to >= sections.length) return;
+    const [moved] = sections.splice(from, 1); sections.splice(to, 0, moved);
+    this.syncHomeSectionOrder(sections);
+  };
+
   onToggleRecipeMenu = (id) => this.setState(s => ({ recipeMenuOpenId: s.recipeMenuOpenId === id ? null : id }));
   duplicateRecipe = (r) => {
     const copy = { ...r, id: 'r_' + Date.now(), nome: r.nome + ' (cópia)', ingredientes: r.ingredientes.map(i => ({ ...i })), extras: [...(r.extras || [])], modoPreparo: [...(r.modoPreparo || [])], dicas: [...(r.dicas || [])], tags: [...(r.tags || [])] };
@@ -2590,6 +2631,22 @@ class App extends Component {
   onCancelProductSelection = () => this.setState({ productSelectionMode: false, selectedProductIds: [] });
   askBulkDeleteProducts = () => this.setState({ confirmDelete: { type: 'bulk-delete-products', ids: [...this.state.selectedProductIds], message: `Excluir ${this.state.selectedProductIds.length} produto(s) selecionado(s)? Eles serão removidos também das receitas que os usam.` } });
 
+  onNewProduct = () => this.setState({
+    showProductForm: true, productFormMode: 'new',
+    productForm: { id: null, nome: '', categoria: (this.state.productCategories.find(c => c.enabled) || {}).label || this.categoriasProduto[0] || 'Bovinos', unidade: this.unidades[0] || 'kg', preco: 0 },
+  });
+  onEditProduct = (p) => this.setState({ showProductForm: true, productFormMode: 'edit', productForm: { id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, preco: p.preco } });
+  onCancelProductForm = () => this.setState({ showProductForm: false, productForm: null });
+  productFormField = (field) => (e) => this.setState(st => ({ productForm: { ...st.productForm, [field]: e.target.value } }));
+  onSaveProductForm = () => {
+    const f = this.state.productForm;
+    if (!f || !String(f.nome || '').trim()) return;
+    const product = { id: f.id || ('p_' + Date.now()), nome: String(f.nome).trim(), categoria: f.categoria, unidade: f.unidade, preco: parseFloat(String(f.preco).replace(',', '.')) || 0 };
+    const products = f.id ? this.state.products.map(p => p.id === f.id ? product : p) : [...this.state.products, product];
+    this.setState({ products, showProductForm: false, productForm: null });
+    this.persist(LS_KEYS.products, products);
+  };
+
   onNewRecipe = () => this.setState({
     showRecipeForm: true, recipeFormMode: 'new',
     recipeForm: {
@@ -2643,12 +2700,12 @@ class App extends Component {
     this.persist(LS_KEYS.recipes, recipes);
   };
 
-  onOpenImportModal = () => this.setState({ showImportModal: true, importStep: 'instructions', importFileName: '', importParseError: '', importParsedProducts: [], importParsedRecipes: [], importErrors: [], importWarnings: [], importNewProductCategories: [], importNewSections: [], importMode: 'merge' });
+  onOpenImportModal = () => { if (this.state.authRole !== 'admin') return; this.setState({ showImportModal: true, importStep: 'instructions', importFileName: '', importParseError: '', importParsedProducts: [], importParsedRecipes: [], importErrors: [], importWarnings: [], importNewProductCategories: [], importNewSections: [], importMode: 'add', importSummary: null, importBusy: false, importResult: null, importFileInputKey: this.state.importFileInputKey + 1 }); };
   onCloseImportModal = () => this.setState({ showImportModal: false });
   onBackToInstructions = () => this.setState({ importStep: 'instructions', importParseError: '' });
-  onSetImportModeMerge = () => this.setState({ importMode: 'merge' });
-  onSetImportModeReplaceMatching = () => this.setState({ importMode: 'replaceMatching' });
-  onSetImportModeReplace = () => this.setState({ importMode: 'replace' });
+  onSetImportModeMerge = () => this.setState({ importMode: 'add' }, () => this.recomputeImportSummary());
+  onSetImportModeReplaceMatching = () => this.setState({ importMode: 'upsert' }, () => this.recomputeImportSummary());
+  onSetImportModeReplace = () => this.setState({ importMode: 'replace_all' }, () => this.recomputeImportSummary());
 
   onDownloadTemplate = () => {
     if (!window.XLSX) return;
@@ -2686,174 +2743,69 @@ class App extends Component {
     reader.readAsArrayBuffer(file);
   };
 
+  normalizeImportText = (value) => String(value || '').trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  splitImportList = (value) => String(value || '').split(';').map(x => x.trim()).filter(Boolean);
+
   processImportWorkbook = (wb, fileName) => {
-    const prodSheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'produtos') || wb.SheetNames[0];
-    const recSheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'receitas') || wb.SheetNames[1];
-    const catSheetName = wb.SheetNames.find(n => n.trim().toLowerCase() === 'categorias');
-    const prodRows = prodSheetName ? XLSX.utils.sheet_to_json(wb.Sheets[prodSheetName], { defval: '' }) : [];
+    if (this.state.authRole !== 'admin') return;
+    const norm = (txt) => this.normalizeImportText(txt).replace(/[^a-z0-9]+/g, '');
+    const get = (row, names) => { const map = Object.fromEntries(Object.keys(row).map(k => [norm(k), row[k]])); for (const name of names) if (Object.prototype.hasOwnProperty.call(map, norm(name))) return map[norm(name)]; return ''; };
+    const recSheetName = wb.SheetNames.find(n => this.normalizeImportText(n) === 'receitas') || wb.SheetNames[0];
     const recRows = recSheetName ? XLSX.utils.sheet_to_json(wb.Sheets[recSheetName], { defval: '' }) : [];
-    const catRows = catSheetName ? XLSX.utils.sheet_to_json(wb.Sheets[catSheetName], { defval: '' }) : [];
-
-    const errors = [], warnings = [], parsedProducts = [];
-    const newProductCategories = [], newSections = [];
-    const slugify = (label) => label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-    catRows.forEach((row, i) => {
-      const line = i + 2;
-      const tipo = String(row.tipo || '').trim().toLowerCase();
-      const nome = String(row.nome || '').trim();
-      if (!nome) { errors.push(`Categorias, linha ${line}: nome ausente.`); return; }
-      if (tipo === 'proteina') { if (!newProductCategories.some(c => c.label.toLowerCase() === nome.toLowerCase())) newProductCategories.push({ key: nome, label: nome }); }
-      else if (tipo === 'secao') { if (!newSections.some(c => c.label.toLowerCase() === nome.toLowerCase())) newSections.push({ key: slugify(nome), label: nome }); }
-      else errors.push(`Categorias, linha ${line} ("${nome}"): tipo "${row.tipo}" inválido — use "proteina" ou "secao".`);
-    });
-    const allowedProteinLabels = new Set([...this.state.productCategories.filter(c => c.enabled).map(c => c.label), ...newProductCategories.map(c => c.label)]);
-    const allowedSectionKeys = new Set(['destaque', ...this.state.homeSections.filter(h => h.enabled).map(h => h.key), ...newSections.map(h => h.key)]);
-    const seenProdNames = new Set();
-
-    prodRows.forEach((row, i) => {
-      const line = i + 2;
-      const nome = String(row.nome || '').trim();
-      const categoria = String(row.categoria || '').trim();
-      const unidade = String(row.unidade || '').trim();
-      const preco = parseFloat(String(row.preco).replace(',', '.'));
-      if (!nome) { errors.push(`Produtos, linha ${line}: nome ausente.`); return; }
-      if (!categoria) errors.push(`Produtos, linha ${line} ("${nome}"): categoria ausente.`);
-      else if (!allowedProteinLabels.has(categoria)) errors.push(`Produtos, linha ${line} ("${nome}"): categoria "${categoria}" não está habilitada nem declarada na aba Categorias.`);
-      if (!unidade) errors.push(`Produtos, linha ${line} ("${nome}"): unidade ausente.`);
-      else if (!UNIDADES.includes(unidade)) errors.push(`Produtos, linha ${line} ("${nome}"): unidade "${unidade}" inválida.`);
-      if (isNaN(preco)) errors.push(`Produtos, linha ${line} ("${nome}"): preço ausente ou inválido.`);
-      parsedProducts.push({ id: 'imp_p_' + i + '_' + Date.now(), nome, categoria, unidade, preco: isNaN(preco) ? 0 : preco });
-      seenProdNames.add(nome.toLowerCase());
-    });
-
-    const existingNames = new Set(this.state.products.map(p => p.nome.toLowerCase()));
-    const parsedRecipes = [];
+    const errors = [], warnings = [], parsedRecipes = [];
+    const categoryNames = new Set((this.state.siteCategories || []).filter(c => c.type === 'receita' && c.active !== false).map(c => this.normalizeImportText(c.name)));
+    const productNames = new Set((this.state.siteProducts || []).filter(p => p.active !== false).map(p => this.normalizeImportText(p.name)));
+    const sectionKeys = new Set((this.state.siteCategories || []).filter(c => c.type === 'secao' && c.active !== false).flatMap(c => [this.normalizeImportText(c.slug), this.normalizeImportText(c.name)]));
+    const seen = new Set();
+    if (!recRows.length) errors.push('Arquivo vazio ou sem aba Receitas com dados.');
     recRows.forEach((row, i) => {
       const line = i + 2;
-      const nome = String(row.nome || '').trim();
-      const categoria = String(row.categoria || '').trim();
-      const tempo = parseInt(row.tempo);
-      const porcoes = parseInt(row.porcoes);
-      const dificuldade = String(row.dificuldade || '').trim();
-      const imagem = String(row.imagem || '').trim();
-      const tagsRaw = String(row.tags || '').trim();
-      const ingRaw = String(row.ingredientes || '').trim();
-      const extrasRaw = String(row.extras || '').trim();
-      const modoRaw = String(row.modoPreparo || '').trim();
-      const dicasRaw = String(row.dicas || '').trim();
-
-      if (!nome) { errors.push(`Receitas, linha ${line}: nome ausente.`); return; }
-      if (!categoria) errors.push(`Receitas, linha ${line} ("${nome}"): categoria ausente.`);
-      else if (!CATEGORIAS_RECEITA.includes(categoria)) errors.push(`Receitas, linha ${line} ("${nome}"): categoria "${categoria}" inválida.`);
-      if (!tempo || isNaN(tempo)) errors.push(`Receitas, linha ${line} ("${nome}"): tempo ausente ou inválido.`);
-      if (!porcoes || isNaN(porcoes)) errors.push(`Receitas, linha ${line} ("${nome}"): porções ausente ou inválido.`);
-      if (!dificuldade) errors.push(`Receitas, linha ${line} ("${nome}"): dificuldade ausente.`);
-      else if (!DIFICULDADES.includes(dificuldade)) errors.push(`Receitas, linha ${line} ("${nome}"): dificuldade "${dificuldade}" inválida.`);
-      if (!ingRaw) errors.push(`Receitas, linha ${line} ("${nome}"): ingredientes ausentes.`);
-      if (!modoRaw) errors.push(`Receitas, linha ${line} ("${nome}"): modo de preparo ausente.`);
-
-      const validTags = Array.from(allowedSectionKeys);
-      const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim().toLowerCase()).filter(t => validTags.includes(t)) : [];
-
-      const ingredientesRaw = [];
-      if (ingRaw) {
-        ingRaw.split(';').map(s => s.trim()).filter(Boolean).forEach(part => {
-          const sep = part.lastIndexOf(':');
-          if (sep === -1) { errors.push(`Receitas, linha ${line} ("${nome}"): ingrediente "${part}" fora do formato "Produto:quantidade".`); return; }
-          const prodNome = part.slice(0, sep).trim();
-          const qtd = parseFloat(part.slice(sep + 1).replace(',', '.'));
-          if (isNaN(qtd)) { errors.push(`Receitas, linha ${line} ("${nome}"): quantidade inválida para "${prodNome}".`); return; }
-          const key = prodNome.toLowerCase();
-          if (!seenProdNames.has(key) && !existingNames.has(key)) warnings.push(`Receita "${nome}": produto "${prodNome}" não está cadastrado.`);
-          ingredientesRaw.push({ produtoNome: prodNome, qtd });
-        });
-      }
-
-      parsedRecipes.push({
-        id: 'imp_r_' + i + '_' + Date.now(), nome, categoria, tempo: isNaN(tempo) ? 0 : tempo, porcoes: isNaN(porcoes) ? 0 : porcoes, dificuldade,
-        imagem: imagem || `https://picsum.photos/seed/imp${i}${Date.now()}/900/650`, tags, ingredientesRaw,
-        extras: extrasRaw ? extrasRaw.split(';').map(s => s.trim()).filter(Boolean) : [],
-        modoPreparo: modoRaw ? modoRaw.split(';').map(s => s.trim()).filter(Boolean) : [],
-        dicas: dicasRaw ? dicasRaw.split(';').map(s => s.trim()).filter(Boolean) : [],
-      });
+      const nome = String(get(row, ['nome', 'name', 'receita']) || '').trim();
+      const categoria = String(get(row, ['categoria', 'categoria da receita']) || '').trim();
+      const tempo = parseInt(get(row, ['tempo', 'tempo de preparo', 'prep_time']), 10);
+      const porcoes = parseInt(get(row, ['porcoes', 'porções', 'servings']), 10);
+      const dificuldade = String(get(row, ['dificuldade', 'difficulty']) || '').trim() || 'Fácil';
+      const imagem = String(get(row, ['imagem', 'url da imagem', 'image_url', 'imagem url']) || '').trim();
+      const destaqueRaw = String(get(row, ['destaque', 'featured']) || '').trim().toLowerCase();
+      const tagsRaw = String(get(row, ['tags', 'secoes', 'seções']) || '').trim();
+      const ingRaw = String(get(row, ['ingredientes', 'ingredients']) || '').trim();
+      const modoRaw = String(get(row, ['modoPreparo', 'modo de preparo', 'instrucoes', 'instruções', 'instructions']) || '').trim();
+      const extrasRaw = String(get(row, ['extras', 'descrição', 'descricao']) || '').trim();
+      const dicasRaw = String(get(row, ['dicas', 'tips']) || '').trim();
+      const nameKey = this.normalizeImportText(nome);
+      if (!nome) errors.push(`Receitas, linha ${line}: campo nome ausente.`); else if (seen.has(nameKey)) errors.push(`Receitas, linha ${line} ("${nome}"): nome duplicado na planilha.`); else seen.add(nameKey);
+      if (!categoria || !categoryNames.has(this.normalizeImportText(categoria))) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): categoria inexistente no catálogo público: "${categoria}".`);
+      if (!tempo || isNaN(tempo) || tempo < 0) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): tempo de preparo inválido.`);
+      if (!porcoes || isNaN(porcoes) || porcoes < 0) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): porções inválidas.`);
+      if (!DIFICULDADES.includes(dificuldade)) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): dificuldade inválida: "${dificuldade}".`);
+      if (!ingRaw) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): ingredientes ausentes.`);
+      if (!modoRaw) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): modo de preparo ausente.`);
+      const ingredients = [];
+      this.splitImportList(ingRaw).forEach(part => { const sep = part.lastIndexOf(':'); if (sep === -1) { errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): ingrediente "${part}" fora do formato Produto:quantidade.`); return; } const product = part.slice(0, sep).trim(); const quantity = parseFloat(part.slice(sep + 1).replace(',', '.')); if (!productNames.has(this.normalizeImportText(product))) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): ingrediente/produto público inexistente: "${product}".`); if (!quantity || isNaN(quantity) || quantity <= 0) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): quantidade inválida para "${product}".`); ingredients.push({ product, quantity }); });
+      const sections = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean).filter(t => { const ok = this.normalizeImportText(t) === 'destaque' || sectionKeys.has(this.normalizeImportText(t)); if (!ok) warnings.push(`Receitas, linha ${line} ("${nome}"): seção "${t}" não existe no catálogo público e será ignorada.`); return ok; }).filter(t => this.normalizeImportText(t) !== 'destaque') : [];
+      parsedRecipes.push({ name: nome, category: categoria, prep_time: isNaN(tempo) ? 0 : tempo, servings: isNaN(porcoes) ? 0 : porcoes, difficulty: dificuldade, image_url: imagem, featured: ['sim','true','1','x'].includes(destaqueRaw) || tagsRaw.split(',').some(t => this.normalizeImportText(t) === 'destaque'), ingredients, sections, extras: this.splitImportList(extrasRaw), instructions: this.splitImportList(modoRaw), tips: this.splitImportList(dicasRaw) });
     });
-
-    this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedProducts: parsedProducts, importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importNewProductCategories: newProductCategories, importNewSections: newSections });
+    this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedProducts: [], importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importNewProductCategories: [], importNewSections: [], importResult: null }, () => this.recomputeImportSummary());
   };
 
-  onConfirmImport = () => {
+  recomputeImportSummary = () => {
+    const norm = (x) => this.normalizeImportText(x), imported = this.state.importParsedRecipes || [], publicNames = new Set((this.state.siteRecipes || []).map(r => norm(r.name))), importNames = new Set(imported.map(r => norm(r.name))), duplicateRows = imported.filter(r => publicNames.has(norm(r.name))).map(r => r.name);
+    this.setState({ importSummary: { totalRows: imported.length, valid: this.state.importErrors.length ? 0 : imported.length, invalid: this.state.importErrors.length, newCount: imported.filter(r => !publicNames.has(norm(r.name))).length, replaceCount: this.state.importMode === 'add' ? 0 : imported.filter(r => publicNames.has(norm(r.name))).length, duplicateCount: duplicateRows.length, duplicateRows, ignoredCount: this.state.importMode === 'add' ? duplicateRows.length : 0, removedCount: this.state.importMode === 'replace_all' ? (this.state.siteRecipes || []).filter(r => !importNames.has(norm(r.name))).length : 0 } });
+  };
+
+  onConfirmImport = async () => {
     const s = this.state;
-    const mode = s.importMode;
-    let products;
-    if (mode === 'replace') {
-      products = s.importParsedProducts.map(p => ({ id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, preco: p.preco }));
-    } else {
-      products = [...s.products];
-      s.importParsedProducts.forEach(np => {
-        const idx = products.findIndex(p => p.nome.toLowerCase() === np.nome.toLowerCase());
-        if (idx >= 0) products[idx] = { ...products[idx], categoria: np.categoria, unidade: np.unidade, preco: np.preco };
-        else products.push({ id: np.id, nome: np.nome, categoria: np.categoria, unidade: np.unidade, preco: np.preco });
-      });
-    }
-
-    const nameToId = {};
-    products.forEach(p => { nameToId[p.nome.toLowerCase()] = p.id; });
-    const buildRecipe = (r) => ({
-      id: r.id, nome: r.nome, categoria: r.categoria, tempo: r.tempo, porcoes: r.porcoes, dificuldade: r.dificuldade, imagem: r.imagem, tags: r.tags,
-      ingredientes: r.ingredientesRaw.map(i => ({ produtoId: nameToId[i.produtoNome.toLowerCase()] || '', qtd: i.qtd })).filter(i => i.produtoId),
-      extras: r.extras, modoPreparo: r.modoPreparo, dicas: r.dicas,
-    });
-
-    let recipes;
-    if (mode === 'replace') {
-      recipes = s.importParsedRecipes.map(buildRecipe);
-    } else if (mode === 'replaceMatching') {
-      const importedNames = new Set(s.importParsedRecipes.map(nr => nr.nome.toLowerCase()));
-      recipes = s.recipes.filter(r => !importedNames.has(r.nome.toLowerCase()));
-      s.importParsedRecipes.forEach(nr => recipes.push(buildRecipe(nr)));
-    } else {
-      recipes = [...s.recipes];
-      s.importParsedRecipes.forEach(nr => {
-        const built = buildRecipe(nr);
-        const idx = recipes.findIndex(r => r.nome.toLowerCase() === nr.nome.toLowerCase());
-        if (idx >= 0) recipes[idx] = { ...built, id: recipes[idx].id };
-        else recipes.push(built);
-      });
-    }
-
-    let productCategories = s.productCategories;
-    (s.importNewProductCategories || []).forEach(nc => {
-      if (!productCategories.some(c => c.label.toLowerCase() === nc.label.toLowerCase())) productCategories = [...productCategories, { key: nc.label, label: nc.label, enabled: true, custom: true }];
-    });
-    let homeSections = s.homeSections;
-    (s.importNewSections || []).forEach(ns => {
-      if (!homeSections.some(h => h.key === ns.key)) homeSections = [...homeSections, { key: ns.key, label: ns.label, enabled: true, custom: true }];
-    });
-
-    this.setState({ products, recipes, productCategories, homeSections, showImportModal: false, adminFlash: `Importação concluída: ${s.importParsedProducts.length} produtos e ${s.importParsedRecipes.length} receitas processados.` });
-    this.persist(LS_KEYS.products, products);
-    this.persist(LS_KEYS.recipes, recipes);
-    this.persist(LS_KEYS.proteins, productCategories);
-    this.persist(LS_KEYS.sections, homeSections);
-    setTimeout(() => this.setState({ adminFlash: '' }), 5000);
+    if (s.authRole !== 'admin' || s.importBusy || s.importErrors.length) return;
+    if (s.importMode === 'replace_all' && !window.confirm('Esta operação substituirá todas as receitas públicas atuais pelas receitas válidas da planilha. Receitas pessoais não serão alteradas. Deseja continuar?')) return;
+    this.setState({ importBusy: true, importParseError: '', importResult: null });
+    const { data, error } = await catalog.adminImportPublicRecipes(s.importMode, s.importParsedRecipes);
+    this.setState({ importBusy: false });
+    if (error) { this.setState({ importParseError: error.message || 'Falha ao importar. Nenhuma alteração foi aplicada.' }); return; }
+    await this.refreshAfterSiteCatalogMutation();
+    const msg = `Importação concluída: ${data.added || 0} adicionada(s), ${data.replaced || 0} substituída(s), ${data.ignored || 0} ignorada(s), ${data.removed || 0} removida(s).`;
+    this.setState({ importResult: msg, adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 5000);
   };
 
-  onNewProduct = () => this.setState({ showProductForm: true, productFormMode: 'new', productForm: { id: null, nome: '', categoria: (this.state.productCategories[0] && this.state.productCategories[0].label) || '', unidade: 'kg', preco: 0 } });
-  onEditProduct = (p) => this.setState({ showProductForm: true, productFormMode: 'edit', productForm: { ...p } });
-  onCancelProductForm = () => this.setState({ showProductForm: false, productForm: null });
-  productFormField = (field) => (e) => this.setState(s => ({ productForm: { ...s.productForm, [field]: e.target.value } }));
-  onSaveProductForm = () => {
-    const f = this.state.productForm;
-    if (!f.nome || !f.nome.trim()) return;
-    const product = { id: f.id || ('p_' + Date.now()), nome: f.nome, categoria: f.categoria, unidade: f.unidade, preco: parseFloat(f.preco) || 0 };
-    let products;
-    if (f.id) products = this.state.products.map(p => p.id === f.id ? product : p);
-    else products = [...this.state.products, product];
-    this.setState({ products, showProductForm: false, productForm: null });
-    this.persist(LS_KEYS.products, products);
-  };
-
-  // ---- View-model (equivalent to the design's renderVals()) ----
   computeViewModel() {
     const s = this.state;
     const screen = s.screen;
@@ -2879,17 +2831,29 @@ class App extends Component {
     // disable a known section, but an admin is never routed to a different
     // loader and a newly-created public section defaults to visible.
     const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : this.publicSectionCategories().some(c => c.slug === key); };
-    const recommendedList = sectionOn('recomendado') ? byTag('recomendado') : [];
-    const practicalList = sectionOn('pratico') ? byTag('pratico') : [];
-    const occasionList = sectionOn('ocasiao') ? byTag('ocasiao') : [];
-    const quickList = sectionOn('rapido') ? byTag('rapido') : [];
-    const churrascoList = sectionOn('churrasco') ? byTag('churrasco') : [];
-    const snackList = sectionOn('petisco') ? byTag('petisco') : [];
-    const fixedSectionKeys = new Set(['recomendado', 'pratico', 'ocasiao', 'rapido', 'churrasco', 'petisco']);
-    const customHomeSectionBlocks = this.publicSectionCategories()
-      .filter(c => !fixedSectionKeys.has(c.slug) && sectionOn(c.slug))
-      .map(c => ({ key: c.slug, label: c.name, items: byTag(c.slug) }))
+    const sectionIcons = {
+      recomendado: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2L12 2z"></path></svg>`,
+      pratico: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>`,
+      ocasiao: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M20 12v9H4v-9M2 7h20v5H2V7zM12 7v14M12 7c-1.5-3-6-3-6 0s4.5 1.5 6 0zM12 7c1.5-3 6-3 6 0s-4.5 1.5-6 0z"></path></svg>`,
+      rapido: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M13 2L5 14h6l-1 8 9-12h-6l1-8z"></path></svg>`,
+      churrasco: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 3c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 3.6-3.6 6.5-8 6.5s-8-2.9-8-6.5c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.5 5-7.5z"></path></svg>`,
+      petisco: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="13" r="7"></circle><path d="M12 6V3M8 3h8"></path></svg>`,
+    };
+    const publicSections = this.publicSectionCategories();
+    const publicSectionSlugs = new Set(publicSections.map(c => c.slug));
+    const fallbackSections = SECTION_DEFS.filter(def => !publicSectionSlugs.has(def.key)).map((def, i) => ({ id: def.key, slug: def.key, name: def.label, sort_order: 1000 + i, active: true }));
+    const homeSectionBlocks = [...publicSections, ...fallbackSections]
+      .filter(c => c.active !== false && sectionOn(c.slug))
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name))
+      .map(c => ({ key: c.slug, icon: sectionIcons[c.slug] || html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`, title: c.name, items: byTag(c.slug) }))
       .filter(b => b.items.length > 0);
+    const recommendedList = homeSectionBlocks.find(b => b.key === 'recomendado')?.items || [];
+    const practicalList = homeSectionBlocks.find(b => b.key === 'pratico')?.items || [];
+    const occasionList = homeSectionBlocks.find(b => b.key === 'ocasiao')?.items || [];
+    const quickList = homeSectionBlocks.find(b => b.key === 'rapido')?.items || [];
+    const churrascoList = homeSectionBlocks.find(b => b.key === 'churrasco')?.items || [];
+    const snackList = homeSectionBlocks.find(b => b.key === 'petisco')?.items || [];
+    const customHomeSectionBlocks = homeSectionBlocks.filter(b => !SECTION_DEFS.some(def => def.key === b.key));
     const heroTagged = visibleRecipes.filter(r => r.tags.includes('destaque'));
     const heroSourceList = heroTagged.length ? heroTagged : (visibleRecipes[0] ? [visibleRecipes[0]] : []);
     const heroRecipes = heroSourceList.map((r, i) => this.makeRecipeCard(r, 'home', i));
@@ -3315,7 +3279,7 @@ class App extends Component {
       toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(c.updated_at),
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
-      onDelete: () => this.askDeleteSiteCategory(c.id),
+      onDelete: () => this.askDeleteSiteCategory(c.id), draggable: c.type === 'secao', isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id), onMoveUp: () => this.moveHomeSection(c.id, -1), onMoveDown: () => this.moveHomeSection(c.id, 1),
     }));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
     const siteProteinCategoryOptions = this.siteProteinCategories().map(c => ({ value: c.id, label: c.name }));
@@ -3472,7 +3436,7 @@ class App extends Component {
       showSplash: s.showSplash, onSplashContinue: this.onSplashContinue, splashButtonLabel: s.profile ? 'Bem-vindo de volta' : 'Criar meu perfil',
       userGreetingName, profileInitial,
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
-      recommendedList, practicalList, occasionList, quickList, churrascoList, snackList, homeCategoryChips, homeCategoriesEmpty, customHomeSectionBlocks,
+      recommendedList, practicalList, occasionList, quickList, churrascoList, snackList, homeSectionBlocks, homeCategoryChips, homeCategoriesEmpty, customHomeSectionBlocks,
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
@@ -3531,7 +3495,7 @@ class App extends Component {
       siteCatalogLoading: s.siteCatalogLoading, hasSiteCatalogErrorBanner: !!s.siteCatalogError, siteCatalogError: s.siteCatalogError,
       onRetrySiteCatalogData: () => this.loadSiteCatalogData(),
       siteRecipeRows, siteProductRows, siteCategoryRows,
-      hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0,
+      hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
       onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onNewSiteCategory: this.onNewSiteCategory,
       showSiteRecipeForm: s.showSiteRecipeForm, siteRecipeFormTitle: s.siteRecipeFormMode === 'new' ? 'Nova Receita do Catálogo' : 'Editar Receita do Catálogo', siteRecipeForm: s.siteRecipeForm || {},
@@ -3772,7 +3736,7 @@ class App extends Component {
       onCancelProductForm: this.onCancelProductForm, onSaveProductForm: this.onSaveProductForm,
       showImportModal: s.showImportModal, onOpenImportModal: this.onOpenImportModal, onCloseImportModal: this.onCloseImportModal, onBackToInstructions: this.onBackToInstructions,
       importStepInstructions: s.importStep === 'instructions', importStepResult: s.importStep === 'result',
-      onDownloadTemplate: this.onDownloadTemplate, onImportFileChange: this.onImportFileChange,
+      onDownloadTemplate: this.onDownloadTemplate, onImportFileChange: this.onImportFileChange, importSummary: s.importSummary, importBusy: s.importBusy, importResult: s.importResult, importFileInputKey: s.importFileInputKey,
       importParseError: s.importParseError, hasImportParseError: !!s.importParseError,
       importFileName: s.importFileName, importProductsCount: s.importParsedProducts.length, importRecipesCount: s.importParsedRecipes.length,
       importErrors: s.importErrors, hasImportErrors: s.importErrors.length > 0,
@@ -3780,10 +3744,10 @@ class App extends Component {
       hasImportNewCategories: ((s.importNewProductCategories || []).length + (s.importNewSections || []).length) > 0,
       importNewProductCategoriesList: [...(s.importNewProductCategories || []).map(c => c.label + ' (proteína)'), ...(s.importNewSections || []).map(c => c.label + ' (seção)')].join(', '),
       importCanProceed: s.importStep === 'result' && s.importErrors.length === 0,
-      importModeIsMerge: s.importMode === 'merge', importModeIsReplaceMatching: s.importMode === 'replaceMatching', importModeIsReplace: s.importMode === 'replace',
-      importModeMergeBorder: s.importMode === 'merge' ? 'var(--brand-500)' : 'var(--neutral-200)',
-      importModeReplaceMatchingBorder: s.importMode === 'replaceMatching' ? 'var(--brand-500)' : 'var(--neutral-200)',
-      importModeReplaceBorder: s.importMode === 'replace' ? 'var(--brand-500)' : 'var(--neutral-200)',
+      importModeIsMerge: s.importMode === 'add', importModeIsReplaceMatching: s.importMode === 'upsert', importModeIsReplace: s.importMode === 'replace_all',
+      importModeMergeBorder: s.importMode === 'add' ? 'var(--brand-500)' : 'var(--neutral-200)',
+      importModeReplaceMatchingBorder: s.importMode === 'upsert' ? 'var(--brand-500)' : 'var(--neutral-200)',
+      importModeReplaceBorder: s.importMode === 'replace_all' ? 'var(--brand-500)' : 'var(--neutral-200)',
       onSetImportModeMerge: this.onSetImportModeMerge, onSetImportModeReplaceMatching: this.onSetImportModeReplaceMatching, onSetImportModeReplace: this.onSetImportModeReplace, onConfirmImport: this.onConfirmImport,
       categoriasProdutoList: s.productCategories.filter(c => c.enabled).map(c => c.label).join(', '), categoriasReceitaList: CATEGORIAS_RECEITA.join(', '),
       adminFlash: s.adminFlash, hasAdminFlash: !!s.adminFlash,
@@ -3796,7 +3760,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260803-3';
+import { renderApp } from './template.js?v=20260804-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
