@@ -130,6 +130,14 @@ export async function fetchMyCategories(userId, type) {
   if (type) q = q.eq('type', type);
   return unwrap(await q, 'fetchMyCategories');
 }
+// Creation-form vocabulary in one RLS-protected read.  Keeping the union in
+// one query prevents the form from accidentally reusing either the public-
+// only Home loader or the personal-only management loader.  The RPC uses auth.uid()
+// directly and RLS remains the authority; no caller-supplied owner filter is
+// trusted.
+export async function fetchCreationCategories() {
+  return unwrap(await supabase.rpc('list_creation_categories'), 'fetchCreationCategories');
+}
 export async function createCategory(ownerId, { type, name }) {
   return unwrap(await supabase.from('categories').insert({ owner_id: ownerId, scope: 'personal', type, name }).select(CATEGORY_SELECT).single(), 'createCategory');
 }
@@ -437,7 +445,7 @@ export async function fetchRecipeIngredientsBulk(recipeIds) {
 }
 export async function fetchRecipeSectionsBulk(recipeIds) {
   if (!recipeIds.length) return { data: [] };
-  return unwrap(await supabase.from('recipe_categories').select(RECIPE_SECTION_SLUG_SELECT).in('recipe_id', recipeIds), 'fetchRecipeSectionsBulk');
+  return unwrap(await supabase.rpc('list_public_recipe_sections', { p_recipe_ids: recipeIds }), 'fetchRecipeSectionsBulk');
 }
 
 // ---- Admin: full visibility into the public catalog (any status/active),
