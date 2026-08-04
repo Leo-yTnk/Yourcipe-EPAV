@@ -2615,6 +2615,22 @@ class App extends Component {
   onCancelProductSelection = () => this.setState({ productSelectionMode: false, selectedProductIds: [] });
   askBulkDeleteProducts = () => this.setState({ confirmDelete: { type: 'bulk-delete-products', ids: [...this.state.selectedProductIds], message: `Excluir ${this.state.selectedProductIds.length} produto(s) selecionado(s)? Eles serão removidos também das receitas que os usam.` } });
 
+  onNewProduct = () => this.setState({
+    showProductForm: true, productFormMode: 'new',
+    productForm: { id: null, nome: '', categoria: (this.state.productCategories.find(c => c.enabled) || {}).label || this.categoriasProduto[0] || 'Bovinos', unidade: this.unidades[0] || 'kg', preco: 0 },
+  });
+  onEditProduct = (p) => this.setState({ showProductForm: true, productFormMode: 'edit', productForm: { id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, preco: p.preco } });
+  onCancelProductForm = () => this.setState({ showProductForm: false, productForm: null });
+  productFormField = (field) => (e) => this.setState(st => ({ productForm: { ...st.productForm, [field]: e.target.value } }));
+  onSaveProductForm = () => {
+    const f = this.state.productForm;
+    if (!f || !String(f.nome || '').trim()) return;
+    const product = { id: f.id || ('p_' + Date.now()), nome: String(f.nome).trim(), categoria: f.categoria, unidade: f.unidade, preco: parseFloat(String(f.preco).replace(',', '.')) || 0 };
+    const products = f.id ? this.state.products.map(p => p.id === f.id ? product : p) : [...this.state.products, product];
+    this.setState({ products, showProductForm: false, productForm: null });
+    this.persist(LS_KEYS.products, products);
+  };
+
   onNewRecipe = () => this.setState({
     showRecipeForm: true, recipeFormMode: 'new',
     recipeForm: {
