@@ -36,7 +36,7 @@ export function renderApp(app) {
 
             ${v.notLoaded && html`<div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--neutral-600);font-size:15px">Carregando receitas...</div>`}
             ${v.isHome && renderHome(app, v)}
-            ${renderCustomSections(app, v)}
+            ${v.isHome && renderCustomSections(app, v)}
             ${v.isSearch && renderSearch(app, v)}
             ${v.isFavorites && renderFavorites(app, v)}
             ${v.isDados && renderDados(app, v)}

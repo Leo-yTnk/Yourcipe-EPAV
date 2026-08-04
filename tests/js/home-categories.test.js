@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 // this project to actually mount <App> and inspect Home's rendered output.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const appJs = readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+const templateJs = readFileSync(path.join(ROOT, 'template.js'), 'utf8');
 
 describe('Home loads its category vocabulary from Supabase, not from static constants', () => {
   it('_loadPublicCatalog stores the fetched categories into state.publicCategories', () => {
@@ -43,5 +44,16 @@ describe('Home loads its category vocabulary from Supabase, not from static cons
 
   it('an empty (but successfully fetched) category list surfaces a real empty-state flag instead of hiding the gap', () => {
     expect(appJs).toMatch(/const homeCategoriesEmpty = s\.publicCatalogSource === 'supabase' && homeCategoryChips\.length === 0/);
+  });
+});
+
+describe('Home sections stay on the Home screen', () => {
+  it('gates custom public section rendering behind isHome', () => {
+    expect(templateJs).toMatch(/\$\{v\.isHome && renderCustomSections\(app, v\)\}/);
+  });
+
+  it('does not render custom sections unconditionally in the root screen dispatcher', () => {
+    const dispatcher = templateJs.slice(templateJs.indexOf('${v.notLoaded'), templateJs.indexOf('</div>\n        </div>'));
+    expect(dispatcher).not.toMatch(/^\s*\$\{renderCustomSections\(app, v\)\}/m);
   });
 });
