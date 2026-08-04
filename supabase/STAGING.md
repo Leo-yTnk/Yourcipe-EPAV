@@ -1,5 +1,66 @@
 # Staging setup and PR 1 runbook
 
+## Round: hard delete + reference resolution for products/categories, explicit archive-vs-delete for recipes, form redesign
+
+**New migration: `supabase/010_hard_delete_and_reference_resolution.sql`.**
+Adds five SECURITY DEFINER functions, no schema/table changes. Does not
+modify `009_recipe_deletion.sql` (already applied in staging) at all.
+
+- `get_product_delete_impact(p_product_id uuid) returns jsonb` — read-only.
+  Own/public recipe usage counts, a foreign-personal-recipe count (another
+  user's personal recipe using a shared `scope='site'` product — count
+  only, RLS still hides the row itself), pending `change_requests`, and
+  total live `recipe_ingredients` rows.
+- `delete_product_resolved(p_product_id uuid, p_resolution jsonb) returns jsonb` —
+  every live `recipe_ingredients` row referencing the product must appear in
+  `p_resolution.ingredients` as `{id, action:'replace', replacement_product_id}`
+  or `{id, action:'remove'}`; anything unresolved (re-checked server-side,
+  the client's snapshot is never trusted) raises `unresolved_ingredient_references`
+  and nothing is changed. "replace" preserves quantity/sort_order/recipe_id.
+- `get_category_delete_impact(p_category_id uuid) returns jsonb` — same
+  shape for `products.category_id`/`recipes.category_id` (required —
+  NOT NULL columns) and `recipe_categories.category_id` (optional).
+- `delete_category_resolved(p_category_id uuid, p_resolution jsonb) returns jsonb` —
+  every required reference needs a same-type replacement category
+  (`{id, replacement_category_id}`); every optional (`recipe_categories`)
+  reference needs `{recipe_id, action:'replace', replacement_category_id}`
+  or `{recipe_id, action:'remove'}`. Replacement type/scope is re-validated
+  here AND by the existing UPDATE triggers from `004_catalog_schema.sql`.
+- `delete_recipe_action(p_recipe_id uuid, p_action text, p_revoke_shares boolean default false, p_cancel_pending_requests boolean default false) returns jsonb` —
+  gives an admin an **explicit** archive-vs-delete choice for a `scope='site'`
+  recipe (`p_action='archive'|'delete'`), instead of `009`'s `delete_recipe()`
+  always auto-archiving once there is any history. `p_action='archive'`
+  always raises `personal_recipes_cannot_be_archived` for a `scope='personal'`
+  recipe (no archived status exists for personal rows). Does not replace or
+  modify `delete_recipe()` — purely an additional, explicit-choice path used
+  by the redesigned "Referências a resolver" popup for site recipes.
+
+All four owner/admin-scoped functions share the exact authorization shape
+`009`'s `delete_recipe`/`get_recipe_delete_impact` already use: personal row
+→ owner only; `scope='site'` row → admin only (`is_admin()`); never reveals
+another user's personal data beyond a bare count.
+
+New test file: `supabase/tests/008_hard_delete_and_reference_resolution.pg.sql`
+(43 assertions; chain: harness → schema → 002 → 004 → 005 → 006 → 007 → 009 → 010).
+
+Frontend: `catalog.js` gained typed wrappers for all five RPCs plus
+`fetchIngredientRowsForProduct`/`fetchProductRowsForCategory`/
+`fetchRecipeRowsForCategory`/`fetchSectionRowsForCategory` (read the live
+rows a resolution UI needs — same RLS visibility as the impact functions).
+`app.js`/`template.js` wire "Meus Produtos"/"Minhas Categorias" and the
+admin catalog's product/category tabs to a generalized "Referências a
+resolver" modal (same component family as `009`'s recipe version), with a
+separate "Ativar/Desativar" toggle now visible next to "Excluir
+permanentemente" everywhere a delete action exists. The recipe delete flow
+for a `scope='site'` recipe now always shows an explicit Arquivar/Excluir
+permanentemente choice (via `delete_recipe_action`) instead of silently
+picking archive whenever there is any history.
+
+**Nothing in this file has been run against staging or production** — see
+the PR description for the exact `psql`/Supabase-SQL-Editor command to run
+`010_hard_delete_and_reference_resolution.sql` when ready; it's idempotent
+(`create or replace function` + explicit `revoke`/`grant`), safe to re-run.
+
 ## Round: reference-checked recipe deletion, Home category bug, infinite-loading fix, welcome splash, responsiveness/visual polish
 
 **New migration: `supabase/009_recipe_deletion.sql`.** Adds two SECURITY
