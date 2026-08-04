@@ -13,7 +13,7 @@
 // ownerId argument) always receives it from the caller's own
 // session.user.id, never from anywhere else; the server independently
 // re-validates it via RLS/RPC regardless.
-import { supabase } from './supabase-client.js?v=20260803-3';
+import { supabase } from './supabase-client.js?v=20260804-1';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, version, created_at, updated_at';
@@ -428,7 +428,7 @@ export function computeForeignReferences(detail, viewerId) {
 
 // ---- Public catalog (read: everyone; write: admin only) ----
 export async function fetchPublicCategories() {
-  return unwrap(await supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('name'), 'fetchPublicCategories');
+  return unwrap(await supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('sort_order').order('name'), 'fetchPublicCategories');
 }
 export async function fetchPublicProducts() {
   return unwrap(await supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('name'), 'fetchPublicProducts');
@@ -458,7 +458,7 @@ export async function fetchRecipeSectionsBulk(recipeIds) {
 // configured today. ----
 export async function fetchAdminCategories() {
   return fetchAllPages(
-    (from, to) => supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').order('name').range(from, to),
+    (from, to) => supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').order('sort_order').order('name').range(from, to),
     'fetchAdminCategories',
   );
 }
@@ -549,4 +549,12 @@ export async function reviewChangeRequest(requestId, decision, adminNote, publis
 }
 export async function findSimilarSiteItems(entityType, name) {
   return unwrap(await supabase.rpc('find_similar_site_items', { p_entity_type: entityType, p_name: name }), 'findSimilarSiteItems');
+}
+
+export async function adminImportPublicRecipes(mode, recipes) {
+  return unwrap(await supabase.rpc('admin_import_public_recipes', { p_mode: mode, p_recipes: recipes }), 'adminImportPublicRecipes');
+}
+
+export async function adminReorderHomeSections(sections) {
+  return unwrap(await supabase.rpc('admin_reorder_home_sections', { p_sections: sections }), 'adminReorderHomeSections');
 }
