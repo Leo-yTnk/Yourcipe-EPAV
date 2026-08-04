@@ -13,6 +13,8 @@ import { normalizeDisplayName } from './display-name.js?v=20260803-3';
 import * as catalog from './catalog.js?v=20260803-3';
 import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260803-3';
 import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260803-3';
+import { createLoadGuard } from './load-guard.js?v=20260803-3';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260803-3';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
@@ -543,16 +545,34 @@ class App extends Component {
     }
   };
 
+  _authInitStarted = false;
+  _authIdentityGeneration = 0;
   initAuth = async () => {
+    if (this._authInitStarted) return;
+    this._authInitStarted = true;
+    this._authSub = supabase.auth.onAuthStateChange((event, session) => {
+      const currentUserId = this.state.session?.user?.id || null;
+      if (!shouldApplyAuthEvent(event, session, currentUserId)) return;
+      // Do not await a Supabase query inside onAuthStateChange: the auth
+      // client emits while holding its own lock. Queue profile I/O outside
+      // that callback and ignore it if a newer identity wins the race.
+      const expectedUserId = session?.user?.id || null;
+      const generation = ++this._authIdentityGeneration;
+      Promise.resolve().then(async () => {
+        if (!expectedUserId) { this.setState({ session: null, authRole: null, authDisplayName: null }); return; }
+        const profile = await fetchProfile(expectedUserId);
+        if (generation !== this._authIdentityGeneration) return;
+        this.applySessionProfile(session, profile);
+      }).catch((error) => {
+        // eslint-disable-next-line no-console
+        console.error('[Auth] late session profile failed', error);
+      });
+    });
+    const initialGeneration = this._authIdentityGeneration;
     const { data } = await supabase.auth.getSession();
     const session = data.session || null;
     const profile = session ? await fetchProfile(session.user.id) : { role: null, displayName: null };
-    this.applySessionProfile(session, profile);
-    this._authSub = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!session) { this.setState({ session: null, authRole: null, authDisplayName: null }); return; }
-      const profile = await fetchProfile(session.user.id);
-      this.applySessionProfile(session, profile);
-    });
+    if (initialGeneration === this._authIdentityGeneration) this.applySessionProfile(session, profile);
   };
   updateDeviceMode = (w, h) => {
     h = h || window.innerHeight;
@@ -1121,35 +1141,40 @@ class App extends Component {
   // state so its existing "Tentar novamente" button appears) fires and
   // `_inFlight[key]` is freed immediately, so the next call — including an
   // automatic retry — starts a genuinely new request instead of returning
-  // the hung one. If `fn()` eventually does resolve after all, its own
-  // try/catch/finally (unchanged) still runs and still updates state; that
-  // late update is harmless (fresher data is always fine to apply), it
-  // just no longer blocks anything in the meantime.
+  // the hung one. The old implementation still allowed that timed-out
+  // request's late success/error/finally to mutate state after a retry.
+  // `createLoadGuard` assigns a generation to each run, and every loader
+  // state write below verifies that generation, so stale work is a no-op.
+  _loadGuard = createLoadGuard();
   _inFlight = {};
   _guardedLoad(key, fn, onTimeout, timeoutMs = 20000) {
-    if (this._inFlight[key]) return this._inFlight[key];
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      this._inFlight[key] = null;
-      if (onTimeout) onTimeout();
-    }, timeoutMs);
-    const p = (async () => {
-      try {
-        return await fn();
-      } finally {
-        clearTimeout(timer);
-        if (!timedOut) this._inFlight[key] = null;
-      }
-    })();
-    this._inFlight[key] = p;
-    return p;
+    let executionId;
+    const finishWithError = (callback) => {
+      if (this._inFlight[key]?.executionId === executionId) delete this._inFlight[key];
+      if (callback) callback();
+    };
+    const promise = this._loadGuard.run(key, (_commit, runId) => fn(runId), {
+      timeoutMs,
+      onTimeout: () => finishWithError(onTimeout),
+      onError: (error) => {
+        // eslint-disable-next-line no-console
+        console.error(`[Loader:${key}] unhandled failure`, error);
+        finishWithError(onTimeout);
+      },
+    });
+    executionId = this._loadGuard.executionId(key);
+    // Kept as a read-only compatibility/debug mirror for diagnostics.
+    this._inFlight[key] = { promise, executionId };
+    promise.finally(() => {
+      if (!this._loadGuard.has(key)) delete this._inFlight[key];
+    });
+    return promise;
   }
 
-  loadMyCreationData = (uid) => this._guardedLoad('myCreationData', () => this._loadMyCreationData(uid), () => this.setState({ myCreationLoading: false, myCreationError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadMyCreationData = async (uid) => {
+  loadMyCreationData = (uid) => this._guardedLoad('myCreationData', (runId) => this._loadMyCreationData(uid, runId), () => this.setState({ myCreationLoading: false, myCreationError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadMyCreationData = async (uid, runId) => {
     if (!uid) return { ok: false, error: 'missing uid' };
-    this.setState({ myCreationLoading: true, myCreationError: '' });
+    if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationLoading: true, myCreationError: '' });
     try {
       const [cats, prods, recs, creationCats, publicProds] = await Promise.all([
         catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid),
@@ -1168,10 +1193,10 @@ class App extends Component {
         // string, per the explicit "não manter somente a mensagem genérica"
         // requirement.
         const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
-        this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
+        if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
         return { ok: false, error: detail };
       }
-      this.setState({
+      if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({
         myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
         creationCategories: creationCats.data || [], pickerPublicProducts: publicProds.data || [],
       });
@@ -1184,10 +1209,10 @@ class App extends Component {
       // this only guards against something genuinely unforeseen so the UI
       // never gets stuck on "Carregando..." forever.
       const detail = (e && e.message) || 'erro inesperado';
-      this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
+      if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
       return { ok: false, error: detail };
     } finally {
-      this.setState({ myCreationLoading: false });
+      if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationLoading: false });
     }
   };
 
@@ -1198,15 +1223,15 @@ class App extends Component {
   // focus/visibilitychange refetch while that tab is open should never have
   // to wait on (or misreport) "Minhas Receitas/Produtos/Categorias", and
   // vice versa.
-  loadSharedLibrary = (uid) => this._guardedLoad('sharedLibrary', () => this._loadSharedLibrary(uid), () => this.setState({ sharedLibraryLoading: false, sharedLibraryError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadSharedLibrary = async (uid) => {
+  loadSharedLibrary = (uid) => this._guardedLoad('sharedLibrary', (runId) => this._loadSharedLibrary(uid, runId), () => this.setState({ sharedLibraryLoading: false, sharedLibraryError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadSharedLibrary = async (uid, runId) => {
     if (!uid) return { ok: false, error: 'missing uid' };
-    this.setState({ sharedLibraryLoading: true, sharedLibraryError: '' });
+    if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryLoading: true, sharedLibraryError: '' });
     try {
       const shared = await catalog.fetchSharedLibrary(uid);
       if (shared.error) {
         const detail = shared.error.message ? `${shared.error.message}${shared.error.code ? ` (${shared.error.code})` : ''}` : 'erro desconhecido';
-        this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
+        if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
         return { ok: false, error: detail };
       }
       const sharedLibrary = (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at }));
@@ -1222,14 +1247,14 @@ class App extends Component {
         return [r.id, res.error ? '' : (res.data || '')];
       }));
       const sharedLibraryAuthorNames = Object.fromEntries(authorEntries);
-      this.setState({ sharedLibrary, sharedLibraryAuthorNames });
+      if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibrary, sharedLibraryAuthorNames });
       return { ok: true };
     } catch (e) {
       const detail = (e && e.message) || 'erro inesperado';
-      this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
+      if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
       return { ok: false, error: detail };
     } finally {
-      this.setState({ sharedLibraryLoading: false });
+      if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryLoading: false });
     }
   };
   onRetrySharedLibrary = () => { if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
@@ -1867,15 +1892,15 @@ class App extends Component {
   // if it had, nothing ever read scope='site' rows back for the public
   // pages either. This is the actual fix for both halves of that gap.
   // =========================================================================
-  loadPublicCatalog = () => this._guardedLoad('publicCatalog', () => this._loadPublicCatalog(), () => this.setState({
+  loadPublicCatalog = () => this._guardedLoad('publicCatalog', (runId) => this._loadPublicCatalog(runId), () => this.setState({
     publicCatalogSource: 'demo-fallback', publicCatalogError: 'Tempo de carregamento esgotado. Tente novamente.',
     products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
   }));
-  _loadPublicCatalog = async () => {
+  _loadPublicCatalog = async (runId) => {
     // Reset to 'loading' on every call (not just the very first, initial
     // one) so a retry after a demo-fallback error shows the loading state
     // again instead of leaving the stale fallback banner up mid-request.
-    this.setState({ publicCatalogSource: 'loading', publicCatalogError: '' });
+    if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({ publicCatalogSource: 'loading', publicCatalogError: '' });
     try {
       const [catsRes, prodsRes, recsRes] = await Promise.all([
         catalog.fetchPublicCategories(), catalog.fetchPublicProducts(), catalog.fetchPublicRecipes(),
@@ -1886,7 +1911,7 @@ class App extends Component {
         // publicCatalogError in computeViewModel + the banner in
         // renderHome) — never a silent substitution, and the real Supabase
         // error is both logged (catalog.js) and kept here for the banner.
-        this.setState({
+        if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${firstError.message || 'erro desconhecido'}${firstError.code ? ` (${firstError.code})` : ''}`,
           products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
@@ -1899,7 +1924,7 @@ class App extends Component {
       ]);
       const secondError = ingRes.error || secRes.error;
       if (secondError) {
-        this.setState({
+        if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${secondError.message || 'erro desconhecido'}${secondError.code ? ` (${secondError.code})` : ''}`,
           products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
@@ -1936,13 +1961,13 @@ class App extends Component {
       // publicRecipeCategories()/publicProteinCategories()/
       // publicSectionCategories() below stay the single place that splits
       // by type — see the comment there for why the three must never mix.
-      this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes, publicCategories: catsRes.data || [] });
+      if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes, publicCategories: catsRes.data || [] });
     } catch (e) {
       // Same defensive net as loadMyCreationData: an unexpected synchronous
       // throw here (not a normal Supabase `{ error }` response, which is
       // already handled above) must still resolve publicCatalogSource out
       // of 'loading' instead of leaving Home stuck.
-      this.setState({
+      if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
         publicCatalogSource: 'demo-fallback',
         publicCatalogError: (e && e.message) || 'erro inesperado',
         products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
@@ -1991,11 +2016,11 @@ class App extends Component {
     this.loadPublicCatalog();
   };
 
-  loadSiteCatalogData = (role) => this._guardedLoad('siteCatalogData', () => this._loadSiteCatalogData(role), () => this.setState({ siteCatalogLoading: false, siteCatalogError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadSiteCatalogData = async (role) => {
+  loadSiteCatalogData = (role) => this._guardedLoad('siteCatalogData', (runId) => this._loadSiteCatalogData(role, runId), () => this.setState({ siteCatalogLoading: false, siteCatalogError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadSiteCatalogData = async (role, runId) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
-    this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
+    if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
     try {
       const [cats, prods, recs] = await Promise.all([
         catalog.fetchAdminCategories(), catalog.fetchAdminProducts(), catalog.fetchAdminRecipes(),
@@ -2003,14 +2028,14 @@ class App extends Component {
       const failed = cats.error || prods.error || recs.error;
       if (failed) {
         const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
-        this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
+        if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
         return;
       }
-      this.setState({ siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
+      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
     } catch (e) {
-      this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${(e && e.message) || 'erro inesperado'}` });
+      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${(e && e.message) || 'erro inesperado'}` });
     } finally {
-      this.setState({ siteCatalogLoading: false });
+      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogLoading: false });
     }
   };
 
@@ -2184,21 +2209,21 @@ class App extends Component {
   };
 
   // ---- "Meus Pedidos" (any authenticated user) ----
-  loadMyRequests = (uid) => this._guardedLoad('myRequests', () => this._loadMyRequests(uid), () => this.setState({ myRequestsLoading: false, myRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadMyRequests = async (uid) => {
+  loadMyRequests = (uid) => this._guardedLoad('myRequests', (runId) => this._loadMyRequests(uid, runId), () => this.setState({ myRequestsLoading: false, myRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadMyRequests = async (uid, runId) => {
     if (!uid) return;
-    this.setState({ myRequestsLoading: true, myRequestsError: '' });
+    if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsLoading: true, myRequestsError: '' });
     try {
       const { data, error } = await catalog.fetchMyChangeRequests(uid);
       if (error) {
-        this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${error.message || 'erro desconhecido'}` });
+        if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${error.message || 'erro desconhecido'}` });
         return;
       }
-      this.setState({ myRequests: data || [] });
+      if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequests: data || [] });
     } catch (e) {
-      this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${(e && e.message) || 'erro inesperado'}` });
+      if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${(e && e.message) || 'erro inesperado'}` });
     } finally {
-      this.setState({ myRequestsLoading: false });
+      if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsLoading: false });
     }
   };
   setAdminTabMyRequests = () => { this.setState({ adminTab: 'myRequests' }); if (this.state.session) this.loadMyRequests(this.state.session.user.id); };
@@ -2246,22 +2271,22 @@ class App extends Component {
   onCloseRequestDetail = () => this.setState({ selectedRequestId: null, selectedRequestRevisions: [], requestDetailError: '' });
 
   // ---- "Solicitações Recebidas" (admin only) ----
-  loadAllRequests = (role) => this._guardedLoad('allRequests', () => this._loadAllRequests(role), () => this.setState({ allRequestsLoading: false, allRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadAllRequests = async (role) => {
+  loadAllRequests = (role) => this._guardedLoad('allRequests', (runId) => this._loadAllRequests(role, runId), () => this.setState({ allRequestsLoading: false, allRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadAllRequests = async (role, runId) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
-    this.setState({ allRequestsLoading: true, allRequestsError: '' });
+    if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsLoading: true, allRequestsError: '' });
     try {
       const { data, error } = await catalog.fetchAllChangeRequests();
       if (error) {
-        this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${error.message || 'erro desconhecido'}` });
+        if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${error.message || 'erro desconhecido'}` });
         return;
       }
-      this.setState({ allRequests: data || [] });
+      if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequests: data || [] });
     } catch (e) {
-      this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${(e && e.message) || 'erro inesperado'}` });
+      if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${(e && e.message) || 'erro inesperado'}` });
     } finally {
-      this.setState({ allRequestsLoading: false });
+      if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsLoading: false });
     }
   };
   setAdminTabRequestsInbox = () => { this.setState({ adminTab: 'requestsInbox' }); this.loadAllRequests(); };
