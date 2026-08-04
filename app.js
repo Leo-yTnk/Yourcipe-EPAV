@@ -13,6 +13,9 @@ import { normalizeDisplayName } from './display-name.js?v=20260803-3';
 import * as catalog from './catalog.js?v=20260803-3';
 import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260803-3';
 import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260803-3';
+import { createLoadGuard } from './load-guard.js?v=20260803-3';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260803-3';
+import { moveById } from './section-order.js?v=20260803-3';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
@@ -223,7 +226,7 @@ class App extends Component {
       // picker in "Modo de Criação" can offer "public active UNION my own
       // active", per type — never only the caller's own rows, and never
       // requiring the caller to have created anything of their own first.
-      pickerPublicCategories: [], pickerPublicProducts: [],
+      creationCategories: [], pickerPublicProducts: [],
       showMyCategoryForm: false, myCategoryFormMode: 'new', myCategoryForm: null,
       showMyProductForm: false, myProductFormMode: 'new', myProductForm: null,
       showMyRecipeForm: false, myRecipeFormMode: 'new', myRecipeForm: null,
@@ -256,6 +259,7 @@ class App extends Component {
       // of scope='site' rows — supabase/006_admin_catalog_publishing.sql).
       siteCatalogLoading: false, siteCatalogError: '',
       siteCategories: [], siteProducts: [], siteRecipes: [],
+      draggedSiteSectionId: null, siteSectionDropTargetId: null, siteSectionOrderSaving: false, siteSectionOrderError: '',
       showSiteCategoryForm: false, siteCategoryFormMode: 'new', siteCategoryForm: null,
       showSiteProductForm: false, siteProductFormMode: 'new', siteProductForm: null,
       showSiteRecipeForm: false, siteRecipeFormMode: 'new', siteRecipeForm: null,
@@ -333,6 +337,7 @@ class App extends Component {
     document.removeEventListener('keydown', this.onGlobalModalKeydown);
     clearTimeout(this._justRedeemedTimer);
     clearTimeout(this._shareCopyConfirmTimer);
+    clearTimeout(this._siteSectionHoldTimer);
     if (this._authSub) this._authSub.data.subscription.unsubscribe();
   }
 
@@ -543,16 +548,34 @@ class App extends Component {
     }
   };
 
+  _authInitStarted = false;
+  _authIdentityGeneration = 0;
   initAuth = async () => {
+    if (this._authInitStarted) return;
+    this._authInitStarted = true;
+    this._authSub = supabase.auth.onAuthStateChange((event, session) => {
+      const currentUserId = this.state.session?.user?.id || null;
+      if (!shouldApplyAuthEvent(event, session, currentUserId)) return;
+      // Do not await a Supabase query inside onAuthStateChange: the auth
+      // client emits while holding its own lock. Queue profile I/O outside
+      // that callback and ignore it if a newer identity wins the race.
+      const expectedUserId = session?.user?.id || null;
+      const generation = ++this._authIdentityGeneration;
+      Promise.resolve().then(async () => {
+        if (!expectedUserId) { this.setState({ session: null, authRole: null, authDisplayName: null }); return; }
+        const profile = await fetchProfile(expectedUserId);
+        if (generation !== this._authIdentityGeneration) return;
+        this.applySessionProfile(session, profile);
+      }).catch((error) => {
+        // eslint-disable-next-line no-console
+        console.error('[Auth] late session profile failed', error);
+      });
+    });
+    const initialGeneration = this._authIdentityGeneration;
     const { data } = await supabase.auth.getSession();
     const session = data.session || null;
     const profile = session ? await fetchProfile(session.user.id) : { role: null, displayName: null };
-    this.applySessionProfile(session, profile);
-    this._authSub = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!session) { this.setState({ session: null, authRole: null, authDisplayName: null }); return; }
-      const profile = await fetchProfile(session.user.id);
-      this.applySessionProfile(session, profile);
-    });
+    if (initialGeneration === this._authIdentityGeneration) this.applySessionProfile(session, profile);
   };
   updateDeviceMode = (w, h) => {
     h = h || window.innerHeight;
@@ -1066,18 +1089,13 @@ class App extends Component {
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
 
   // Category/product pickers for personal recipe/product forms show public
-  // (scope='site', active=true) rows UNION the caller's own active personal
+  // (scope='site', active=true) rows UNION all of the caller's personal
   // rows of the matching type — never another user's personal rows
-  // (pickerPublicCategories/pickerPublicProducts only ever contain
-  // scope='site' rows, per fetchPublicCategories/fetchPublicProducts'
-  // RLS-backed filters; this.state.myCategories/myProducts only ever
-  // contain the caller's own rows, per fetchMyCategories/fetchMyProducts'
-  // owner_id filter) — and never require the caller to have created their
-  // own category/product first.
-  pickerCategoriesByType = (type) => [
-    ...this.state.pickerPublicCategories.filter(c => c.type === type),
-    ...this.state.myCategories.filter(c => c.type === type),
-  ];
+  // (`creationCategories` comes from fetchCreationCategories's single safe
+  // union query; pickerPublicProducts only contains scope='site' rows;
+  // this.state.myProducts only contains the caller's own rows) — and never
+  // require the caller to have created their own category/product first.
+  pickerCategoriesByType = (type) => this.state.creationCategories.filter(c => c.type === type);
   myRecipeCategories = () => this.pickerCategoriesByType('receita');
   mySectionCategories = () => this.pickerCategoriesByType('secao');
   myProteinCategories = () => this.pickerCategoriesByType('proteina');
@@ -1126,46 +1144,51 @@ class App extends Component {
   // state so its existing "Tentar novamente" button appears) fires and
   // `_inFlight[key]` is freed immediately, so the next call — including an
   // automatic retry — starts a genuinely new request instead of returning
-  // the hung one. If `fn()` eventually does resolve after all, its own
-  // try/catch/finally (unchanged) still runs and still updates state; that
-  // late update is harmless (fresher data is always fine to apply), it
-  // just no longer blocks anything in the meantime.
+  // the hung one. The old implementation still allowed that timed-out
+  // request's late success/error/finally to mutate state after a retry.
+  // `createLoadGuard` assigns a generation to each run, and every loader
+  // state write below verifies that generation, so stale work is a no-op.
+  _loadGuard = createLoadGuard();
   _inFlight = {};
   _guardedLoad(key, fn, onTimeout, timeoutMs = 20000) {
-    if (this._inFlight[key]) return this._inFlight[key];
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      this._inFlight[key] = null;
-      if (onTimeout) onTimeout();
-    }, timeoutMs);
-    const p = (async () => {
-      try {
-        return await fn();
-      } finally {
-        clearTimeout(timer);
-        if (!timedOut) this._inFlight[key] = null;
-      }
-    })();
-    this._inFlight[key] = p;
-    return p;
+    let executionId;
+    const finishWithError = (callback) => {
+      if (this._inFlight[key]?.executionId === executionId) delete this._inFlight[key];
+      if (callback) callback();
+    };
+    const promise = this._loadGuard.run(key, (_commit, runId) => fn(runId), {
+      timeoutMs,
+      onTimeout: () => finishWithError(onTimeout),
+      onError: (error) => {
+        // eslint-disable-next-line no-console
+        console.error(`[Loader:${key}] unhandled failure`, error);
+        finishWithError(onTimeout);
+      },
+    });
+    executionId = this._loadGuard.executionId(key);
+    // Kept as a read-only compatibility/debug mirror for diagnostics.
+    this._inFlight[key] = { promise, executionId };
+    promise.finally(() => {
+      if (!this._loadGuard.has(key)) delete this._inFlight[key];
+    });
+    return promise;
   }
 
-  loadMyCreationData = (uid) => this._guardedLoad('myCreationData', () => this._loadMyCreationData(uid), () => this.setState({ myCreationLoading: false, myCreationError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadMyCreationData = async (uid) => {
+  loadMyCreationData = (uid) => this._guardedLoad('myCreationData', (runId) => this._loadMyCreationData(uid, runId), () => this.setState({ myCreationLoading: false, myCreationError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadMyCreationData = async (uid, runId) => {
     if (!uid) return { ok: false, error: 'missing uid' };
-    this.setState({ myCreationLoading: true, myCreationError: '' });
+    if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationLoading: true, myCreationError: '' });
     try {
-      const [cats, prods, recs, publicCats, publicProds] = await Promise.all([
+      const [cats, prods, recs, creationCats, publicProds] = await Promise.all([
         catalog.fetchMyCategories(uid), catalog.fetchMyProducts(uid), catalog.fetchMyRecipes(uid),
         // Public (scope='site', active=true) categories/products — every
         // category/product picker below unions these with the caller's own
         // personal rows, so pickers work immediately from a freshly-seeded
         // catalog (supabase/008_seed_default_catalog.sql) with no dependency
         // on the caller having created anything personal first.
-        catalog.fetchPublicCategories(), catalog.fetchPublicProducts(),
+        catalog.fetchCreationCategories(uid), catalog.fetchPublicProducts(),
       ]);
-      const failed = cats.error || prods.error || recs.error || publicCats.error || publicProds.error;
+      const failed = cats.error || prods.error || recs.error || creationCats.error || publicProds.error;
       if (failed) {
         // catalog.js already logged the full { code, message, details, hint }
         // to the console (see logSupabaseError) — this is the same real
@@ -1173,12 +1196,12 @@ class App extends Component {
         // string, per the explicit "não manter somente a mensagem genérica"
         // requirement.
         const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
-        this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
+        if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
         return { ok: false, error: detail };
       }
-      this.setState({
+      if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({
         myCategories: cats.data || [], myProducts: prods.data || [], myRecipes: recs.data || [],
-        pickerPublicCategories: publicCats.data || [], pickerPublicProducts: publicProds.data || [],
+        creationCategories: creationCats.data || [], pickerPublicProducts: publicProds.data || [],
       });
       return { ok: true };
     } catch (e) {
@@ -1189,10 +1212,10 @@ class App extends Component {
       // this only guards against something genuinely unforeseen so the UI
       // never gets stuck on "Carregando..." forever.
       const detail = (e && e.message) || 'erro inesperado';
-      this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
+      if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationError: `Não foi possível carregar seus dados: ${detail}` });
       return { ok: false, error: detail };
     } finally {
-      this.setState({ myCreationLoading: false });
+      if (this._loadGuard.isCurrent('myCreationData', runId)) this.setState({ myCreationLoading: false });
     }
   };
 
@@ -1203,15 +1226,15 @@ class App extends Component {
   // focus/visibilitychange refetch while that tab is open should never have
   // to wait on (or misreport) "Minhas Receitas/Produtos/Categorias", and
   // vice versa.
-  loadSharedLibrary = (uid) => this._guardedLoad('sharedLibrary', () => this._loadSharedLibrary(uid), () => this.setState({ sharedLibraryLoading: false, sharedLibraryError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadSharedLibrary = async (uid) => {
+  loadSharedLibrary = (uid) => this._guardedLoad('sharedLibrary', (runId) => this._loadSharedLibrary(uid, runId), () => this.setState({ sharedLibraryLoading: false, sharedLibraryError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadSharedLibrary = async (uid, runId) => {
     if (!uid) return { ok: false, error: 'missing uid' };
-    this.setState({ sharedLibraryLoading: true, sharedLibraryError: '' });
+    if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryLoading: true, sharedLibraryError: '' });
     try {
       const shared = await catalog.fetchSharedLibrary(uid);
       if (shared.error) {
         const detail = shared.error.message ? `${shared.error.message}${shared.error.code ? ` (${shared.error.code})` : ''}` : 'erro desconhecido';
-        this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
+        if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
         return { ok: false, error: detail };
       }
       const sharedLibrary = (shared.data || []).filter(row => row.recipe).map(row => ({ ...row.recipe, grantedAt: row.granted_at }));
@@ -1227,14 +1250,14 @@ class App extends Component {
         return [r.id, res.error ? '' : (res.data || '')];
       }));
       const sharedLibraryAuthorNames = Object.fromEntries(authorEntries);
-      this.setState({ sharedLibrary, sharedLibraryAuthorNames });
+      if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibrary, sharedLibraryAuthorNames });
       return { ok: true };
     } catch (e) {
       const detail = (e && e.message) || 'erro inesperado';
-      this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
+      if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryError: `Não foi possível carregar as receitas compartilhadas: ${detail}` });
       return { ok: false, error: detail };
     } finally {
-      this.setState({ sharedLibraryLoading: false });
+      if (this._loadGuard.isCurrent('sharedLibrary', runId)) this.setState({ sharedLibraryLoading: false });
     }
   };
   onRetrySharedLibrary = () => { if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
@@ -1872,15 +1895,15 @@ class App extends Component {
   // if it had, nothing ever read scope='site' rows back for the public
   // pages either. This is the actual fix for both halves of that gap.
   // =========================================================================
-  loadPublicCatalog = () => this._guardedLoad('publicCatalog', () => this._loadPublicCatalog(), () => this.setState({
+  loadPublicCatalog = () => this._guardedLoad('publicCatalog', (runId) => this._loadPublicCatalog(runId), () => this.setState({
     publicCatalogSource: 'demo-fallback', publicCatalogError: 'Tempo de carregamento esgotado. Tente novamente.',
     products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
   }));
-  _loadPublicCatalog = async () => {
+  _loadPublicCatalog = async (runId) => {
     // Reset to 'loading' on every call (not just the very first, initial
     // one) so a retry after a demo-fallback error shows the loading state
     // again instead of leaving the stale fallback banner up mid-request.
-    this.setState({ publicCatalogSource: 'loading', publicCatalogError: '' });
+    if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({ publicCatalogSource: 'loading', publicCatalogError: '' });
     try {
       const [catsRes, prodsRes, recsRes] = await Promise.all([
         catalog.fetchPublicCategories(), catalog.fetchPublicProducts(), catalog.fetchPublicRecipes(),
@@ -1891,7 +1914,7 @@ class App extends Component {
         // publicCatalogError in computeViewModel + the banner in
         // renderHome) — never a silent substitution, and the real Supabase
         // error is both logged (catalog.js) and kept here for the banner.
-        this.setState({
+        if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${firstError.message || 'erro desconhecido'}${firstError.code ? ` (${firstError.code})` : ''}`,
           products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
@@ -1904,7 +1927,7 @@ class App extends Component {
       ]);
       const secondError = ingRes.error || secRes.error;
       if (secondError) {
-        this.setState({
+        if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${secondError.message || 'erro desconhecido'}${secondError.code ? ` (${secondError.code})` : ''}`,
           products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
@@ -1924,7 +1947,7 @@ class App extends Component {
         id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
       }));
       const recipes = (recsRes.data || []).map(r => {
-        const tags = (secByRecipe[r.id] || []).map(s => s.category && s.category.slug).filter(Boolean);
+        const tags = (secByRecipe[r.id] || []).map(s => s.slug).filter(Boolean);
         if (r.featured) tags.push('destaque');
         return {
           id: r.id, nome: r.name, categoria: (r.category && r.category.name) || '', tempo: r.prep_time, porcoes: r.servings,
@@ -1941,13 +1964,13 @@ class App extends Component {
       // publicRecipeCategories()/publicProteinCategories()/
       // publicSectionCategories() below stay the single place that splits
       // by type — see the comment there for why the three must never mix.
-      this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes, publicCategories: catsRes.data || [] });
+      if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes, publicCategories: catsRes.data || [] });
     } catch (e) {
       // Same defensive net as loadMyCreationData: an unexpected synchronous
       // throw here (not a normal Supabase `{ error }` response, which is
       // already handled above) must still resolve publicCatalogSource out
       // of 'loading' instead of leaving Home stuck.
-      this.setState({
+      if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
         publicCatalogSource: 'demo-fallback',
         publicCatalogError: (e && e.message) || 'erro inesperado',
         products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
@@ -1996,11 +2019,11 @@ class App extends Component {
     this.loadPublicCatalog();
   };
 
-  loadSiteCatalogData = (role) => this._guardedLoad('siteCatalogData', () => this._loadSiteCatalogData(role), () => this.setState({ siteCatalogLoading: false, siteCatalogError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadSiteCatalogData = async (role) => {
+  loadSiteCatalogData = (role) => this._guardedLoad('siteCatalogData', (runId) => this._loadSiteCatalogData(role, runId), () => this.setState({ siteCatalogLoading: false, siteCatalogError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadSiteCatalogData = async (role, runId) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
-    this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
+    if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
     try {
       const [cats, prods, recs] = await Promise.all([
         catalog.fetchAdminCategories(), catalog.fetchAdminProducts(), catalog.fetchAdminRecipes(),
@@ -2008,14 +2031,14 @@ class App extends Component {
       const failed = cats.error || prods.error || recs.error;
       if (failed) {
         const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
-        this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
+        if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
         return;
       }
-      this.setState({ siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
+      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
     } catch (e) {
-      this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${(e && e.message) || 'erro inesperado'}` });
+      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${(e && e.message) || 'erro inesperado'}` });
     } finally {
-      this.setState({ siteCatalogLoading: false });
+      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogLoading: false });
     }
   };
 
@@ -2038,6 +2061,54 @@ class App extends Component {
     const res = await catalog.updateSiteCategory(c.id, { active: !c.active });
     if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
     this.refreshAdminCatalog();
+  };
+
+  startSiteSectionHold = (sectionId) => (event) => {
+    if (this.state.authRole !== 'admin' || this.state.siteSectionOrderSaving) return;
+    clearTimeout(this._siteSectionHoldTimer);
+    this._siteSectionPointerId = event.pointerId;
+    this._siteSectionHoldTimer = setTimeout(() => {
+      this.setState({ draggedSiteSectionId: sectionId, siteSectionDropTargetId: sectionId, siteSectionOrderError: '' });
+    }, 450);
+  };
+  moveSiteSectionHold = (event) => {
+    if (!this.state.draggedSiteSectionId || event.pointerId !== this._siteSectionPointerId) return;
+    event.preventDefault();
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    const targetId = element && element.closest('[data-site-section-id]')?.dataset.siteSectionId;
+    if (targetId && targetId !== this.state.siteSectionDropTargetId) this.setState({ siteSectionDropTargetId: targetId });
+  };
+  cancelSiteSectionHold = () => {
+    clearTimeout(this._siteSectionHoldTimer);
+    this._siteSectionPointerId = null;
+    this.setState({ draggedSiteSectionId: null, siteSectionDropTargetId: null });
+  };
+  dropSiteSection = async (event) => {
+    clearTimeout(this._siteSectionHoldTimer);
+    const sourceId = this.state.draggedSiteSectionId;
+    const element = event && document.elementFromPoint(event.clientX, event.clientY);
+    const pointerTargetId = element && element.closest('[data-site-section-id]')?.dataset.siteSectionId;
+    const targetId = pointerTargetId || this.state.siteSectionDropTargetId;
+    this._siteSectionPointerId = null;
+    if (!sourceId || !targetId || this.state.authRole !== 'admin') { this.cancelSiteSectionHold(); return; }
+    const currentSections = this.siteSectionCategories();
+    const reorderedSections = moveById(currentSections, sourceId, targetId);
+    this.setState({
+      draggedSiteSectionId: null, siteSectionDropTargetId: null,
+      siteSectionOrderSaving: true, siteSectionOrderError: '',
+      siteCategories: [
+        ...this.state.siteCategories.filter(c => c.type !== 'secao'),
+        ...reorderedSections.map((c, index) => ({ ...c, sort_order: (index + 1) * 10 })),
+      ],
+    });
+    const { error } = await catalog.reorderSiteSections(reorderedSections.map(c => c.id));
+    if (error) {
+      this.setState({ siteSectionOrderSaving: false, siteSectionOrderError: `Não foi possível salvar a ordem: ${error.message || 'erro desconhecido'}` });
+      this.loadSiteCatalogData('admin');
+      return;
+    }
+    this.setState({ siteSectionOrderSaving: false });
+    this.loadPublicCatalog();
   };
 
   onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true } });
@@ -2189,21 +2260,21 @@ class App extends Component {
   };
 
   // ---- "Meus Pedidos" (any authenticated user) ----
-  loadMyRequests = (uid) => this._guardedLoad('myRequests', () => this._loadMyRequests(uid), () => this.setState({ myRequestsLoading: false, myRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadMyRequests = async (uid) => {
+  loadMyRequests = (uid) => this._guardedLoad('myRequests', (runId) => this._loadMyRequests(uid, runId), () => this.setState({ myRequestsLoading: false, myRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadMyRequests = async (uid, runId) => {
     if (!uid) return;
-    this.setState({ myRequestsLoading: true, myRequestsError: '' });
+    if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsLoading: true, myRequestsError: '' });
     try {
       const { data, error } = await catalog.fetchMyChangeRequests(uid);
       if (error) {
-        this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${error.message || 'erro desconhecido'}` });
+        if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${error.message || 'erro desconhecido'}` });
         return;
       }
-      this.setState({ myRequests: data || [] });
+      if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequests: data || [] });
     } catch (e) {
-      this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${(e && e.message) || 'erro inesperado'}` });
+      if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsError: `Não foi possível carregar seus pedidos: ${(e && e.message) || 'erro inesperado'}` });
     } finally {
-      this.setState({ myRequestsLoading: false });
+      if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsLoading: false });
     }
   };
   setAdminTabMyRequests = () => { this.setState({ adminTab: 'myRequests' }); if (this.state.session) this.loadMyRequests(this.state.session.user.id); };
@@ -2251,22 +2322,22 @@ class App extends Component {
   onCloseRequestDetail = () => this.setState({ selectedRequestId: null, selectedRequestRevisions: [], requestDetailError: '' });
 
   // ---- "Solicitações Recebidas" (admin only) ----
-  loadAllRequests = (role) => this._guardedLoad('allRequests', () => this._loadAllRequests(role), () => this.setState({ allRequestsLoading: false, allRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
-  _loadAllRequests = async (role) => {
+  loadAllRequests = (role) => this._guardedLoad('allRequests', (runId) => this._loadAllRequests(role, runId), () => this.setState({ allRequestsLoading: false, allRequestsError: 'Tempo de carregamento esgotado. Tente novamente.' }));
+  _loadAllRequests = async (role, runId) => {
     const effectiveRole = role !== undefined ? role : this.state.authRole;
     if (effectiveRole !== 'admin') return;
-    this.setState({ allRequestsLoading: true, allRequestsError: '' });
+    if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsLoading: true, allRequestsError: '' });
     try {
       const { data, error } = await catalog.fetchAllChangeRequests();
       if (error) {
-        this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${error.message || 'erro desconhecido'}` });
+        if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${error.message || 'erro desconhecido'}` });
         return;
       }
-      this.setState({ allRequests: data || [] });
+      if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequests: data || [] });
     } catch (e) {
-      this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${(e && e.message) || 'erro inesperado'}` });
+      if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsError: `Não foi possível carregar as solicitações: ${(e && e.message) || 'erro inesperado'}` });
     } finally {
-      this.setState({ allRequestsLoading: false });
+      if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsLoading: false });
     }
   };
   setAdminTabRequestsInbox = () => { this.setState({ adminTab: 'requestsInbox' }); this.loadAllRequests(); };
@@ -2855,14 +2926,14 @@ class App extends Component {
 
     const visibleRecipes = s.recipes.filter(r => !s.hiddenRecipeIds.includes(r.id));
     const byTag = (tag) => visibleRecipes.filter(r => r.tags.includes(tag)).map((r, i) => this.makeRecipeCard(r, 'home', i));
-    const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : false; };
-    const recommendedList = sectionOn('recomendado') ? byTag('recomendado') : [];
-    const practicalList = sectionOn('pratico') ? byTag('pratico') : [];
-    const occasionList = sectionOn('ocasiao') ? byTag('ocasiao') : [];
-    const quickList = sectionOn('rapido') ? byTag('rapido') : [];
-    const churrascoList = sectionOn('churrasco') ? byTag('churrasco') : [];
-    const snackList = sectionOn('petisco') ? byTag('petisco') : [];
-    const customHomeSectionBlocks = s.homeSections.filter(h => h.custom && h.enabled).map(h => ({ key: h.key, label: h.label, items: byTag(h.key) })).filter(b => b.items.length > 0);
+    // Public section visibility is role-independent. Local preferences may
+    // disable a known section, but an admin is never routed to a different
+    // loader and a newly-created public section defaults to visible.
+    const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : this.publicSectionCategories().some(c => c.slug === key); };
+    const homeSectionBlocks = this.publicSectionCategories()
+      .filter(c => sectionOn(c.slug))
+      .map(c => ({ key: c.slug, label: c.name, items: byTag(c.slug) }))
+      .filter(b => b.items.length > 0);
     const heroTagged = visibleRecipes.filter(r => r.tags.includes('destaque'));
     const heroSourceList = heroTagged.length ? heroTagged : (visibleRecipes[0] ? [visibleRecipes[0]] : []);
     const heroRecipes = heroSourceList.map((r, i) => this.makeRecipeCard(r, 'home', i));
@@ -3290,6 +3361,15 @@ class App extends Component {
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
       onDelete: () => this.askDeleteSiteCategory(c.id),
     }));
+    const siteSectionOrderRows = this.siteSectionCategories().map(c => ({
+      id: c.id, name: c.name, active: c.active,
+      isDragging: s.draggedSiteSectionId === c.id,
+      isDropTarget: s.siteSectionDropTargetId === c.id && s.draggedSiteSectionId !== c.id,
+      onPointerDown: this.startSiteSectionHold(c.id),
+      onPointerMove: this.moveSiteSectionHold,
+      onPointerUp: this.dropSiteSection,
+      onPointerCancel: this.cancelSiteSectionHold,
+    }));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
     const siteProteinCategoryOptions = this.siteProteinCategories().map(c => ({ value: c.id, label: c.name }));
     const siteRecipeSectionRows = this.siteSectionCategories().map(c => ({
@@ -3445,7 +3525,7 @@ class App extends Component {
       showSplash: s.showSplash, onSplashContinue: this.onSplashContinue, splashButtonLabel: s.profile ? 'Bem-vindo de volta' : 'Criar meu perfil',
       userGreetingName, profileInitial,
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
-      recommendedList, practicalList, occasionList, quickList, churrascoList, snackList, homeCategoryChips, homeCategoriesEmpty, customHomeSectionBlocks,
+      homeCategoryChips, homeCategoriesEmpty, homeSectionBlocks,
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
@@ -3503,7 +3583,8 @@ class App extends Component {
       // Catálogo Público (admin)
       siteCatalogLoading: s.siteCatalogLoading, hasSiteCatalogErrorBanner: !!s.siteCatalogError, siteCatalogError: s.siteCatalogError,
       onRetrySiteCatalogData: () => this.loadSiteCatalogData(),
-      siteRecipeRows, siteProductRows, siteCategoryRows,
+      siteRecipeRows, siteProductRows, siteCategoryRows, siteSectionOrderRows,
+      siteSectionOrderSaving: s.siteSectionOrderSaving, siteSectionOrderError: s.siteSectionOrderError,
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
       onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onNewSiteCategory: this.onNewSiteCategory,
@@ -3698,7 +3779,7 @@ class App extends Component {
       categoryReferencesModal: (s.deleteImpactKind === 'category' && s.deleteImpact) ? (() => {
         const impact = s.deleteImpact;
         const isSite = impact.scope === 'site';
-        const byType = (t) => (isSite ? s.siteCategories : [...s.myCategories, ...s.pickerPublicCategories])
+        const byType = (t) => (isSite ? s.siteCategories : s.creationCategories)
           .filter(c => c.type === t && c.id !== impact.category_id).map(c => ({ value: c.id, label: c.name }));
         const productOptions = byType('proteina'), recipeOptions = byType('receita'), sectionOptions = byType('secao');
         const productRows = (s.deleteCategoryRows.products || []).map(p => ({

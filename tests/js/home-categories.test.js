@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 // this project to actually mount <App> and inspect Home's rendered output.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const appJs = readFileSync(path.join(ROOT, 'app.js'), 'utf8');
+const templateJs = readFileSync(path.join(ROOT, 'template.js'), 'utf8');
 
 describe('Home loads its category vocabulary from Supabase, not from static constants', () => {
   it('_loadPublicCatalog stores the fetched categories into state.publicCategories', () => {
@@ -43,5 +44,32 @@ describe('Home loads its category vocabulary from Supabase, not from static cons
 
   it('an empty (but successfully fetched) category list surfaces a real empty-state flag instead of hiding the gap', () => {
     expect(appJs).toMatch(/const homeCategoriesEmpty = s\.publicCatalogSource === 'supabase' && homeCategoryChips\.length === 0/);
+  });
+});
+
+describe('Home sections stay on the Home screen', () => {
+  it('renders public section blocks only from inside renderHome', () => {
+    const home = templateJs.slice(templateJs.indexOf('function renderHome('), templateJs.indexOf('function renderHomeSections'));
+    expect(home).toContain('${renderHomeSections(v)}');
+  });
+
+  it('does not render Home sections independently in the root screen dispatcher', () => {
+    const dispatcher = templateJs.slice(templateJs.indexOf('${v.notLoaded'), templateJs.indexOf('</div>\n        </div>'));
+    expect(dispatcher).not.toContain('renderHomeSections');
+  });
+});
+
+describe('Supabase-synchronized Home section ordering', () => {
+  it('builds every Home section block in publicSectionCategories order', () => {
+    expect(appJs).toMatch(/const homeSectionBlocks = this\.publicSectionCategories\(\)[\s\S]{0,260}\.map\(c => \(\{ key: c\.slug, label: c\.name/);
+  });
+  it('renders one unified ordered block list instead of hard-coded section carousels', () => {
+    expect(templateJs).toContain('${renderHomeSections(v)}');
+    expect(templateJs).toMatch(/v\.homeSectionBlocks\.map/);
+  });
+  it('exposes admin-only hold/drop pointer handlers in the public category tab', () => {
+    expect(templateJs).toContain('data-site-section-id');
+    expect(templateJs).toContain('onPointerDown=${row.onPointerDown}');
+    expect(templateJs).toContain('onPointerUp=${row.onPointerUp}');
   });
 });

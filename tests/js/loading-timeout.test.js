@@ -18,34 +18,33 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const appJs = readFileSync(path.join(ROOT, 'app.js'), 'utf8');
 
-describe('_guardedLoad unsticks a hung request instead of blocking retries forever', () => {
-  it('races a timer that clears _inFlight[key] independently of whether fn() ever settles', () => {
-    const guardedLoadBody = appJs.slice(appJs.indexOf('_guardedLoad(key, fn'), appJs.indexOf('_guardedLoad(key, fn') + 900);
-    expect(guardedLoadBody).toMatch(/setTimeout\(/);
-    expect(guardedLoadBody).toMatch(/this\._inFlight\[key\] = null/);
-    expect(guardedLoadBody).toMatch(/if \(onTimeout\) onTimeout\(\)/);
+describe('_guardedLoad delegates to the generation-safe coordinator', () => {
+  it('uses execution ids and never clears a newer run directly', () => {
+    const body = appJs.slice(appJs.indexOf('_guardedLoad(key, fn'), appJs.indexOf('_guardedLoad(key, fn') + 1000);
+    expect(body).toContain('this._loadGuard.run');
+    expect(body).toContain('executionId');
+    expect(body).not.toMatch(/this\._inFlight\[key\] = null/);
   });
 
-  it('every one of the five state-flag "Modo de Criação" loaders passes an onTimeout callback that resets its own loading flag and sets a retryable error', () => {
-    const loaderNames = ['loadMyCreationData', 'loadSharedLibrary', 'loadSiteCatalogData', 'loadMyRequests', 'loadAllRequests'];
-    const flagsByLoader = {
-      loadMyCreationData: 'myCreationLoading', loadSharedLibrary: 'sharedLibraryLoading', loadSiteCatalogData: 'siteCatalogLoading',
-      loadMyRequests: 'myRequestsLoading', loadAllRequests: 'allRequestsLoading',
+  it('all independent list loaders retain distinct keys and timeout states', () => {
+    const expected = {
+      loadMyCreationData: 'myCreationData', loadSharedLibrary: 'sharedLibrary', loadPublicCatalog: 'publicCatalog',
+      loadSiteCatalogData: 'siteCatalogData', loadMyRequests: 'myRequests', loadAllRequests: 'allRequests',
     };
-    loaderNames.forEach((name) => {
+    Object.entries(expected).forEach(([name, key]) => {
       const start = appJs.indexOf(`${name} = (`);
-      expect(start, `expected to find ${name}'s definition`).toBeGreaterThan(-1);
-      const line = appJs.slice(start, appJs.indexOf('\n', start));
-      expect(line, `${name} should call _guardedLoad with an onTimeout callback`).toMatch(/_guardedLoad\(/);
-      expect(line, `${name}'s onTimeout should reset ${flagsByLoader[name]}`).toContain(`${flagsByLoader[name]}: false`);
-      expect(line, `${name}'s onTimeout should set a retryable "timed out" error message`).toContain('Tempo de carregamento esgotado');
+      const definition = appJs.slice(start, start + 500);
+      expect(definition).toContain(`_guardedLoad('${key}'`);
+      expect(definition).toContain('Tempo de carregamento esgotado');
     });
-    // loadPublicCatalog's timeout uses the demo-fallback shape instead of a
-    // dedicated loading flag (matching every other failure branch of that
-    // loader), but must still reset publicCategories, same as any other
-    // failure path — checked in home-categories.test.js's fallback-block
-    // test, which this timeout branch also satisfies.
-    expect(appJs).toMatch(/loadPublicCatalog = \(\) => this\._guardedLoad\('publicCatalog', \(\) => this\._loadPublicCatalog\(\), \(\) => this\.setState\(\{\s*publicCatalogSource: 'demo-fallback',\s*publicCatalogError: 'Tempo de carregamento esgotado\. Tente novamente\.',/);
+  });
+
+  it('every list implementation gates state writes by its current generation', () => {
+    for (const [fn, key] of [['MyCreationData','myCreationData'], ['SharedLibrary','sharedLibrary'], ['PublicCatalog','publicCatalog'], ['SiteCatalogData','siteCatalogData'], ['MyRequests','myRequests'], ['AllRequests','allRequests']]) {
+      const start = appJs.indexOf(`_load${fn} = async`);
+      const end = appJs.indexOf('\n  };', start);
+      expect(appJs.slice(start, end)).toContain(`_loadGuard.isCurrent('${key}', runId)`);
+    }
   });
 });
 
@@ -69,5 +68,27 @@ describe('closing the recipe detail modal always clears myRecipeDetailLoading as
   it('onCloseMyRecipeDetail resets myRecipeDetailLoading: false', () => {
     const body = appJs.slice(appJs.indexOf('onCloseMyRecipeDetail = ()'), appJs.indexOf('onCloseMyRecipeDetail = ()') + 400);
     expect(body).toMatch(/myRecipeDetailLoading:\s*false/);
+  });
+});
+
+describe('authentication and modals remain independent from list refreshes', () => {
+  it('registers auth only once and keeps profile I/O outside the auth callback', () => {
+    expect(appJs).toMatch(/if \(this\._authInitStarted\) return;/);
+    const authBlock = appJs.slice(appJs.indexOf('initAuth = async'), appJs.indexOf('updateDeviceMode', appJs.indexOf('initAuth = async')));
+    const callback = authBlock.slice(authBlock.indexOf('onAuthStateChange'), authBlock.indexOf('const initialGeneration'));
+    expect(callback).not.toMatch(/onAuthStateChange\(async/);
+    expect(callback).toContain('Promise.resolve().then(async () =>');
+    expect(callback).toContain('generation !== this._authIdentityGeneration');
+  });
+
+  it('list loaders never reset modal-open state', () => {
+    const loaders = ['MyCreationData', 'SharedLibrary', 'PublicCatalog', 'SiteCatalogData', 'MyRequests', 'AllRequests'];
+    for (const loader of loaders) {
+      const start = appJs.indexOf(`_load${loader} = async`);
+      const body = appJs.slice(start, appJs.indexOf('\n  };', start));
+      for (const modalFlag of ['showLoginModal', 'showSignupModal', 'showMyRecipeForm', 'showSiteRecipeForm', 'selectedRequestId']) {
+        expect(body).not.toContain(`${modalFlag}: false`);
+      }
+    }
   });
 });

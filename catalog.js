@@ -130,6 +130,14 @@ export async function fetchMyCategories(userId, type) {
   if (type) q = q.eq('type', type);
   return unwrap(await q, 'fetchMyCategories');
 }
+// Creation-form vocabulary in one RLS-protected read.  Keeping the union in
+// one query prevents the form from accidentally reusing either the public-
+// only Home loader or the personal-only management loader.  The RPC uses auth.uid()
+// directly and RLS remains the authority; no caller-supplied owner filter is
+// trusted.
+export async function fetchCreationCategories() {
+  return unwrap(await supabase.rpc('list_creation_categories'), 'fetchCreationCategories');
+}
 export async function createCategory(ownerId, { type, name }) {
   return unwrap(await supabase.from('categories').insert({ owner_id: ownerId, scope: 'personal', type, name }).select(CATEGORY_SELECT).single(), 'createCategory');
 }
@@ -420,7 +428,7 @@ export function computeForeignReferences(detail, viewerId) {
 
 // ---- Public catalog (read: everyone; write: admin only) ----
 export async function fetchPublicCategories() {
-  return unwrap(await supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('name'), 'fetchPublicCategories');
+  return unwrap(await supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('sort_order').order('name'), 'fetchPublicCategories');
 }
 export async function fetchPublicProducts() {
   return unwrap(await supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('scope', 'site').eq('active', true).order('name'), 'fetchPublicProducts');
@@ -437,7 +445,7 @@ export async function fetchRecipeIngredientsBulk(recipeIds) {
 }
 export async function fetchRecipeSectionsBulk(recipeIds) {
   if (!recipeIds.length) return { data: [] };
-  return unwrap(await supabase.from('recipe_categories').select(RECIPE_SECTION_SLUG_SELECT).in('recipe_id', recipeIds), 'fetchRecipeSectionsBulk');
+  return unwrap(await supabase.rpc('list_public_recipe_sections', { p_recipe_ids: recipeIds }), 'fetchRecipeSectionsBulk');
 }
 
 // ---- Admin: full visibility into the public catalog (any status/active),
@@ -450,7 +458,7 @@ export async function fetchRecipeSectionsBulk(recipeIds) {
 // configured today. ----
 export async function fetchAdminCategories() {
   return fetchAllPages(
-    (from, to) => supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').order('name').range(from, to),
+    (from, to) => supabase.from('categories').select(CATEGORY_SELECT).eq('scope', 'site').order('sort_order').order('name').range(from, to),
     'fetchAdminCategories',
   );
 }
@@ -473,6 +481,9 @@ export async function createSiteCategory({ type, name, active }) {
 }
 export async function updateSiteCategory(id, patch) {
   return unwrap(await supabase.from('categories').update(patch).eq('id', id).select(CATEGORY_SELECT).single(), 'updateSiteCategory');
+}
+export async function reorderSiteSections(sectionIds) {
+  return unwrap(await supabase.rpc('reorder_site_sections', { p_section_ids: sectionIds }), 'reorderSiteSections');
 }
 export async function createSiteProduct({ name, categoryId, unit, price, active }) {
   return unwrap(await supabase.from('products').insert({ scope: 'site', owner_id: null, name, category_id: categoryId, unit, price, active: !!active }).select(PRODUCT_SELECT).single(), 'createSiteProduct');

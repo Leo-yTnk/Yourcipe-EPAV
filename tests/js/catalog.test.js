@@ -411,3 +411,40 @@ describe('countOtherRecipesUsingProduct', () => {
     expect(result.error.message).toBe('boom');
   });
 });
+
+describe('visibility loaders', () => {
+  it('loads creation categories from the canonical authenticated RPC', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: [{ id: 'site' }, { id: 'mine' }], error: null });
+    const result = await catalogModule.fetchCreationCategories(OWNER_ID);
+    expect(mockRpc).toHaveBeenCalledWith('list_creation_categories');
+    expect(result.data).toHaveLength(2);
+  });
+
+  it('loads public Home sections from the role-independent RPC', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: [{ recipe_id: 'r1', slug: 'rapido' }], error: null });
+    const result = await catalogModule.fetchRecipeSectionsBulk(['r1']);
+    expect(mockRpc).toHaveBeenCalledWith('list_public_recipe_sections', { p_recipe_ids: ['r1'] });
+    expect(result.data[0].slug).toBe('rapido');
+  });
+
+  it('does not call Supabase for an empty public recipe list', async () => {
+    mockRpc.mockReset();
+    expect(await catalogModule.fetchRecipeSectionsBulk([])).toEqual({ data: [] });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('surfaces retryable loader errors with their operation', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: null, error: { code: 'PGRST000', message: 'offline', details: null, hint: null } });
+    const result = await catalogModule.fetchCreationCategories(OWNER_ID);
+    expect(result.error).toMatchObject({ code: 'PGRST000', operation: 'fetchCreationCategories' });
+  });
+});
+
+describe('reorderSiteSections', () => {
+  it('sends the complete ordered id list to the atomic admin RPC', async () => {
+    mockRpc.mockReset().mockResolvedValueOnce({ data: null, error: null });
+    const result = await catalogModule.reorderSiteSections(['s2', 's1']);
+    expect(mockRpc).toHaveBeenCalledWith('reorder_site_sections', { p_section_ids: ['s2', 's1'] });
+    expect(result.error).toBeUndefined();
+  });
+});

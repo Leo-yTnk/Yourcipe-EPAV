@@ -1,3 +1,53 @@
+# Round 012: synchronized Home section ordering
+
+Apply `supabase/012_home_section_order.sql` after 011. It adds the admin-only
+`reorder_site_sections(uuid[])` RPC; it does not modify existing migrations.
+The RPC requires the complete current set of public section IDs and writes all
+positions atomically, so a stale drag is rejected instead of losing a section.
+
+Manual check: as admin, open **Catálogo: Categorias**, hold a section for about
+450 ms, drag and drop it, and verify the saving indicator clears. Open Home as
+anon and as a standard user and verify the same order. Repeat with Slow 3G,
+then try as a standard user (no ordering control and direct RPC returns
+`not_admin`). Refresh all three sessions to confirm persistence.
+
+---
+
+# Round 011: cross-account visibility
+
+Apply **only after 010**:
+
+```sql
+-- Supabase SQL Editor (staging)
+-- paste/run the complete file:
+-- supabase/011_cross_user_visibility.sql
+```
+
+Root causes verified: (1) public and personal reads had separate frontend
+loaders and no canonical database read surface, making accidental owner/public
+filter reuse possible; (2) creation pickers assembled two independently loaded
+arrays; (3) Home section embeds are role-dependent because the additive admin
+policy can see inactive site categories, while a plain user cannot; and (4)
+Home built section blocks from device-local `homeSections`, so an admin with a
+different/stale local snapshot could lose otherwise-public sections. Migrations
+009 and 010 do not change SELECT policies, but 011 reasserts the intended
+permissive public + owner policies and leaves their deletion RPCs untouched.
+
+Final matrix: published site recipes and active site categories/sections are
+visible to user A, user B and admin; personal recipes/categories are visible
+only to their owner. Admin remains able to manage site rows through 006 but is
+not granted access to other users' personal rows. Equal category names remain
+separate rows/IDs; no name-based deduplication occurs.
+
+Manual staging checklist (two users + admin):
+1. User A creates a private recipe and categories; verify A sees them and B/admin do not.
+2. Admin publishes a site recipe with one active and one inactive section; verify all three accounts see the recipe and only the active section on Home.
+3. In User A and B creation forms, verify active public categories plus only that account's personal categories; deactivate a public category and retry.
+4. Archive the site recipe and confirm it disappears publicly; run a 010 impact/delete flow on an unrelated owned personal row to confirm compatibility.
+5. Simulate an offline request and use **Tentar novamente** after restoring the network.
+
+---
+
 # Staging setup and PR 1 runbook
 
 ## Round: hard delete + reference resolution for products/categories, explicit archive-vs-delete for recipes, form redesign
