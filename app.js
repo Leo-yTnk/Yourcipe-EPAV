@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260804-1';
-import { CustomSelect } from './custom-select.js?v=20260804-1';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260805-1';
+import { CustomSelect } from './custom-select.js?v=20260805-1';
 import {
   LS_KEYS, SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260804-1';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260804-1';
-import { supabase } from './supabase-client.js?v=20260804-1';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260804-1';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260804-1';
-import { normalizeDisplayName } from './display-name.js?v=20260804-1';
-import * as catalog from './catalog.js?v=20260804-1';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260804-1';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260804-1';
-import { createLoadGuard } from './load-guard.js?v=20260804-1';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260804-1';
+} from './data.js?v=20260805-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260805-1';
+import { supabase } from './supabase-client.js?v=20260805-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260805-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260805-1';
+import { normalizeDisplayName } from './display-name.js?v=20260805-1';
+import * as catalog from './catalog.js?v=20260805-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260805-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260805-1';
+import { createLoadGuard } from './load-guard.js?v=20260805-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260805-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260804-1';
+const FRONTEND_VERSION = '20260805-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -88,9 +88,9 @@ class App extends Component {
       frameW: (typeof window !== 'undefined') ? window.innerWidth : 1200,
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
       darkMode, hiddenRecipeIds, homeSections, productCategories, newSectionLabel: '', newProteinLabel: '', navRailSide, weekStartDay, fontSize,
-      selectionMode: false, selectedRecipeIds: [], recipeMenuOpenId: null,
+      selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
-      productSelectionMode: false, selectedProductIds: [],
+      productSelectionMode: false, selectedProductIds: [], productSelectionScope: '',
       sectionSelectionMode: false, selectedSectionKeys: [],
       proteinSelectionMode: false, selectedProteinKeys: [],
       heroIndex: 0,
@@ -535,6 +535,7 @@ class App extends Component {
   // onCompleteProfileSubmit).
   applySessionProfile = (session, profile) => {
     this.setState({ session, authRole: profile.role, authDisplayName: profile.displayName });
+    if (session) this.loadSalesData();
     if (session && !profile.displayName) {
       this.setState({ showCompleteProfileModal: true, completeProfileName: '', completeProfileError: '' });
     }
@@ -631,20 +632,24 @@ class App extends Component {
   onSaleValorChange = (e) => this.setState({ saleForm: { ...this.state.saleForm, valor: e.target.value } });
   onSaleIpcChange = (e) => this.setState({ saleForm: { ...this.state.saleForm, ipc: e.target.value } });
   onSaleDataChange = (e) => this.setState({ saleForm: { ...this.state.saleForm, data: e.target.value } });
-  onSaveSale = () => {
+  onSaveSale = async () => {
     const f = this.state.saleForm;
     const valor = parseFloat(String(f.valor || '').replace(',', '.')) || 0;
     if (!valor) return;
     const ipc = parseInt(f.ipc, 10) || 0;
-    const dataISO = f.data ? new Date(f.data + 'T12:00:00').toISOString() : new Date().toISOString();
+    const saleDate = f.data || this.todayDateInputValue();
+    const dataISO = new Date(saleDate + 'T12:00:00').toISOString();
     const editId = this.state.editingSaleId;
-    let vendas;
-    if (editId) {
-      vendas = this.state.vendas.map(v => v.id === editId ? { ...v, valor, ipc, data: dataISO } : v);
-    } else {
-      const venda = { id: 'v_' + Date.now(), data: dataISO, valor, ipc };
-      vendas = [...this.state.vendas, venda];
+    if (this.state.session) {
+      const res = editId ? await catalog.updateSale(editId, { saleDate, value: valor, ipc }) : await catalog.createSale({ saleDate, value: valor, ipc });
+      if (res.error) return;
+      await this.loadSalesData();
+      this.setState({ salesModalOpen: false, editingSaleId: null });
+      return;
     }
+    const vendas = editId
+      ? this.state.vendas.map(v => v.id === editId ? { ...v, valor, ipc, data: dataISO } : v)
+      : [...this.state.vendas, { id: 'v_' + Date.now(), data: dataISO, valor, ipc }];
     this.persist(LS_KEYS.vendas, vendas);
     this.setState({ vendas, salesModalOpen: false, editingSaleId: null });
   };
@@ -671,6 +676,14 @@ class App extends Component {
   });
   onCancelSaleSelection = () => this.setState({ saleSelectionMode: false, selectedSaleIds: [] });
   askBulkDeleteSales = () => this.setState({ confirmDelete: { type: 'bulk-delete-sales', ids: [...this.state.selectedSaleIds], message: `Excluir ${this.state.selectedSaleIds.length} venda(s) selecionada(s)? Esta ação não pode ser desfeita.` } });
+
+  supabaseSaleToView = (v) => ({ id: v.id, data: new Date(v.sale_date + 'T12:00:00').toISOString(), valor: Number(v.value) || 0, ipc: Number(v.ipc) || 0 });
+  loadSalesData = async () => {
+    if (!this.state.session) return;
+    const { data, error } = await catalog.fetchMySales();
+    if (error) return;
+    this.setState({ vendas: (data || []).map(this.supabaseSaleToView) });
+  };
 
   onRefreshWeather = async () => {
     // Open-Meteo (sem chave) - São Paulo, SP (-23.5505, -46.6333)
@@ -970,7 +983,7 @@ class App extends Component {
     // the bug #2 fix comment on loadMyCreationData's definition. session/
     // authRole were just setState()'d above via applySessionProfile in this
     // same tick, so this.state would still be stale here.
-    this.loadMyCreationData(result.user.id);
+    this.loadMyCreationData(result.user.id); this.loadSalesData();
     this.loadSharedLibrary(result.user.id);
     this.loadMyRequests(result.user.id);
     this.loadSiteCatalogData(profile.role);
@@ -2500,11 +2513,11 @@ class App extends Component {
   toggleRecipeSelected = (id) => this.setState(s => {
     const has = s.selectedRecipeIds.includes(id);
     const selectedRecipeIds = has ? s.selectedRecipeIds.filter(x => x !== id) : [...s.selectedRecipeIds, id];
-    return { selectedRecipeIds, selectionMode: selectedRecipeIds.length > 0 };
+    return { selectedRecipeIds, selectionMode: selectedRecipeIds.length > 0, recipeSelectionScope: selectedRecipeIds.length ? s.recipeSelectionScope : '' };
   });
-  onCancelSelection = () => this.setState({ selectionMode: false, selectedRecipeIds: [] });
+  onCancelSelection = () => this.setState({ selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '' });
   askBulkHide = () => this.setState({ confirmDelete: { type: 'bulk-hide', ids: [...this.state.selectedRecipeIds], message: `Ocultar ${this.state.selectedRecipeIds.length} receita(s) selecionada(s)? Elas deixarão de aparecer para os usuários.` } });
-  askBulkDelete = () => this.setState({ confirmDelete: { type: 'bulk-delete', ids: [...this.state.selectedRecipeIds], message: `Excluir ${this.state.selectedRecipeIds.length} receita(s) selecionada(s)? Esta ação não pode ser desfeita.` } });
+  askBulkDelete = () => { const scope = this.state.recipeSelectionScope || (this.state.adminTab === 'recipes' ? 'site' : this.state.adminTab === 'myRecipes' ? 'my' : 'local'); this.setState({ confirmDelete: { type: scope === 'site' ? 'bulk-delete-site-recipes' : scope === 'my' ? 'bulk-delete-my-recipes' : 'bulk-delete', ids: [...this.state.selectedRecipeIds], message: `Excluir ${this.state.selectedRecipeIds.length} receita(s) selecionada(s)? Esta ação não pode ser desfeita.` } }); };
 
   toggleChecklist = (recipeId, idx) => {
     this.setState(s => {
@@ -2585,14 +2598,20 @@ class App extends Component {
       const recipes = this.state.recipes.filter(r => !cd.ids.includes(r.id));
       this.setState({ recipes, confirmDelete: null, selectionMode: false, selectedRecipeIds: [] });
       this.persist(LS_KEYS.recipes, recipes);
+    } else if (cd.type === 'bulk-delete-my-recipes' || cd.type === 'bulk-delete-site-recipes') {
+      for (const id of cd.ids) await catalog.deleteRecipeChecked(id, { revokeShares: true, cancelPendingRequests: true });
+      this.setState({ confirmDelete: null, selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '' });
+      if (cd.type === 'bulk-delete-site-recipes') this.loadSiteCatalogData(this.state.authRole); else this.loadMyCreationData(this.state.session && this.state.session.user.id);
+    } else if (cd.type === 'bulk-delete-my-products' || cd.type === 'bulk-delete-site-products') {
+      for (const id of cd.ids) await catalog.deleteProductResolved(id, {});
+      this.setState({ confirmDelete: null, productSelectionMode: false, selectedProductIds: [], productSelectionScope: '' });
+      if (cd.type === 'bulk-delete-site-products') this.loadSiteCatalogData(this.state.authRole); else this.loadMyCreationData(this.state.session && this.state.session.user.id);
     } else if (cd.type === 'sale') {
-      const vendas = this.state.vendas.filter(v => v.id !== cd.id);
-      this.setState({ vendas, confirmDelete: null });
-      this.persist(LS_KEYS.vendas, vendas);
+      if (this.state.session) { await catalog.deleteSale(cd.id); await this.loadSalesData(); this.setState({ confirmDelete: null }); }
+      else { const vendas = this.state.vendas.filter(v => v.id !== cd.id); this.setState({ vendas, confirmDelete: null }); this.persist(LS_KEYS.vendas, vendas); }
     } else if (cd.type === 'bulk-delete-sales') {
-      const vendas = this.state.vendas.filter(v => !cd.ids.includes(v.id));
-      this.setState({ vendas, confirmDelete: null, saleSelectionMode: false, selectedSaleIds: [] });
-      this.persist(LS_KEYS.vendas, vendas);
+      if (this.state.session) { await Promise.all(cd.ids.map(id => catalog.deleteSale(id))); await this.loadSalesData(); this.setState({ confirmDelete: null, saleSelectionMode: false, selectedSaleIds: [] }); }
+      else { const vendas = this.state.vendas.filter(v => !cd.ids.includes(v.id)); this.setState({ vendas, confirmDelete: null, saleSelectionMode: false, selectedSaleIds: [] }); this.persist(LS_KEYS.vendas, vendas); }
     } else if (cd.type === 'bulk-delete-products') {
       const products = this.state.products.filter(p => !cd.ids.includes(p.id));
       this.setState({ products, confirmDelete: null, productSelectionMode: false, selectedProductIds: [] });
@@ -2626,10 +2645,10 @@ class App extends Component {
   toggleProductSelected = (id) => this.setState(s => {
     const has = s.selectedProductIds.includes(id);
     const selectedProductIds = has ? s.selectedProductIds.filter(x => x !== id) : [...s.selectedProductIds, id];
-    return { selectedProductIds, productSelectionMode: selectedProductIds.length > 0 };
+    return { selectedProductIds, productSelectionMode: selectedProductIds.length > 0, productSelectionScope: selectedProductIds.length ? s.productSelectionScope : '' };
   });
-  onCancelProductSelection = () => this.setState({ productSelectionMode: false, selectedProductIds: [] });
-  askBulkDeleteProducts = () => this.setState({ confirmDelete: { type: 'bulk-delete-products', ids: [...this.state.selectedProductIds], message: `Excluir ${this.state.selectedProductIds.length} produto(s) selecionado(s)? Eles serão removidos também das receitas que os usam.` } });
+  onCancelProductSelection = () => this.setState({ productSelectionMode: false, selectedProductIds: [], productSelectionScope: '' });
+  askBulkDeleteProducts = () => { const scope = this.state.productSelectionScope || (this.state.adminTab === 'products' ? 'site' : this.state.adminTab === 'myProducts' ? 'my' : 'local'); this.setState({ confirmDelete: { type: scope === 'site' ? 'bulk-delete-site-products' : scope === 'my' ? 'bulk-delete-my-products' : 'bulk-delete-products', ids: [...this.state.selectedProductIds], message: `Excluir ${this.state.selectedProductIds.length} produto(s) selecionado(s)? Esta ação não pode ser desfeita.` } }); };
 
   onNewProduct = () => this.setState({
     showProductForm: true, productFormMode: 'new',
@@ -3134,17 +3153,19 @@ class App extends Component {
     // guarantees every scope='personal' recipe is always status='private' —
     // verified against the live schema (see supabase/STAGING.md), so "Privada"
     // is always correct here, never derived from a guess.
-    const myRecipeRows = s.myRecipes.map(r => ({
+    const myRecipeRows = s.myRecipes.map(r => { const selected = s.recipeSelectionScope === 'my' && s.selectedRecipeIds.includes(r.id); return ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
       source: 'personal', sourceLabel: 'Privada', sourceBadgeStyle: statusBadge('Privada', SOURCE_BADGE_COLORS.personal),
+      showCheckbox: s.selectionMode && s.recipeSelectionScope === 'my', showActions: !(s.selectionMode && s.recipeSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode && s.recipeSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ selectionMode: true, recipeSelectionScope: 'my', selectedRecipeIds: st.selectedRecipeIds.includes(r.id) ? st.selectedRecipeIds : [r.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.selectionMode && this.state.recipeSelectionScope === 'my') this.toggleRecipeSelected(r.id); },
       onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteRecipeChecked(r.id),
-    }));
-    const myProductRows = s.myProducts.map(p => ({
+    }); });
+    const myProductRows = s.myProducts.map(p => { const selected = s.productSelectionScope === 'my' && s.selectedProductIds.includes(p.id); return ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
       active: p.active, activeLabel: p.active ? 'Ativo' : 'Inativo', toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
+      showCheckbox: s.productSelectionMode && s.productSelectionScope === 'my', showActions: !(s.productSelectionMode && s.productSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ productSelectionMode: true, productSelectionScope: 'my', selectedProductIds: st.selectedProductIds.includes(p.id) ? st.selectedProductIds : [p.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.productSelectionMode && this.state.productSelectionScope === 'my') this.toggleProductSelected(p.id); },
       onEdit: () => this.onEditMyProduct(p), onToggleActive: () => this.onToggleMyProductActive(p), onDelete: () => this.askDeleteMyProduct(p.id),
       onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
-    }));
+    }); });
     const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : 'Proteína/Produto';
     const myCategoryRows = s.myCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
@@ -3241,6 +3262,7 @@ class App extends Component {
     const siteRecipeRows = s.siteRecipes.map(r => {
       const isPublished = r.status === 'published';
       const statusLabel = isPublished ? 'Publicada' : r.status === 'draft' ? 'Rascunho' : 'Arquivada';
+      const selected = s.recipeSelectionScope === 'site' && s.selectedRecipeIds.includes(r.id);
       return {
         id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '', featured: !!r.featured,
         source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
@@ -3248,19 +3270,21 @@ class App extends Component {
         statusBadgeStyle: statusBadge(statusLabel, isPublished ? SOURCE_BADGE_COLORS.public : r.status === 'draft' ? SOURCE_BADGE_COLORS.draft : SOURCE_BADGE_COLORS.archived),
         toggleStatusLabel: isPublished ? 'Despublicar' : 'Publicar',
         updatedAtLabel: this.formatDateTime(r.updated_at),
+        showCheckbox: s.selectionMode && s.recipeSelectionScope === 'site', showActions: !(s.selectionMode && s.recipeSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode && s.recipeSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ selectionMode: true, recipeSelectionScope: 'site', selectedRecipeIds: st.selectedRecipeIds.includes(r.id) ? st.selectedRecipeIds : [r.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.selectionMode && this.state.recipeSelectionScope === 'site') this.toggleRecipeSelected(r.id); },
         onToggleStatus: () => this.onToggleSiteRecipeStatus(r), onEdit: () => this.onEditSiteRecipe(r),
         onDelete: () => this.askDeleteRecipeChecked(r.id),
       };
     });
-    const siteProductRows = s.siteProducts.map(p => ({
+    const siteProductRows = s.siteProducts.map(p => { const selected = s.productSelectionScope === 'site' && s.selectedProductIds.includes(p.id); return ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(p.updated_at),
+      showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ productSelectionMode: true, productSelectionScope: 'site', selectedProductIds: st.selectedProductIds.includes(p.id) ? st.selectedProductIds : [p.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
       onDelete: () => this.askDeleteSiteProduct(p.id),
-    }));
+    }); });
     const siteCategoryRows = s.siteCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
@@ -3749,7 +3773,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260804-1';
+import { renderApp } from './template.js?v=20260805-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
