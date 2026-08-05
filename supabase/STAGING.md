@@ -938,3 +938,8 @@ depends on RLS policies (this PR's `004_catalog_schema.sql`, plus
 `schema.sql`), never on that key being secret. The same will be true of a
 staging publishable key if one ever ends up committed by accident — not
 ideal (mixes environments), but not a credential leak.
+
+
+## PR: Dados sales persistence
+
+- `supabase/013_sales_data.sql` adds `public.sales` with `owner_id default auth.uid()` and own-row RLS so records from the Dados tab are stored in Supabase and linked to the authenticated user.

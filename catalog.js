@@ -13,7 +13,7 @@
 // ownerId argument) always receives it from the caller's own
 // session.user.id, never from anywhere else; the server independently
 // re-validates it via RLS/RPC regardless.
-import { supabase } from './supabase-client.js?v=20260804-1';
+import { supabase } from './supabase-client.js?v=20260805-1';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, version, created_at, updated_at';
@@ -424,6 +424,24 @@ export function computeForeignReferences(detail, viewerId) {
     if (p && p.scope === 'personal' && p.owner_id !== viewerId) addRef('product', p.id, p.name, 'ingredient');
   });
   return refs;
+}
+
+// ---- Dados: vendas pessoais (Supabase-backed, owner_id = auth.uid()) ----
+export async function fetchMySales() {
+  return unwrap(await supabase.from('sales').select('id, owner_id, sale_date, value, ipc, created_at, updated_at').order('sale_date', { ascending: false }), 'fetchMySales');
+}
+export async function createSale(fields) {
+  return unwrap(await supabase.from('sales').insert({
+    sale_date: fields.saleDate, value: fields.value, ipc: fields.ipc || 0,
+  }).select('id, owner_id, sale_date, value, ipc, created_at, updated_at').single(), 'createSale');
+}
+export async function updateSale(id, fields) {
+  return unwrap(await supabase.from('sales').update({
+    sale_date: fields.saleDate, value: fields.value, ipc: fields.ipc || 0,
+  }).eq('id', id).select('id, owner_id, sale_date, value, ipc, created_at, updated_at').single(), 'updateSale');
+}
+export async function deleteSale(id) {
+  return unwrap(await supabase.from('sales').delete().eq('id', id), 'deleteSale');
 }
 
 // ---- Public catalog (read: everyone; write: admin only) ----
