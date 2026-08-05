@@ -2815,16 +2815,17 @@ class App extends Component {
     // disable a known section, but an admin is never routed to a different
     // loader and a newly-created public section defaults to visible.
     const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : this.publicSectionCategories().some(c => c.slug === key); };
-    const recommendedList = sectionOn('recomendado') ? byTag('recomendado') : [];
-    const practicalList = sectionOn('pratico') ? byTag('pratico') : [];
-    const occasionList = sectionOn('ocasiao') ? byTag('ocasiao') : [];
-    const quickList = sectionOn('rapido') ? byTag('rapido') : [];
-    const churrascoList = sectionOn('churrasco') ? byTag('churrasco') : [];
-    const snackList = sectionOn('petisco') ? byTag('petisco') : [];
-    const fixedSectionKeys = new Set(['recomendado', 'pratico', 'ocasiao', 'rapido', 'churrasco', 'petisco']);
-    const customHomeSectionBlocks = this.publicSectionCategories()
-      .filter(c => !fixedSectionKeys.has(c.slug) && sectionOn(c.slug))
-      .map(c => ({ key: c.slug, label: c.name, items: byTag(c.slug) }))
+    // Home sections are public catalog data, ordered by categories.sort_order.
+    // Admins can drag section rows in the public catalog; every visitor then
+    // sees this same order because fetchPublicCategories/fetchAdminCategories
+    // both order by sort_order before the Home blocks are assembled here.
+    const publicHomeSections = this.publicSectionCategories();
+    const homeSectionSource = publicHomeSections.length
+      ? publicHomeSections.map(c => ({ key: c.slug, label: c.name }))
+      : SECTION_DEFS.map(d => ({ key: d.key, label: d.label }));
+    const homeSectionBlocks = homeSectionSource
+      .filter(sec => sectionOn(sec.key))
+      .map(sec => ({ key: sec.key, label: sec.label, items: byTag(sec.key) }))
       .filter(b => b.items.length > 0);
     const heroTagged = visibleRecipes.filter(r => r.tags.includes('destaque'));
     const heroSourceList = heroTagged.length ? heroTagged : (visibleRecipes[0] ? [visibleRecipes[0]] : []);
@@ -3408,7 +3409,7 @@ class App extends Component {
       showSplash: s.showSplash, onSplashContinue: this.onSplashContinue, splashButtonLabel: s.profile ? 'Bem-vindo de volta' : 'Criar meu perfil',
       userGreetingName, profileInitial,
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
-      recommendedList, practicalList, occasionList, quickList, churrascoList, snackList, homeCategoryChips, homeCategoriesEmpty, customHomeSectionBlocks,
+      homeSectionBlocks, homeCategoryChips, homeCategoriesEmpty,
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,

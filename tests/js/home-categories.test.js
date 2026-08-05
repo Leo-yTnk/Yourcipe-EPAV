@@ -47,13 +47,16 @@ describe('Home loads its category vocabulary from Supabase, not from static cons
   });
 });
 
-describe('Home sections stay on the Home screen', () => {
-  it('gates custom public section rendering behind isHome', () => {
-    expect(templateJs).toMatch(/\$\{v\.isHome && renderCustomSections\(app, v\)\}/);
+describe('Home sections use the public ordering from Supabase', () => {
+  it('builds a single ordered Home section block list from public secao categories', () => {
+    expect(appJs).toMatch(/const publicHomeSections = this\.publicSectionCategories\(\)/);
+    expect(appJs).toMatch(/publicHomeSections\.map\(c => \({ key: c\.slug, label: c\.name }\)\)/);
+    expect(appJs).toMatch(/const homeSectionBlocks = homeSectionSource[\s\S]*?\.map\(sec => \({ key: sec\.key, label: sec\.label, items: byTag\(sec\.key\) }\)\)/);
   });
 
-  it('does not render custom sections unconditionally in the root screen dispatcher', () => {
+  it('renders Home sections only inside renderHome instead of an unconditional root dispatcher block', () => {
+    expect(templateJs).toMatch(/\$\{v\.homeSectionBlocks\.map\(\(sec\) => carouselSection/);
     const dispatcher = templateJs.slice(templateJs.indexOf('${v.notLoaded'), templateJs.indexOf('</div>\n        </div>'));
-    expect(dispatcher).not.toMatch(/^\s*\$\{renderCustomSections\(app, v\)\}/m);
+    expect(dispatcher).not.toMatch(/renderCustomSections|homeSectionBlocks\.map/);
   });
 });
