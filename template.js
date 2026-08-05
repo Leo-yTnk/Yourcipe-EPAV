@@ -474,7 +474,7 @@ function renderSalesHistory(app, v) {
 
     <div style="padding:8px 40px 40px">
       ${v.saleSelectionMode && html`
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:22px 16px 14px;margin-bottom:14px;position:sticky;top:0;z-index:2;box-shadow:var(--shadow-sm);animation:ycFadeIn 0.2s ease">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:22px 16px 14px;margin-bottom:14px;position:fixed;left:40px;right:40px;top:14px;z-index:35;box-shadow:var(--shadow-md);animation:ycFadeIn 0.2s ease">
           <div style="font-size:14px;font-weight:600">${v.selectedSaleCountLabel}</div>
           <div style="display:flex;gap:10px">
             <div onClick=${v.onBulkDeleteSalesAsk} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Excluir</div>
@@ -1100,7 +1100,7 @@ function renderSplash(app, v) {
 
 function selectionBar(count, onDelete, onCancel, extraAction) {
   return html`
-    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:22px 16px 14px;margin-bottom:14px;position:sticky;top:0;z-index:2;box-shadow:var(--shadow-sm);animation:ycFadeIn 0.2s ease">
+    <div style="position:fixed;left:40px;right:40px;top:14px;z-index:35;display:flex;align-items:center;justify-content:space-between;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px 16px;box-shadow:var(--shadow-md);animation:ycFadeIn 0.2s ease">
       <div style="font-size:14px;font-weight:600">${count}</div>
       <div style="display:flex;gap:10px">
         ${extraAction}
@@ -1114,7 +1114,7 @@ function selectionBar(count, onDelete, onCancel, extraAction) {
 
 function toggleRow(row) {
   return html`
-    <div key=${row.key} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${row.rowStyle}>
+    <div key=${row.key} draggable=${row.draggable} onDragStart=${row.onDragStart} onDragOver=${row.onDragOver} onDrop=${row.onDrop} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${row.rowStyle}>
       ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
       <div style="font-size:14px;font-weight:600;flex:1">${row.label}</div>
       ${row.showControls && html`
@@ -1143,6 +1143,7 @@ function renderLocalHomeCustomization(app, v) {
       <div style="font-size:15px;font-weight:700;margin-top:6px;margin-bottom:4px">Seções da Home</div>
       <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na tela inicial. Segure uma seção para selecionar várias e excluir de uma vez.</div>
       ${v.sectionSelectionMode && selectionBar(v.selectedSectionCountLabel, v.onBulkDeleteSectionsAsk, v.onCancelSectionSelection)}
+      ${v.homeSectionOrderBusy && html`<div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">Sincronizando ordem das seções...</div>`}
       ${v.sectionToggleRows.map(toggleRow)}
       <div style="display:flex;gap:10px;margin-top:6px">
         <input type="text" placeholder="Nova seção (ex: Sopas de Inverno)" value=${v.newSectionLabel} onInput=${v.onNewSectionLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
@@ -1232,13 +1233,12 @@ function renderSiteCategoriesTab(app, v) {
         Nova Categoria no Catálogo
       </div>
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-      ${v.homeSectionOrderBusy && html`<div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">Sincronizando ordem das seções...</div>`}
       ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
       ${v.siteCategoryRows.map((row) => html`
-        <div key=${row.id} draggable=${row.draggable} onDragStart=${row.onDragStart} onDragOver=${row.onDragOver} onDrop=${row.onDrop} style=${`display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid ${row.isDragging ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;opacity:${row.isDragging ? 0.65 : 1}`}>
+        <div key=${row.id} style=${`display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;opacity:1`}>
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}${row.draggable ? ' · segure e arraste para ordenar na Home' : ''}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
           <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
@@ -1264,17 +1264,17 @@ function renderAdmin(app, v) {
       <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em">Modo de Criação</div>
     </div>
 
-    <div className="yc-scroll" style="padding:0 40px 16px;display:flex;gap:10px;overflow-x:auto;flex-wrap:nowrap">
-      <div onClick=${v.onSetAdminTabMyRecipes} style=${v.adminTabMyRecipesStyle + ';flex-shrink:0'}>Minhas Receitas</div>
-      <div onClick=${v.onSetAdminTabMyProducts} style=${v.adminTabMyProductsStyle + ';flex-shrink:0'}>Meus Produtos</div>
-      <div onClick=${v.onSetAdminTabMyCategories} style=${v.adminTabMyCategoriesStyle + ';flex-shrink:0'}>Minhas Categorias</div>
-      <div onClick=${v.onSetAdminTabSharedRecipes} style=${v.adminTabSharedRecipesStyle + ';flex-shrink:0'}>Receitas Compartilhadas</div>
-      <div onClick=${v.onSetAdminTabMyRequests} style=${v.adminTabMyRequestsStyle + ';flex-shrink:0'}>Meus Pedidos</div>
+    <div style="padding:0 40px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <div onClick=${v.onSetAdminTabMyRecipes} style=${v.adminTabMyRecipesStyle}>Minhas Receitas</div>
+      <div onClick=${v.onSetAdminTabMyProducts} style=${v.adminTabMyProductsStyle}>Meus Produtos</div>
+      <div onClick=${v.onSetAdminTabMyCategories} style=${v.adminTabMyCategoriesStyle}>Minhas Categorias</div>
+      <div onClick=${v.onSetAdminTabSharedRecipes} style=${v.adminTabSharedRecipesStyle}>Receitas Compartilhadas</div>
+      <div onClick=${v.onSetAdminTabMyRequests} style=${v.adminTabMyRequestsStyle}>Meus Pedidos</div>
       ${v.isAdminRole && html`
-        <div onClick=${v.onSetAdminTabRecipes} style=${v.adminTabRecipesStyle + ';flex-shrink:0'}>Catálogo: Receitas</div>
-        <div onClick=${v.onSetAdminTabProducts} style=${v.adminTabProductsStyle + ';flex-shrink:0'}>Catálogo: Produtos</div>
-        <div onClick=${v.onSetAdminTabCategories} style=${v.adminTabCategoriesStyle + ';flex-shrink:0'}>Catálogo: Categorias</div>
-        <div onClick=${v.onSetAdminTabRequestsInbox} style=${v.adminTabRequestsInboxStyle + ';flex-shrink:0'}>Solicitações Recebidas${v.hasPendingRequestsBadge ? html` (${v.pendingRequestsCount})` : ''}</div>
+        <div onClick=${v.onSetAdminTabRecipes} style=${v.adminTabRecipesStyle}>Catálogo: Receitas</div>
+        <div onClick=${v.onSetAdminTabProducts} style=${v.adminTabProductsStyle}>Catálogo: Produtos</div>
+        <div onClick=${v.onSetAdminTabCategories} style=${v.adminTabCategoriesStyle}>Catálogo: Categorias</div>
+        <div onClick=${v.onSetAdminTabRequestsInbox} style=${v.adminTabRequestsInboxStyle}>Solicitações Recebidas${v.hasPendingRequestsBadge ? html` (${v.pendingRequestsCount})` : ''}</div>
       `}
     </div>
 
