@@ -66,3 +66,6 @@ body { margin: 0; font-family: var(--font-sans); }
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
   word-break: break-all; overflow-wrap: break-word;
 }
+
+/* Keep checkbox labels readable even when template whitespace collapses. */
+input[type="checkbox"] { margin-right: 8px; }

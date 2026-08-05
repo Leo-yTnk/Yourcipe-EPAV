@@ -2436,6 +2436,22 @@ class App extends Component {
   onCancelProteinSelection = () => this.setState({ proteinSelectionMode: false, selectedProteinKeys: [] });
   askBulkDeleteProteins = () => this.setState({ confirmDelete: { type: 'bulk-delete-proteins', ids: [...this.state.selectedProteinKeys], message: `Excluir ${this.state.selectedProteinKeys.length} categoria(s) selecionada(s)? Esta ação não pode ser desfeita.` } });
 
+  onLocalHomeSectionDragStart = (key) => this.setState({ homeSectionDragKey: key });
+  onLocalHomeSectionDragOver = (e) => { if (e && e.preventDefault) e.preventDefault(); };
+  onLocalHomeSectionDrop = (targetKey) => {
+    const sourceKey = this.state.homeSectionDragKey;
+    if (!sourceKey || sourceKey === targetKey) { this.setState({ homeSectionDragKey: null }); return; }
+    this.setState(s => {
+      const homeSections = [...s.homeSections];
+      const from = homeSections.findIndex(h => h.key === sourceKey);
+      const to = homeSections.findIndex(h => h.key === targetKey);
+      if (from < 0 || to < 0) return { homeSectionDragKey: null };
+      const [moved] = homeSections.splice(from, 1);
+      homeSections.splice(to, 0, moved);
+      this.persist(LS_KEYS.sections, homeSections);
+      return { homeSections, homeSectionDragKey: null };
+    });
+  };
 
   onHomeSectionDragStart = (id) => this.setState({ homeSectionDragKey: id });
   onHomeSectionDragOver = (e) => { if (e && e.preventDefault) e.preventDefault(); };
@@ -2941,11 +2957,11 @@ class App extends Component {
       const checked = h.enabled;
       const selected = s.selectedSectionKeys.includes(h.key);
       return {
-        key: h.key, label: h.label, isCustom: h.custom, onToggle: () => this.toggleSection(h.key), onRemove: () => this.removeHomeSection(h.key),
+        key: h.key, label: h.label, isCustom: h.custom, onToggle: () => this.toggleSection(h.key), onRemove: () => this.removeHomeSection(h.key), draggable: true, onDragStart: () => this.onLocalHomeSectionDragStart(h.key), onDragOver: this.onLocalHomeSectionDragOver, onDrop: () => this.onLocalHomeSectionDrop(h.key),
         showCheckbox: s.sectionSelectionMode, showControls: !s.sectionSelectionMode,
         checkboxStyle: `width:22px;height:22px;border-radius:7px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`,
         checkMark: selected ? '✓' : '',
-        rowStyle: `display:flex;align-items:center;justify-content:space-between;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.sectionSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
+        rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.sectionSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
         onPressStart: () => this.startSectionRowPress(h.key), onPressEnd: this.endSectionRowPress,
         onRowClick: () => { if (this.state.sectionSelectionMode) this.toggleSectionSelected(h.key); },
         trackStyle: `width:44px;height:26px;border-radius:var(--radius-full);cursor:pointer;position:relative;transition:background 0.15s ease;background:${checked ? 'var(--brand-700)' : 'var(--neutral-200)'}`,
@@ -2961,7 +2977,7 @@ class App extends Component {
         showCheckbox: s.proteinSelectionMode, showControls: !s.proteinSelectionMode,
         checkboxStyle: `width:22px;height:22px;border-radius:7px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`,
         checkMark: selected ? '✓' : '',
-        rowStyle: `display:flex;align-items:center;justify-content:space-between;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.proteinSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
+        rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.proteinSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
         onPressStart: () => this.startProteinRowPress(c.key), onPressEnd: this.endProteinRowPress,
         onRowClick: () => { if (this.state.proteinSelectionMode) this.toggleProteinSelected(c.key); },
         trackStyle: `width:44px;height:26px;border-radius:var(--radius-full);cursor:pointer;position:relative;transition:background 0.15s ease;background:${checked ? 'var(--brand-700)' : 'var(--neutral-200)'}`,
