@@ -13,10 +13,27 @@ create table if not exists public.sales (
 
 alter table public.sales enable row level security;
 
+-- Keep this migration self-contained: older projects do not define a
+-- generic public.set_updated_at() helper, so sales owns its trigger function.
+create or replace function public.set_sales_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  new.created_at := old.created_at;
+  new.owner_id := old.owner_id;
+  new.updated_at := now();
+  return new;
+end;
+$$;
+revoke execute on function public.set_sales_updated_at() from public;
+
 drop trigger if exists trg_sales_updated_at on public.sales;
 create trigger trg_sales_updated_at
   before update on public.sales
-  for each row execute function public.set_updated_at();
+  for each row execute function public.set_sales_updated_at();
 
 drop policy if exists "sales_select_own" on public.sales;
 create policy "sales_select_own"
