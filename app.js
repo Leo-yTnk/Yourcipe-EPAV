@@ -30,6 +30,7 @@ const CAPTCHA_FRIENDLY_ERROR = 'Não foi possível validar o CAPTCHA. Tente nova
 const TURNSTILE_TOKEN_WAIT_MS = 20000;
 const TURNSTILE_MOUNT_POLL_MS = 100;
 const TURNSTILE_MOUNT_TIMEOUT_MS = 5000;
+const MULTI_SELECT_LONG_PRESS_MS = 480;
 // adminTab values that require role==='admin'. Never inferred from
 // "has a session"/"creationMode is open"/etc — see applySessionProfile and
 // renderAdmin's tab dispatch in template.js, both of which gate on this.
@@ -662,11 +663,19 @@ class App extends Component {
     this.setState({ salesModalOpen: true, editingSaleId: id, saleForm: { valor: String(v.valor).replace('.', ','), ipc: String(v.ipc || 0), data: dataVal } });
   };
   askDeleteSale = (id) => this.setState({ confirmDelete: { type: 'sale', id, message: 'Excluir este registro de venda? Esta ação não pode ser desfeita.' } });
+  markLongPressSelectionActivated = () => { this._suppressNextSelectionClick = true; };
+  consumeSelectionClickSuppression = () => {
+    if (!this._suppressNextSelectionClick) return false;
+    this._suppressNextSelectionClick = false;
+    return true;
+  };
+
   startSaleRowPress = (id) => {
     clearTimeout(this._salePressTimer);
     this._salePressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
       this.setState(s => ({ saleSelectionMode: true, selectedSaleIds: s.selectedSaleIds.includes(id) ? s.selectedSaleIds : [...s.selectedSaleIds, id] }));
-    }, 480);
+    }, MULTI_SELECT_LONG_PRESS_MS);
   };
   endSaleRowPress = () => clearTimeout(this._salePressTimer);
   toggleSaleSelected = (id) => this.setState(s => {
@@ -2402,8 +2411,9 @@ class App extends Component {
   startSectionRowPress = (key) => {
     clearTimeout(this._sectionPressTimer);
     this._sectionPressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
       this.setState(s => ({ sectionSelectionMode: true, selectedSectionKeys: s.selectedSectionKeys.includes(key) ? s.selectedSectionKeys : [...s.selectedSectionKeys, key] }));
-    }, 480);
+    }, MULTI_SELECT_LONG_PRESS_MS);
   };
   endSectionRowPress = () => clearTimeout(this._sectionPressTimer);
   toggleSectionSelected = (key) => this.setState(s => {
@@ -2437,8 +2447,9 @@ class App extends Component {
   startProteinRowPress = (key) => {
     clearTimeout(this._proteinPressTimer);
     this._proteinPressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
       this.setState(s => ({ proteinSelectionMode: true, selectedProteinKeys: s.selectedProteinKeys.includes(key) ? s.selectedProteinKeys : [...s.selectedProteinKeys, key] }));
-    }, 480);
+    }, MULTI_SELECT_LONG_PRESS_MS);
   };
   endProteinRowPress = () => clearTimeout(this._proteinPressTimer);
   toggleProteinSelected = (key) => this.setState(s => {
@@ -2506,10 +2517,22 @@ class App extends Component {
   startRowPress = (id) => {
     clearTimeout(this._pressTimer);
     this._pressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
       this.setState(s => ({ selectionMode: true, selectedRecipeIds: s.selectedRecipeIds.includes(id) ? s.selectedRecipeIds : [...s.selectedRecipeIds, id] }));
-    }, 480);
+    }, MULTI_SELECT_LONG_PRESS_MS);
   };
   endRowPress = () => clearTimeout(this._pressTimer);
+  startScopedRecipeRowPress = (id, scope) => {
+    clearTimeout(this._pressTimer);
+    this._pressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
+      this.setState(s => ({
+        selectionMode: true,
+        recipeSelectionScope: scope,
+        selectedRecipeIds: s.recipeSelectionScope === scope && s.selectedRecipeIds.includes(id) ? s.selectedRecipeIds : [id],
+      }));
+    }, MULTI_SELECT_LONG_PRESS_MS);
+  };
   toggleRecipeSelected = (id) => this.setState(s => {
     const has = s.selectedRecipeIds.includes(id);
     const selectedRecipeIds = has ? s.selectedRecipeIds.filter(x => x !== id) : [...s.selectedRecipeIds, id];
@@ -2638,10 +2661,22 @@ class App extends Component {
   startProductRowPress = (id) => {
     clearTimeout(this._productPressTimer);
     this._productPressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
       this.setState(s => ({ productSelectionMode: true, selectedProductIds: s.selectedProductIds.includes(id) ? s.selectedProductIds : [...s.selectedProductIds, id] }));
-    }, 480);
+    }, MULTI_SELECT_LONG_PRESS_MS);
   };
   endProductRowPress = () => clearTimeout(this._productPressTimer);
+  startScopedProductRowPress = (id, scope) => {
+    clearTimeout(this._productPressTimer);
+    this._productPressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
+      this.setState(s => ({
+        productSelectionMode: true,
+        productSelectionScope: scope,
+        selectedProductIds: s.productSelectionScope === scope && s.selectedProductIds.includes(id) ? s.selectedProductIds : [id],
+      }));
+    }, MULTI_SELECT_LONG_PRESS_MS);
+  };
   toggleProductSelected = (id) => this.setState(s => {
     const has = s.selectedProductIds.includes(id);
     const selectedProductIds = has ? s.selectedProductIds.filter(x => x !== id) : [...s.selectedProductIds, id];
@@ -2955,7 +2990,7 @@ class App extends Component {
         rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode ? 'pointer' : 'default'};user-select:none`,
         menuOpen, hideLabel: isHidden ? 'Mostrar Receita' : 'Ocultar Receita',
         onPressStart: () => this.startRowPress(r.id), onPressEnd: this.endRowPress,
-        onRowClick: () => { if (this.state.selectionMode) this.toggleRecipeSelected(r.id); },
+        onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.selectionMode) this.toggleRecipeSelected(r.id); },
         onToggleMenu: () => this.onToggleRecipeMenu(r.id),
         onEdit: () => this.onEditRecipe(r), onDuplicate: () => this.duplicateRecipe(r), onToggleHide: () => this.toggleHideRecipe(r.id),
         onDelete: () => this.askDeleteRecipe(r.id, r.nome),
@@ -2982,7 +3017,7 @@ class App extends Component {
         checkMark: selected ? '✓' : '',
         rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.sectionSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
         onPressStart: () => this.startSectionRowPress(h.key), onPressEnd: this.endSectionRowPress,
-        onRowClick: () => { if (this.state.sectionSelectionMode) this.toggleSectionSelected(h.key); },
+        onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.sectionSelectionMode) this.toggleSectionSelected(h.key); },
         trackStyle: `width:44px;height:26px;border-radius:var(--radius-full);cursor:pointer;position:relative;transition:background 0.15s ease;background:${checked ? 'var(--brand-700)' : 'var(--neutral-200)'}`,
         thumbStyle: `width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;left:${checked ? '21px' : '3px'};transition:left 0.15s ease;box-shadow:var(--shadow-sm)`,
       };
@@ -2998,7 +3033,7 @@ class App extends Component {
         checkMark: selected ? '✓' : '',
         rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.proteinSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
         onPressStart: () => this.startProteinRowPress(c.key), onPressEnd: this.endProteinRowPress,
-        onRowClick: () => { if (this.state.proteinSelectionMode) this.toggleProteinSelected(c.key); },
+        onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.proteinSelectionMode) this.toggleProteinSelected(c.key); },
         trackStyle: `width:44px;height:26px;border-radius:var(--radius-full);cursor:pointer;position:relative;transition:background 0.15s ease;background:${checked ? 'var(--brand-700)' : 'var(--neutral-200)'}`,
         thumbStyle: `width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;left:${checked ? '21px' : '3px'};transition:left 0.15s ease;box-shadow:var(--shadow-sm)`,
       };
@@ -3014,7 +3049,7 @@ class App extends Component {
         checkMark: selected ? '✓' : '',
         rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
         onPressStart: () => this.startProductRowPress(p.id), onPressEnd: this.endProductRowPress,
-        onRowClick: () => { if (this.state.productSelectionMode) this.toggleProductSelected(p.id); },
+        onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode) this.toggleProductSelected(p.id); },
         onStartEditPrice: () => this.startEditPrice(p.id, p.preco), onEditPriceChange: this.onEditPriceChange, onSavePrice: () => this.savePrice(p.id),
         onDelete: () => this.askDeleteProduct(p.id, p.nome),
       };
@@ -3156,13 +3191,13 @@ class App extends Component {
     const myRecipeRows = s.myRecipes.map(r => { const selected = s.recipeSelectionScope === 'my' && s.selectedRecipeIds.includes(r.id); return ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
       source: 'personal', sourceLabel: 'Privada', sourceBadgeStyle: statusBadge('Privada', SOURCE_BADGE_COLORS.personal),
-      showCheckbox: s.selectionMode && s.recipeSelectionScope === 'my', showActions: !(s.selectionMode && s.recipeSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode && s.recipeSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ selectionMode: true, recipeSelectionScope: 'my', selectedRecipeIds: st.selectedRecipeIds.includes(r.id) ? st.selectedRecipeIds : [r.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.selectionMode && this.state.recipeSelectionScope === 'my') this.toggleRecipeSelected(r.id); },
+      showCheckbox: s.selectionMode && s.recipeSelectionScope === 'my', showActions: !(s.selectionMode && s.recipeSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode && s.recipeSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedRecipeRowPress(r.id, 'my'), onPressEnd: this.endRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.selectionMode && this.state.recipeSelectionScope === 'my') this.toggleRecipeSelected(r.id); },
       onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteRecipeChecked(r.id),
     }); });
     const myProductRows = s.myProducts.map(p => { const selected = s.productSelectionScope === 'my' && s.selectedProductIds.includes(p.id); return ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
       active: p.active, activeLabel: p.active ? 'Ativo' : 'Inativo', toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
-      showCheckbox: s.productSelectionMode && s.productSelectionScope === 'my', showActions: !(s.productSelectionMode && s.productSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ productSelectionMode: true, productSelectionScope: 'my', selectedProductIds: st.selectedProductIds.includes(p.id) ? st.selectedProductIds : [p.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.productSelectionMode && this.state.productSelectionScope === 'my') this.toggleProductSelected(p.id); },
+      showCheckbox: s.productSelectionMode && s.productSelectionScope === 'my', showActions: !(s.productSelectionMode && s.productSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'my'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'my') this.toggleProductSelected(p.id); },
       onEdit: () => this.onEditMyProduct(p), onToggleActive: () => this.onToggleMyProductActive(p), onDelete: () => this.askDeleteMyProduct(p.id),
       onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
     }); });
@@ -3270,7 +3305,7 @@ class App extends Component {
         statusBadgeStyle: statusBadge(statusLabel, isPublished ? SOURCE_BADGE_COLORS.public : r.status === 'draft' ? SOURCE_BADGE_COLORS.draft : SOURCE_BADGE_COLORS.archived),
         toggleStatusLabel: isPublished ? 'Despublicar' : 'Publicar',
         updatedAtLabel: this.formatDateTime(r.updated_at),
-        showCheckbox: s.selectionMode && s.recipeSelectionScope === 'site', showActions: !(s.selectionMode && s.recipeSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode && s.recipeSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ selectionMode: true, recipeSelectionScope: 'site', selectedRecipeIds: st.selectedRecipeIds.includes(r.id) ? st.selectedRecipeIds : [r.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.selectionMode && this.state.recipeSelectionScope === 'site') this.toggleRecipeSelected(r.id); },
+        showCheckbox: s.selectionMode && s.recipeSelectionScope === 'site', showActions: !(s.selectionMode && s.recipeSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode && s.recipeSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedRecipeRowPress(r.id, 'site'), onPressEnd: this.endRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.selectionMode && this.state.recipeSelectionScope === 'site') this.toggleRecipeSelected(r.id); },
         onToggleStatus: () => this.onToggleSiteRecipeStatus(r), onEdit: () => this.onEditSiteRecipe(r),
         onDelete: () => this.askDeleteRecipeChecked(r.id),
       };
@@ -3281,7 +3316,7 @@ class App extends Component {
       statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(p.updated_at),
-      showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.setState(st => ({ productSelectionMode: true, productSelectionScope: 'site', selectedProductIds: st.selectedProductIds.includes(p.id) ? st.selectedProductIds : [p.id] })), onPressEnd: () => {}, onRowClick: () => { if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
+      showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'site'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
       onDelete: () => this.askDeleteSiteProduct(p.id),
     }); });
@@ -3420,7 +3455,7 @@ class App extends Component {
           checkMark: selected ? '✓' : '',
           rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:16px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-lg);padding:18px 20px;margin-bottom:10px;box-shadow:var(--shadow-sm);cursor:${s.saleSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
           onPressStart: () => this.startSaleRowPress(v.id), onPressEnd: this.endSaleRowPress,
-          onRowClick: () => { if (this.state.saleSelectionMode) this.toggleSaleSelected(v.id); },
+          onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.saleSelectionMode) this.toggleSaleSelected(v.id); },
           onEdit: () => this.onEditSale(v.id),
           onDelete: () => this.askDeleteSale(v.id),
         };
