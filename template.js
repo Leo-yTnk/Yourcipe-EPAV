@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260804-1';
-import { CustomSelect } from './custom-select.js?v=20260804-1';
+import { html } from './vendor/htm-preact-standalone.js?v=20260805-1';
+import { CustomSelect } from './custom-select.js?v=20260805-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -1176,9 +1176,11 @@ function renderSiteRecipesTab(app, v) {
         </div>
       </div>
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection)}
       ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
       ${v.siteRecipeRows.map((row) => html`
-        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+          ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span> <span style=${row.statusBadgeStyle}>${row.statusLabel}</span>${row.featured ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">★ Receita do Dia</span>` : ''}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
@@ -1204,9 +1206,11 @@ function renderSiteProductsTab(app, v) {
         Novo Produto no Catálogo
       </div>
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection)}
       ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
       ${v.siteProductRows.map((row) => html`
-        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+          ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
@@ -1312,9 +1316,11 @@ function renderMyRecipesTab(app, v) {
         Nova Receita
       </div>
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.selectionMode && v.recipeSelectionScope === 'my' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection)}
       ${!v.myCreationLoading && !v.hasMyRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem receitas próprias.</div>`}
       ${v.myRecipeRows.map((row) => html`
-        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+          ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <div onClick=${row.onOpen} style="flex:1;cursor:pointer">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-size:15px;font-weight:600">${row.name}</span>
@@ -1342,9 +1348,11 @@ function renderMyProductsTab(app, v) {
         Novo Produto
       </div>
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.productSelectionMode && v.productSelectionScope === 'my' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection)}
       ${!v.myCreationLoading && !v.hasMyProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem produtos próprios.</div>`}
       ${v.myProductRows.map((row) => html`
-        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+          ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
