@@ -36,7 +36,6 @@ export function renderApp(app) {
 
             ${v.notLoaded && html`<div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--neutral-600);font-size:15px">Carregando receitas...</div>`}
             ${v.isHome && renderHome(app, v)}
-            ${v.isHome && renderCustomSections(app, v)}
             ${v.isSearch && renderSearch(app, v)}
             ${v.isFavorites && renderFavorites(app, v)}
             ${v.isDados && renderDados(app, v)}
@@ -181,27 +180,21 @@ function renderHome(app, v) {
       `}
     </div>
 
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2L12 2z"></path></svg>`, 'Recomendados', v.recommendedList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>`, 'Práticos para o Dia a Dia', v.practicalList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M20 12v9H4v-9M2 7h20v5H2V7zM12 7v14M12 7c-1.5-3-6-3-6 0s4.5 1.5 6 0zM12 7c1.5-3 6-3 6 0s-4.5 1.5-6 0z"></path></svg>`, 'Ocasiões Especiais', v.occasionList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M13 2L5 14h6l-1 8 9-12h-6l1-8z"></path></svg>`, 'Pronto em 30 Minutos', v.quickList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 3c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 3.6-3.6 6.5-8 6.5s-8-2.9-8-6.5c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.5 5-7.5z"></path></svg>`, 'Direto da Churrasqueira', v.churrascoList, v.goSearch)}
-    ${carouselSection(html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="13" r="7"></circle><path d="M12 6V3M8 3h8"></path></svg>`, 'Petiscos para Compartilhar', v.snackList, v.goSearch)}
+    ${v.homeSectionBlocks.map((sec) => carouselSection(homeSectionIcon(sec.key), sec.label, sec.items, v.goSearch))}
   `;
 }
 
-function renderCustomSections(app, v) {
-  return html`${v.customHomeSectionBlocks.map((sec) => html`
-    <div key=${sec.key} style="padding:18px 0 18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 40px;margin-bottom:14px">
-        <div style="font-size:20px;font-weight:700;letter-spacing:-0.01em">${sec.label}</div>
-        <div onClick=${v.goSearch} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div>
-      </div>
-      <div className="yc-scroll" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
-        ${sec.items.map(recipeCard)}
-      </div>
-    </div>
-  `)}`;
+
+function homeSectionIcon(key) {
+  const icons = {
+    recomendado: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2L12 2z"></path></svg>`,
+    pratico: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>`,
+    ocasiao: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M20 12v9H4v-9M2 7h20v5H2V7zM12 7v14M12 7c-1.5-3-6-3-6 0s4.5 1.5 6 0zM12 7c1.5-3 6-3 6 0s-4.5 1.5-6 0z"></path></svg>`,
+    rapido: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M13 2L5 14h6l-1 8 9-12h-6l1-8z"></path></svg>`,
+    churrasco: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 3c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 3.6-3.6 6.5-8 6.5s-8-2.9-8-6.5c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.5 5-7.5z"></path></svg>`,
+    petisco: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="13" r="7"></circle><path d="M12 6V3M8 3h8"></path></svg>`,
+  };
+  return icons[key] || html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
 }
 
 function renderSearch(app, v) {
