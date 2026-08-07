@@ -73,6 +73,12 @@ export const RECIPE_SECTION_DETAIL_SELECT =
 export const RECIPE_SECTION_SLUG_SELECT =
   `recipe_id, category:categories!recipe_categories_category_id_fkey(slug)`;
 
+// Product-sections mirror of RECIPE_SECTION_DETAIL_SELECT above — categories
+// of type='secao_produto', joined via public.product_categories (see
+// supabase/015_product_sections.sql).
+export const PRODUCT_SECTION_DETAIL_SELECT =
+  `category_id, sort_order, category:categories!product_categories_category_id_fkey(${CATEGORY_DETAIL_SELECT})`;
+
 // Every failed Supabase call is logged here with its real code/message/
 // details/hint (never only a generic string) and returns a normalized
 // `{ error: { code, message, details, hint, operation } }` so the UI can
@@ -183,6 +189,14 @@ export async function fetchSectionRowsForCategory(categoryId) {
   return unwrap(await supabase.from('recipe_categories')
     .select(`recipe_id, recipe:recipes!recipe_categories_recipe_id_fkey(id, name, recipe_code, scope)`)
     .eq('category_id', categoryId), 'fetchSectionRowsForCategory');
+}
+// Product-sections mirror of fetchSectionRowsForCategory above — live
+// product_categories rows referencing categoryId, for the "substitute or
+// remove" resolution UI when deleting a type='secao_produto' category.
+export async function fetchProductSectionRowsForCategory(categoryId) {
+  return unwrap(await supabase.from('product_categories')
+    .select(`product_id, product:products!product_categories_product_id_fkey(id, name, product_code, scope)`)
+    .eq('category_id', categoryId), 'fetchProductSectionRowsForCategory');
 }
 
 // ---- Products (personal) ----
@@ -345,6 +359,20 @@ export async function replaceRecipeCategories(recipeId, categoryIds) {
     categoryIds.map((categoryId, i) => ({ recipe_id: recipeId, category_id: categoryId, sort_order: i }))
   ).select(), 'replaceRecipeCategories:insert');
 }
+// Product-sections mirror of fetchRecipeDetail's sections read /
+// replaceRecipeCategories above — categories of type='secao_produto',
+// joined via public.product_categories (supabase/015_product_sections.sql).
+export async function fetchProductSections(productId) {
+  return unwrap(await supabase.from('product_categories').select(PRODUCT_SECTION_DETAIL_SELECT).eq('product_id', productId).order('sort_order'), 'fetchProductSections');
+}
+export async function replaceProductCategories(productId, categoryIds) {
+  const del = await supabase.from('product_categories').delete().eq('product_id', productId);
+  if (del.error) { logSupabaseError('replaceProductCategories:delete', del.error); return { error: { code: del.error.code, message: del.error.message, details: del.error.details, hint: del.error.hint, operation: 'replaceProductCategories' } }; }
+  if (!categoryIds.length) return { data: [] };
+  return unwrap(await supabase.from('product_categories').insert(
+    categoryIds.map((categoryId, i) => ({ product_id: productId, category_id: categoryId, sort_order: i }))
+  ).select(), 'replaceProductCategories:insert');
+}
 
 // ---- Sharing (owner side) ----
 export async function activateSharing(recipeId) {
@@ -465,6 +493,13 @@ export async function fetchRecipeSectionsBulk(recipeIds) {
   if (!recipeIds.length) return { data: [] };
   return unwrap(await supabase.rpc('list_public_recipe_sections', { p_recipe_ids: recipeIds }), 'fetchRecipeSectionsBulk');
 }
+// Product-sections mirror of fetchRecipeSectionsBulk above — used to
+// hydrate the live Produtos/Início pages the same way recipe sections
+// hydrate Home/Search (supabase/015_product_sections.sql).
+export async function fetchProductSectionsBulk(productIds) {
+  if (!productIds.length) return { data: [] };
+  return unwrap(await supabase.rpc('list_public_product_sections', { p_product_ids: productIds }), 'fetchProductSectionsBulk');
+}
 
 // ---- Admin: full visibility into the public catalog (any status/active),
 // gated server-side by the *_select_admin_site RLS policies (006). No
@@ -575,4 +610,8 @@ export async function adminImportPublicRecipes(mode, recipes) {
 
 export async function adminReorderHomeSections(sections) {
   return unwrap(await supabase.rpc('admin_reorder_home_sections', { p_sections: sections }), 'adminReorderHomeSections');
+}
+// Product-sections mirror of adminReorderHomeSections above.
+export async function adminReorderProductSections(sections) {
+  return unwrap(await supabase.rpc('admin_reorder_product_sections', { p_sections: sections }), 'adminReorderProductSections');
 }

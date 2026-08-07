@@ -182,7 +182,7 @@ class App extends Component {
       // a replacement, or "remove", for every live row before the confirm
       // button becomes enabled (see canConfirm below).
       deleteRows: [], productResolutions: {},
-      deleteCategoryRows: { products: [], recipes: [], sections: [] }, categoryResolutions: { products: {}, recipes: {}, sections: {} },
+      deleteCategoryRows: { products: [], recipes: [], sections: [], productSections: [] }, categoryResolutions: { products: {}, recipes: {}, sections: {}, productSections: {} },
       deleteBusy: false,
       editingProductId: null,
       editPriceValue: '',
@@ -1546,7 +1546,7 @@ class App extends Component {
   onSetRecipeDeleteAction = (action) => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, recipeAction: action } }));
   onCloseReferencesModal = () => {
     if (this.state.deleteBusy) return;
-    this.setState({ deleteImpact: null, deleteImpactKind: null, deleteRows: [], productResolutions: {}, deleteCategoryRows: { products: [], recipes: [], sections: [] }, categoryResolutions: { products: {}, recipes: {}, sections: {} } });
+    this.setState({ deleteImpact: null, deleteImpactKind: null, deleteRows: [], productResolutions: {}, deleteCategoryRows: { products: [], recipes: [], sections: [], productSections: [] }, categoryResolutions: { products: {}, recipes: {}, sections: {}, productSections: {} } });
   };
   onToggleResolveRevokeShares = () => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, revokeShares: !s.deleteResolutions.revokeShares } }));
   onToggleResolveCancelRequests = () => this.setState(s => ({ deleteResolutions: { ...s.deleteResolutions, cancelPendingRequests: !s.deleteResolutions.cancelPendingRequests } }));
@@ -1656,21 +1656,24 @@ class App extends Component {
       this.setState({ confirmDelete: { type: 'categoryChecked', id, scope: data.scope, message: `Excluir a categoria "${data.name}" (código ${data.category_code})? Esta ação não pode ser desfeita.` } });
       return;
     }
-    const [productsRes, recipesRes, sectionsRes] = await Promise.all([
+    const [productsRes, recipesRes, sectionsRes, productSectionsRes] = await Promise.all([
       catalog.fetchProductRowsForCategory(id), catalog.fetchRecipeRowsForCategory(id), catalog.fetchSectionRowsForCategory(id),
+      catalog.fetchProductSectionRowsForCategory(id),
     ]);
-    if (productsRes.error || recipesRes.error || sectionsRes.error) {
+    if (productsRes.error || recipesRes.error || sectionsRes.error || productSectionsRes.error) {
       this.flashAdmin('Não foi possível carregar os usos desta categoria. Tente novamente.');
       return;
     }
     const deleteCategoryRows = {
       products: productsRes.data || [], recipes: recipesRes.data || [],
       sections: (sectionsRes.data || []).filter(row => row.recipe),
+      productSections: (productSectionsRes.data || []).filter(row => row.product),
     };
     const categoryResolutions = {
       products: Object.fromEntries(deleteCategoryRows.products.map(p => [p.id, ''])),
       recipes: Object.fromEntries(deleteCategoryRows.recipes.map(r => [r.id, ''])),
       sections: Object.fromEntries(deleteCategoryRows.sections.map(s => [s.recipe_id, { action: '', replacementCategoryId: '' }])),
+      productSections: Object.fromEntries(deleteCategoryRows.productSections.map(s => [s.product_id, { action: '', replacementCategoryId: '' }])),
     };
     this.setState({ deleteImpact: data, deleteImpactKind: 'category', deleteCategoryRows, categoryResolutions });
   };
@@ -1678,6 +1681,8 @@ class App extends Component {
   onSetCategoryRecipeReplacement = (recipeId, replacementCategoryId) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, recipes: { ...s.categoryResolutions.recipes, [recipeId]: replacementCategoryId } } }));
   onSetCategorySectionAction = (recipeId, action) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, sections: { ...s.categoryResolutions.sections, [recipeId]: { action, replacementCategoryId: action === 'remove' ? '' : (s.categoryResolutions.sections[recipeId] && s.categoryResolutions.sections[recipeId].replacementCategoryId) || '' } } } }));
   onSetCategorySectionReplacement = (recipeId, replacementCategoryId) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, sections: { ...s.categoryResolutions.sections, [recipeId]: { action: 'replace', replacementCategoryId } } } }));
+  onSetCategoryProductSectionAction = (productId, action) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, productSections: { ...s.categoryResolutions.productSections, [productId]: { action, replacementCategoryId: action === 'remove' ? '' : (s.categoryResolutions.productSections[productId] && s.categoryResolutions.productSections[productId].replacementCategoryId) || '' } } } }));
+  onSetCategoryProductSectionReplacement = (productId, replacementCategoryId) => this.setState(s => ({ categoryResolutions: { ...s.categoryResolutions, productSections: { ...s.categoryResolutions.productSections, [productId]: { action: 'replace', replacementCategoryId } } } }));
   onConfirmCategoryDeleteFromReferences = async () => {
     const impact = this.state.deleteImpact; if (!impact) return;
     const rows = this.state.deleteCategoryRows; const res = this.state.categoryResolutions;
@@ -1687,7 +1692,11 @@ class App extends Component {
       const sec = res.sections[s.recipe_id];
       return !sec || !sec.action || (sec.action === 'replace' && !sec.replacementCategoryId);
     });
-    if (missingProduct || missingRecipe || missingSection) { this.flashAdmin('Escolha uma categoria substituta (ou remova a seção) para cada uso desta categoria antes de continuar.'); return; }
+    const missingProductSection = rows.productSections.some(s => {
+      const sec = res.productSections[s.product_id];
+      return !sec || !sec.action || (sec.action === 'replace' && !sec.replacementCategoryId);
+    });
+    if (missingProduct || missingRecipe || missingSection || missingProductSection) { this.flashAdmin('Escolha uma categoria substituta (ou remova a seção) para cada uso desta categoria antes de continuar.'); return; }
     this.setState({ deleteBusy: true });
     const resolution = {
       products: rows.products.map(p => ({ id: p.id, replacement_category_id: res.products[p.id] })),
@@ -1695,6 +1704,9 @@ class App extends Component {
       sections: rows.sections.map(s => (res.sections[s.recipe_id].action === 'replace'
         ? { recipe_id: s.recipe_id, action: 'replace', replacement_category_id: res.sections[s.recipe_id].replacementCategoryId }
         : { recipe_id: s.recipe_id, action: 'remove' })),
+      product_sections: rows.productSections.map(s => (res.productSections[s.product_id].action === 'replace'
+        ? { product_id: s.product_id, action: 'replace', replacement_category_id: res.productSections[s.product_id].replacementCategoryId }
+        : { product_id: s.product_id, action: 'remove' })),
     };
     const { error } = await catalog.deleteCategoryResolved(impact.category_id, resolution);
     this.setState({ deleteBusy: false });
@@ -1976,10 +1988,12 @@ class App extends Component {
         return;
       }
       const recipeIds = (recsRes.data || []).map(r => r.id);
-      const [ingRes, secRes] = await Promise.all([
+      const productIds = (prodsRes.data || []).map(p => p.id);
+      const [ingRes, secRes, prodSecRes] = await Promise.all([
         catalog.fetchRecipeIngredientsBulk(recipeIds), catalog.fetchRecipeSectionsBulk(recipeIds),
+        catalog.fetchProductSectionsBulk(productIds),
       ]);
-      const secondError = ingRes.error || secRes.error;
+      const secondError = ingRes.error || secRes.error || prodSecRes.error;
       if (secondError) {
         if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
           publicCatalogSource: 'demo-fallback',
@@ -1992,6 +2006,8 @@ class App extends Component {
       (ingRes.data || []).forEach(i => { (ingByRecipe[i.recipe_id] = ingByRecipe[i.recipe_id] || []).push(i); });
       const secByRecipe = {};
       (secRes.data || []).forEach(s => { (secByRecipe[s.recipe_id] = secByRecipe[s.recipe_id] || []).push(s); });
+      const secByProduct = {};
+      (prodSecRes.data || []).forEach(s => { (secByProduct[s.product_id] = secByProduct[s.product_id] || []).push(s); });
 
       // Mapped into the exact same shape data.js's DEFAULT_PRODUCTS/
       // DEFAULT_RECIPES already used, so the rest of the (already extensive)
@@ -2000,11 +2016,7 @@ class App extends Component {
       const products = (prodsRes.data || []).map(p => ({
         id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
         imagem: p.image_url || FALLBACK_IMG,
-        // Local-only "Seções de Produtos" tags (see productSections state)
-        // have no Supabase-synced counterpart — a live-catalog product
-        // therefore starts with no section tags and only ever shows up in
-        // the "Todos os Produtos" catch-all until that changes.
-        tags: [],
+        tags: (secByProduct[p.id] || []).map(s => s.slug).filter(Boolean),
       }));
       const recipes = (recsRes.data || []).map(r => {
         const tags = (secByRecipe[r.id] || []).map(s => s.slug).filter(Boolean);
@@ -2047,6 +2059,7 @@ class App extends Component {
   publicRecipeCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'receita');
   publicProteinCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'proteina');
   publicSectionCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'secao');
+  publicProductSectionCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'secao_produto');
 
   // =========================================================================
   // Modo de Criação: "Catálogo Público" — admin-only direct authoring of
@@ -2057,6 +2070,7 @@ class App extends Component {
   siteRecipeCategories = () => this.state.siteCategories.filter(c => c.type === 'receita');
   siteSectionCategories = () => this.state.siteCategories.filter(c => c.type === 'secao');
   siteProteinCategories = () => this.state.siteCategories.filter(c => c.type === 'proteina');
+  siteProductSectionCategories = () => this.state.siteCategories.filter(c => c.type === 'secao_produto');
 
   // `role` is optional and defaults to reading this.state.authRole — pass
   // it explicitly when calling synchronously right after applySessionProfile
@@ -2123,11 +2137,25 @@ class App extends Component {
     this.refreshAdminCatalog();
   };
 
-  onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true, imageUrl: '' } });
-  onEditSiteProduct = (p) => this.setState({ showSiteProductForm: true, siteProductFormMode: 'edit', siteFormError: '', siteProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, active: p.active, imageUrl: p.image_url || '' } });
+  onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true, imageUrl: '', sectionCategoryIds: [] } });
+  onEditSiteProduct = async (p) => {
+    this.setState({
+      showSiteProductForm: true, siteProductFormMode: 'edit', siteFormError: '',
+      siteProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, active: p.active, imageUrl: p.image_url || '', sectionCategoryIds: [] },
+    });
+    const { data, error } = await catalog.fetchProductSections(p.id);
+    if (!error) this.setState(s => (s.siteProductForm && s.siteProductForm.id === p.id
+      ? { siteProductForm: { ...s.siteProductForm, sectionCategoryIds: (data || []).map(row => row.category_id) } }
+      : {}));
+  };
   onCancelSiteProductForm = () => this.setState({ showSiteProductForm: false, siteProductForm: null, siteFormError: '' });
   siteProductFormField = (field) => (e) => this.setState(s => ({ siteProductForm: { ...s.siteProductForm, [field]: e.target.value } }));
   toggleSiteProductFormActive = (e) => this.setState(s => ({ siteProductForm: { ...s.siteProductForm, active: e.target.checked } }));
+  toggleSiteProductSection = (categoryId) => this.setState(s => {
+    const cur = s.siteProductForm.sectionCategoryIds || [];
+    const sectionCategoryIds = cur.includes(categoryId) ? cur.filter(id => id !== categoryId) : [...cur, categoryId];
+    return { siteProductForm: { ...s.siteProductForm, sectionCategoryIds } };
+  });
   onSaveSiteProductForm = async () => {
     const f = this.state.siteProductForm;
     if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ siteFormError: 'Informe o nome e a categoria do produto.' }); return; }
@@ -2136,6 +2164,9 @@ class App extends Component {
       ? await catalog.updateSiteProduct(f.id, patch)
       : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active, imageUrl: patch.image_url });
     if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
+    const productId = f.id || (res.data && res.data.id);
+    const secRes = await catalog.replaceProductCategories(productId, f.sectionCategoryIds || []);
+    if (secRes.error) this.flashAdmin('O produto foi salvo, mas houve um erro ao salvar as seções.');
     this.setState({ showSiteProductForm: false, siteProductForm: null });
     this.refreshAdminCatalog();
   };
@@ -2587,18 +2618,27 @@ class App extends Component {
 
   onHomeSectionDragStart = (id) => this.setState({ homeSectionDragKey: id });
   onHomeSectionDragOver = (e) => { if (e && e.preventDefault) e.preventDefault(); };
+  // Handles both type='secao' (Receitas/Início sections) and
+  // type='secao_produto' (Produtos sections) rows in the same Categorias
+  // admin list — the dragged row's own type decides which subset gets
+  // reordered and which admin_reorder_*_sections RPC persists it, so the
+  // two vocabularies never mix into one order.
   onHomeSectionDrop = async (targetId) => {
     const sourceId = this.state.homeSectionDragKey;
     if (!sourceId || sourceId === targetId || this.state.authRole !== 'admin') { this.setState({ homeSectionDragKey: null }); return; }
     const siteCategories = [...this.state.siteCategories];
-    const sections = siteCategories.filter(c => c.type === 'secao');
+    const dragged = siteCategories.find(c => c.id === sourceId);
+    if (!dragged || (dragged.type !== 'secao' && dragged.type !== 'secao_produto')) { this.setState({ homeSectionDragKey: null }); return; }
+    const sectionType = dragged.type;
+    const sections = siteCategories.filter(c => c.type === sectionType);
     const from = sections.findIndex(c => c.id === sourceId), to = sections.findIndex(c => c.id === targetId);
     if (from < 0 || to < 0) { this.setState({ homeSectionDragKey: null }); return; }
     const [moved] = sections.splice(from, 1); sections.splice(to, 0, moved);
     const orderedIds = new Set(sections.map(c => c.id));
     const reordered = [...siteCategories.filter(c => !orderedIds.has(c.id)), ...sections.map((c, i) => ({ ...c, sort_order: i }))];
     this.setState({ siteCategories: reordered, publicCategories: reordered, homeSectionDragKey: null, homeSectionOrderBusy: true });
-    const { error } = await catalog.adminReorderHomeSections(sections.map((c, i) => ({ id: c.id, sort_order: i })));
+    const reorderFn = sectionType === 'secao' ? catalog.adminReorderHomeSections : catalog.adminReorderProductSections;
+    const { error } = await reorderFn(sections.map((c, i) => ({ id: c.id, sort_order: i })));
     this.setState({ homeSectionOrderBusy: false });
     if (error) { this.flashAdmin('Não foi possível sincronizar a ordem das seções.'); this.loadSiteCatalogData(); this.loadPublicCatalog(); }
   };
@@ -3033,14 +3073,26 @@ class App extends Component {
       .map(sec => ({ key: sec.key, label: sec.label, items: byTag(sec.key) }))
       .filter(b => b.items.length > 0)
       .map(b => ({ ...b, icon: sectionIconByKey[b.key] }));
-    // Produtos (mirrors homeSectionBlocks above, but local-only — see
-    // productSections state/CRUD, no Supabase-synced counterpart exists for
-    // products the way it does for recipe sections).
+    // Produtos — exact mirror of homeSectionBlocks above: the public
+    // catalog's type='secao_produto' categories (siteProductSectionCategories/
+    // admin Categorias tab, replaceProductCategories on the site product
+    // form) are the section vocabulary and order; s.productSections (Dados
+    // screen, local-device-only) only ever supplies the on/off toggle, a
+    // custom icon override, or — when the live catalog has no public
+    // product sections at all (e.g. offline/demo fallback) — the fallback
+    // default list, exactly like sectionOn/homeSectionSource do for recipes.
     const byProductTag = (tag) => s.products.filter(p => p.tags && p.tags.includes(tag)).map((p, i) => this.makeProductCard(p, i));
-    const productHomeSectionBlocks = s.productSections
-      .filter(sec => sec.enabled)
-      .map(sec => ({ key: sec.key, label: sec.label, icon: sec.icon, items: byProductTag(sec.key) }))
-      .filter(b => b.items.length > 0);
+    const productSectionOn = (key) => { const h = s.productSections.find(x => x.key === key); return h ? h.enabled : this.publicProductSectionCategories().some(c => c.slug === key); };
+    const publicProductHomeSections = this.publicProductSectionCategories();
+    const productSectionSource = publicProductHomeSections.length
+      ? publicProductHomeSections.map(c => ({ key: c.slug, label: c.name }))
+      : PRODUCT_SECTION_DEFS.map(d => ({ key: d.key, label: d.label }));
+    const productSectionIconByKey = {}; s.productSections.forEach(h => { if (h.icon) productSectionIconByKey[h.key] = h.icon; });
+    const productHomeSectionBlocks = productSectionSource
+      .filter(sec => productSectionOn(sec.key))
+      .map(sec => ({ key: sec.key, label: sec.label, items: byProductTag(sec.key) }))
+      .filter(b => b.items.length > 0)
+      .map(b => ({ ...b, icon: productSectionIconByKey[b.key] }));
     const productCategoryChips = ['Todas', ...s.productCategories.filter(c => c.enabled).map(c => c.label)].map(cat => ({
       label: cat, onClick: () => this.setProductsCategoryFilter(cat),
       style: `padding:9px 18px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;background:${s.productsCategoryFilter === cat ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.productsCategoryFilter === cat ? 'var(--neutral-0)' : 'var(--neutral-800)'}`,
@@ -3416,7 +3468,7 @@ class App extends Component {
       onEdit: () => this.onEditMyProduct(p), onToggleActive: () => this.onToggleMyProductActive(p), onDelete: () => this.askDeleteMyProduct(p.id),
       onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
     }); }).filter(row => matchesSearch(row.name));
-    const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : 'Proteína/Produto';
+    const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : t === 'secao_produto' ? 'Seção de Produto' : 'Proteína/Produto';
     const myCategoryRows = s.myCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       active: c.active, activeLabel: c.active ? 'Ativa' : 'Inativa', toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
@@ -3542,7 +3594,7 @@ class App extends Component {
       toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(c.updated_at),
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
-      onDelete: () => this.askDeleteSiteCategory(c.id), draggable: c.type === 'secao', isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id),
+      onDelete: () => this.askDeleteSiteCategory(c.id), draggable: c.type === 'secao' || c.type === 'secao_produto', isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id),
     })).filter(row => matchesSearch(row.name));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
     const siteProteinCategoryOptions = this.siteProteinCategories().map(c => ({ value: c.id, label: c.name }));
@@ -3550,6 +3602,11 @@ class App extends Component {
       key: c.id, label: c.name,
       checked: !!(s.siteRecipeForm && s.siteRecipeForm.sectionCategoryIds.includes(c.id)),
       onToggle: () => this.toggleSiteRecipeSection(c.id),
+    }));
+    const siteProductSectionRows = this.siteProductSectionCategories().map(c => ({
+      key: c.id, label: c.name,
+      checked: !!(s.siteProductForm && (s.siteProductForm.sectionCategoryIds || []).includes(c.id)),
+      onToggle: () => this.toggleSiteProductSection(c.id),
     }));
     const siteProductOptionsForIngredients = s.siteProducts.map(p => ({ value: p.id, label: `${p.name} (${this.formatBRL(p.price)}/${p.unit})` }));
     const siteRecipeIngredientRows = s.siteRecipeForm ? s.siteRecipeForm.ingredients.map((row, idx) => {
@@ -3789,11 +3846,11 @@ class App extends Component {
       siteProductFormOnName: this.siteProductFormField('name'), siteProductFormOnCategorySet: this.setFormField('siteProductForm', 'categoryId'),
       siteProductFormOnUnitSet: this.setFormField('siteProductForm', 'unit'), siteProductFormOnPrice: this.siteProductFormField('price'), siteProductFormOnActive: this.toggleSiteProductFormActive,
       siteProductFormOnImageUrl: this.siteProductFormField('imageUrl'),
-      siteProteinCategoryOptions, unidadeOptionsSite: this.unidades,
+      siteProteinCategoryOptions, siteProductSectionRows, unidadeOptionsSite: this.unidades,
       onCancelSiteProductForm: this.onCancelSiteProductForm, onSaveSiteProductForm: this.onSaveSiteProductForm,
       showSiteCategoryForm: s.showSiteCategoryForm, siteCategoryFormTitle: s.siteCategoryFormMode === 'new' ? 'Nova Categoria do Catálogo' : 'Editar Categoria do Catálogo', siteCategoryForm: s.siteCategoryForm || {},
       siteCategoryFormOnName: this.siteCategoryFormField('name'), siteCategoryFormOnTypeSet: this.setFormField('siteCategoryForm', 'type'), siteCategoryFormOnActive: this.toggleSiteCategoryFormActive,
-      siteCategoryTypeOptions: [{ value: 'receita', label: 'Receita' }, { value: 'secao', label: 'Seção' }, { value: 'proteina', label: 'Proteína/Produto' }],
+      siteCategoryTypeOptions: [{ value: 'receita', label: 'Receita' }, { value: 'secao', label: 'Seção' }, { value: 'secao_produto', label: 'Seção de Produto' }, { value: 'proteina', label: 'Proteína/Produto' }],
       onCancelSiteCategoryForm: this.onCancelSiteCategoryForm, onSaveSiteCategoryForm: this.onSaveSiteCategoryForm,
       // "Solicitar publicação"
       publishRequestOpen: !!s.publishRequest, publishRequest: s.publishRequest || {}, publishRequestBusy: s.publishRequestBusy,
@@ -3974,7 +4031,7 @@ class App extends Component {
         const isSite = impact.scope === 'site';
         const byType = (t) => (isSite ? s.siteCategories : s.creationCategories)
           .filter(c => c.type === t && c.id !== impact.category_id).map(c => ({ value: c.id, label: c.name }));
-        const productOptions = byType('proteina'), recipeOptions = byType('receita'), sectionOptions = byType('secao');
+        const productOptions = byType('proteina'), recipeOptions = byType('receita'), sectionOptions = byType('secao'), productSectionOptions = byType('secao_produto');
         const productRows = (s.deleteCategoryRows.products || []).map(p => ({
           key: p.id, label: `${p.name} (${p.product_code})`,
           replacementCategoryId: s.categoryResolutions.products[p.id] || '', options: productOptions,
@@ -3994,10 +4051,20 @@ class App extends Component {
             onSetReplacement: (id) => this.onSetCategorySectionReplacement(sec.recipe_id, id),
           };
         });
+        const productSectionRows = (s.deleteCategoryRows.productSections || []).map(sec => {
+          const res = s.categoryResolutions.productSections[sec.product_id] || { action: '', replacementCategoryId: '' };
+          return {
+            key: sec.product_id, label: `${sec.product.name} (${sec.product.product_code})`,
+            action: res.action, replacementCategoryId: res.replacementCategoryId, options: productSectionOptions,
+            onSetAction: (action) => this.onSetCategoryProductSectionAction(sec.product_id, action),
+            onSetReplacement: (id) => this.onSetCategoryProductSectionReplacement(sec.product_id, id),
+          };
+        });
         const canConfirm = productRows.every(r => r.replacementCategoryId) && recipeRows.every(r => r.replacementCategoryId)
-          && sectionRows.every(r => r.action === 'remove' || (r.action === 'replace' && r.replacementCategoryId));
+          && sectionRows.every(r => r.action === 'remove' || (r.action === 'replace' && r.replacementCategoryId))
+          && productSectionRows.every(r => r.action === 'remove' || (r.action === 'replace' && r.replacementCategoryId));
         return {
-          name: impact.name, code: impact.category_code, productRows, recipeRows, sectionRows,
+          name: impact.name, code: impact.category_code, productRows, recipeRows, sectionRows, productSectionRows,
           pendingRequestCount: impact.pending_request_count, pendingRequestCodes: impact.pending_request_codes || [],
           foreignNote: impact.foreign_personal_ref_count > 0
             ? `${impact.foreign_personal_ref_count} item(ns) pessoal(is) de outro(s) usuário(s) também usam esta categoria. Eles não podem ser resolvidos por aqui — a exclusão ficará bloqueada até que o próprio dono deixe de usá-la.`
