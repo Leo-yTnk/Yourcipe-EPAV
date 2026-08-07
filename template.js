@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260807-1';
-import { CustomSelect } from './custom-select.js?v=20260807-1';
+import { html } from './vendor/htm-preact-standalone.js?v=20260807-2';
+import { CustomSelect } from './custom-select.js?v=20260807-2';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -50,6 +50,7 @@ export function renderApp(app) {
 
         ${v.isDetail && renderDetailButtons(app, v)}
         ${v.showProductDetailModal && renderProductDetailModal(app, v)}
+        ${v.showProductSectionPicker && renderProductSectionPickerModal(app, v)}
         ${v.showBottomTabBar && renderBottomTabBar(app, v)}
         ${v.showSideNavRail && renderSideNavRail(app, v)}
         ${v.showProfileSetup && renderProfileSetupModal(app, v)}
@@ -193,7 +194,7 @@ function renderHome(app, v) {
       `}
     </div>
 
-    ${v.homeSectionBlocks.map((sec) => carouselSection(homeSectionIcon(sec.key), sec.label, sec.items, v.goSearch))}
+    ${v.homeSectionBlocks.map((sec) => carouselSection(resolveSectionIcon(sec.icon, sec.key, false), sec.label, sec.items, v.goSearch))}
   `;
 }
 
@@ -227,7 +228,7 @@ function renderInicio(app, v) {
 
     ${(() => {
       const recommended = v.homeSectionBlocks.find((b) => b.key === 'recomendado') || v.homeSectionBlocks[0];
-      return recommended ? carouselSection(homeSectionIcon(recommended.key), recommended.label, recommended.items, v.goHome) : null;
+      return recommended ? carouselSection(resolveSectionIcon(recommended.icon, recommended.key, false), recommended.label, recommended.items, v.goHome) : null;
     })()}
     ${carouselSection(productSectionIcon(), v.inicioProductBlock.label, v.inicioProductBlock.items, v.goProducts)}
   `;
@@ -250,12 +251,48 @@ function productSectionIcon() {
   return html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M4 8l1.5-4h13L20 8"></path><path d="M4 8h16v12H4z"></path><path d="M9 12a3 3 0 006 0"></path></svg>`;
 }
 
+// Icon picker palette (#4) — a fixed set of inline SVGs (18x18, same visual
+// language as homeSectionIcon above) an admin can pick from when creating a
+// new recipe or product section. Reuses the exact same SVGs as
+// homeSectionIcon's per-key lookup for the first 7 entries (so a section
+// created with, say, the "clock" icon looks identical to the built-in
+// "pratico" section), plus a handful of new generic icons.
+const ICON_CHOICES = [
+  { key: 'star', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 2l2.4 6.8L21 11l-6.6 2.2L12 20l-2.4-6.8L3 11l6.6-2.2L12 2z"></path></svg>` },
+  { key: 'clock', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 3"></path></svg>` },
+  { key: 'calendar', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M20 12v9H4v-9M2 7h20v5H2V7zM12 7v14M12 7c-1.5-3-6-3-6 0s4.5 1.5 6 0zM12 7c1.5-3 6-3 6 0s-4.5 1.5-6 0z"></path></svg>` },
+  { key: 'lightning', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M13 2L5 14h6l-1 8 9-12h-6l1-8z"></path></svg>` },
+  { key: 'flame', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 3c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 3.6-3.6 6.5-8 6.5s-8-2.9-8-6.5c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.5 5-7.5z"></path></svg>` },
+  { key: 'skewer', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="13" r="7"></circle><path d="M12 6V3M8 3h8"></path></svg>` },
+  { key: 'tag', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M20.6 12.6L12 21.2 2.8 12 12 2.8h8.2z"></path><circle cx="9" cy="9" r="1.5"></circle></svg>` },
+  { key: 'heart', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 21s-7.5-4.6-10-9.3C.4 8.3 2 4.5 5.6 4c2-.3 3.9.6 5 2.2C11.7 4.6 13.6 3.7 15.6 4c3.6.5 5.2 4.3 3.6 7.7C19.5 16.4 12 21 12 21z"></path></svg>` },
+  { key: 'leaf', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M5 21c8 0 14-6 14-14V4h-3C8 4 3 9 3 16v5z"></path><path d="M5 21c3-4 6-7 12-11"></path></svg>` },
+  { key: 'fish', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M2 12s4-6 11-6 9 6 9 6-2 6-9 6-11-6-11-6z"></path><path d="M18 9l3-3M18 15l3 3"></path><circle cx="8" cy="12" r="1"></circle></svg>` },
+  { key: 'drumstick', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M15 11c2.5-2.5 6.5-2.5 7.5 0s0 5-2.5 7.5-5.5 3.5-7.5 1.5-1-5 1.5-7.5z"></path><path d="M13 13L3 21"></path><path d="M3 21l1-4 3-1"></path></svg>` },
+  { key: 'bread', svg: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M4 12c0-5 3.5-9 8-9s8 4 8 9v6H4v-6z"></path><path d="M9 12v3M12 10v5M15 12v3"></path></svg>` },
+];
+function iconChoiceSvg(iconKey) {
+  const found = ICON_CHOICES.find((c) => c.key === iconKey);
+  return found ? found.svg : null;
+}
+// Shared icon-resolution helper for every carousel-header icon (recipe AND
+// product sections alike, per #4) — an admin-picked palette icon (stored on
+// the section at creation time, see addHomeSection/addProductSection) wins
+// when present, otherwise falls back to the pre-existing key-based lookup
+// (homeSectionIcon for recipe sections, productSectionIcon for product
+// sections/category carousels).
+function resolveSectionIcon(iconKey, fallbackKey, isProduct) {
+  const fromPalette = iconKey && iconChoiceSvg(iconKey);
+  if (fromPalette) return fromPalette;
+  return isProduct ? productSectionIcon() : homeSectionIcon(fallbackKey);
+}
+
 // Produtos — mirrors renderHome's structure (header + category chips +
 // section carousels), but for products instead of recipes: reuses
-// productCard (below) instead of recipeCard, and always ends with a
-// "Todos os Produtos" catch-all so a product with no section tag is never
-// invisible (see productPageBlocks in computeViewModel — it already
-// appends this catch-all).
+// productCard (below) instead of recipeCard. Ends with one carousel per
+// enabled product category/badge (Bovinos, Suínos, Aves...) instead of a
+// single "Todos os Produtos" catch-all — see the categoryBlocks/
+// productPageBlocks assembly in computeViewModel.
 function productCard(item) {
   return html`
     <div key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
@@ -302,7 +339,7 @@ function renderProducts(app, v) {
       </div>
     </div>
 
-    ${v.productPageBlocks.map((sec) => productCarouselSection(sec.key === 'todos' ? productSectionIcon() : homeSectionIcon(sec.key), sec.label, sec.items))}
+    ${v.productPageBlocks.map((sec) => productCarouselSection(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
     ${v.productsEmpty && html`<div style="padding:60px 40px;text-align:center;color:var(--neutral-600);font-size:15px">Nenhum produto cadastrado ainda.</div>`}
   `;
 }
@@ -325,6 +362,60 @@ function renderProductDetailModal(app, v) {
           <div style="font-size:22px;font-weight:700;margin-bottom:6px">${p.nome}</div>
           <div style="font-size:14px;color:var(--neutral-600);margin-bottom:16px">${p.categoria} · por ${p.unidade}</div>
           <div style="font-size:26px;font-weight:700;color:var(--brand-700)">${p.precoLabel}</div>
+          ${p.relatedRecipes && p.relatedRecipes.length > 0 && html`
+            <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--neutral-100)">
+              <div style="font-size:13px;font-weight:700;color:var(--neutral-600);margin-bottom:10px">Receitas que usam este produto</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                ${p.relatedRecipes.map((r) => html`
+                  <div key=${r.id} onClick=${r.onOpen} style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--neutral-50);border-radius:var(--radius-md);padding:10px 14px;cursor:pointer;transition:background 0.15s ease">
+                    <span style="font-size:14px;font-weight:600;color:var(--brand-700)">${r.nome}</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="2.2"><path d="M9 6l6 6-6 6"></path></svg>
+                  </div>
+                `)}
+              </div>
+            </div>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// "Seções de Produtos" click-to-add-products picker (#1) — a search field
+// (#2, same input) over the full products list, each row a checkbox toggling
+// whether that product belongs to the section being edited. Chrome mirrors
+// renderProductDetailModal (overlay, close button, centered card).
+function renderProductSectionPickerModal(app, v) {
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:21;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div style="width:480px;max-width:100%;max-height:80%;display:flex;flex-direction:column;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;overflow:hidden">
+        <div style="padding:24px 24px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div>
+            <div style="font-size:19px;font-weight:700">Produtos em: ${v.productSectionPickerLabel}</div>
+            <div style="font-size:12px;color:var(--neutral-600);margin-top:2px">Toque em um produto para adicioná-lo ou removê-lo desta seção.</div>
+          </div>
+          <div onClick=${v.onCloseProductSectionPicker} aria-label="Fechar" role="button" tabindex="0" style="width:32px;height:32px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          </div>
+        </div>
+        <div style="padding:16px 24px 0">
+          <div style="position:relative">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2" style="position:absolute;left:14px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+            <input type="text" value=${v.productSectionPickerQuery} onInput=${v.onProductSectionPickerSearchChange} placeholder="Buscar produtos..." style="color:var(--neutral-900);width:100%;padding:12px 14px 12px 40px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);font-family:var(--font-sans);font-size:14px;outline:none;box-sizing:border-box"/>
+          </div>
+        </div>
+        <div className="yc-scroll" style="flex:1;overflow-y:auto;padding:16px 24px 24px">
+          ${v.productSectionPickerRows.length === 0 && html`<div style="text-align:center;color:var(--neutral-600);font-size:13px;padding:20px 0">Nenhum produto encontrado.</div>`}
+          ${v.productSectionPickerRows.map((row) => html`
+            <div key=${row.id} onClick=${row.onToggle} style=${`display:flex;align-items:center;gap:12px;background:${row.checked ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${row.checked ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:background 0.15s ease,border-color 0.15s ease`}>
+              <img loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${row.nome}</div>
+                <div style="font-size:12px;color:var(--neutral-600)">${row.categoria}</div>
+              </div>
+              <div style=${`width:22px;height:22px;border-radius:7px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${row.checked ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`}>${row.checked ? '✓' : ''}</div>
+            </div>
+          `)}
         </div>
       </div>
     </div>
@@ -1273,6 +1364,33 @@ function toggleRow(row) {
   `;
 }
 
+// Icon picker (#4) — a row of clickable swatches shown right above a "Nova
+// seção" add-input, creation-time only (no edit-existing-section icon UI).
+function iconChoiceRow(selectedKey, onPick) {
+  return html`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      ${ICON_CHOICES.map((c) => html`
+        <div key=${c.key} onClick=${() => onPick(c.key)} title=${c.key} style=${`width:34px;height:34px;border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;cursor:pointer;background:${selectedKey === c.key ? 'var(--brand-700)' : 'var(--neutral-50)'};border:1.5px solid ${selectedKey === c.key ? 'var(--brand-700)' : 'var(--neutral-100)'};transition:background 0.15s ease,border-color 0.15s ease`}>${c.svg}</div>
+      `)}
+    </div>
+  `;
+}
+
+// Shared search bar (#2) rendered near the top of every "Modo de Criação"
+// admin tab, right after its "+ Novo X" button. One shared v.adminSearchQuery
+// works across all 9 tabs since only one tab is ever visible at a time and
+// the query is reset on every tab switch (see onSetAdminTabX in app.js).
+// Visual style mirrors renderSearch's canonical search input (magnifying
+// glass icon + pill input).
+function adminSearchBar(v) {
+  return html`
+    <div style="position:relative;margin-bottom:16px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2" style="position:absolute;left:14px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+      <input type="text" value=${v.adminSearchQuery} onInput=${v.onAdminSearchChange} placeholder="Buscar..." style="color:var(--neutral-900);width:100%;padding:12px 14px 12px 40px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);font-family:var(--font-sans);font-size:14px;outline:none;box-sizing:border-box"/>
+    </div>
+  `;
+}
+
 // Local-device-only personalization (Home sections shown, which product
 // categories are offered when cadastro/import). NOT the public catalog —
 // that is now the Supabase-backed "Catálogo Público" admin tabs below,
@@ -1289,6 +1407,7 @@ function renderLocalHomeCustomization(app, v) {
       ${v.sectionSelectionMode && selectionBar(v.selectedSectionCountLabel, v.onBulkDeleteSectionsAsk, v.onCancelSectionSelection)}
       ${v.homeSectionOrderBusy && html`<div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">Sincronizando ordem das seções...</div>`}
       ${v.sectionToggleRows.map(toggleRow)}
+      ${iconChoiceRow(v.newSectionIcon, v.onPickSectionIcon)}
       <div style="display:flex;gap:10px;margin-top:6px">
         <input type="text" placeholder="Nova seção (ex: Sopas de Inverno)" value=${v.newSectionLabel} onInput=${v.onNewSectionLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
         <div onClick=${v.onAddSection} style="padding:12px 18px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">+ Adicionar</div>
@@ -1298,6 +1417,7 @@ function renderLocalHomeCustomization(app, v) {
       <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na página Produtos/Início. Arraste para reordenar. Segure uma seção para selecionar várias e excluir de uma vez.</div>
       ${v.productSectionSelectionMode && selectionBar(v.selectedProductSectionCountLabel, v.onBulkDeleteProductSectionsAsk, v.onCancelProductSectionSelection)}
       ${v.productSectionToggleRows.map(toggleRow)}
+      ${iconChoiceRow(v.newProductSectionIcon, v.onPickProductSectionIcon)}
       <div style="display:flex;gap:10px;margin-top:6px">
         <input type="text" placeholder="Nova seção (ex: Promoções)" value=${v.newProductSectionLabel} onInput=${v.onNewProductSectionLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
         <div onClick=${v.onAddProductSection} style="padding:12px 18px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">+ Adicionar</div>
@@ -1328,6 +1448,7 @@ function renderSiteRecipesTab(app, v) {
           Importar Planilha
         </div>
       </div>
+      ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection)}
       ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
@@ -1358,6 +1479,7 @@ function renderSiteProductsTab(app, v) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Novo Produto no Catálogo
       </div>
+      ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection)}
       ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
@@ -1390,6 +1512,7 @@ function renderSiteCategoriesTab(app, v) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Nova Categoria no Catálogo
       </div>
+      ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
       ${v.siteCategoryRows.map((row) => html`
@@ -1469,6 +1592,7 @@ function renderMyRecipesTab(app, v) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Nova Receita
       </div>
+      ${adminSearchBar(v)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.selectionMode && v.recipeSelectionScope === 'my' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection)}
       ${!v.myCreationLoading && !v.hasMyRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem receitas próprias.</div>`}
@@ -1501,6 +1625,7 @@ function renderMyProductsTab(app, v) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Novo Produto
       </div>
+      ${adminSearchBar(v)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.productSelectionMode && v.productSelectionScope === 'my' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection)}
       ${!v.myCreationLoading && !v.hasMyProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem produtos próprios.</div>`}
@@ -1535,6 +1660,7 @@ function renderMyCategoriesTab(app, v) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Nova Categoria
       </div>
+      ${adminSearchBar(v)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${!v.myCreationLoading && !v.hasMyCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem categorias próprias.</div>`}
       ${v.myCategoryRows.map((row) => html`
@@ -1870,6 +1996,7 @@ function renderCopyResolveModal(app, v) {
 function renderSharedRecipesTab(app, v) {
   return html`
     <div style="padding:8px 40px 24px">
+      ${adminSearchBar(v)}
       ${v.sharedLibraryLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.hasSharedLibraryError && html`
         <div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -1908,6 +2035,7 @@ function requestFilterBar(v) {
 function renderMyRequestsTab(app, v) {
   return html`
     <div style="padding:8px 40px 24px">
+      ${adminSearchBar(v)}
       ${requestFilterBar(v)}
       ${v.myRequestsLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.hasMyRequestsError && html`
@@ -1940,6 +2068,7 @@ function renderMyRequestsTab(app, v) {
 function renderRequestsInboxTab(app, v) {
   return html`
     <div style="padding:8px 40px 24px">
+      ${adminSearchBar(v)}
       ${requestFilterBar(v)}
       ${v.allRequestsLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.hasAllRequestsError && html`
