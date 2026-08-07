@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260807-1';
-import { CustomSelect } from './custom-select.js?v=20260807-1';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260807-2';
+import { CustomSelect } from './custom-select.js?v=20260807-2';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260807-1';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260807-1';
-import { supabase } from './supabase-client.js?v=20260807-1';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260807-1';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260807-1';
-import { normalizeDisplayName } from './display-name.js?v=20260807-1';
-import * as catalog from './catalog.js?v=20260807-1';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260807-1';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260807-1';
-import { createLoadGuard } from './load-guard.js?v=20260807-1';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260807-1';
+} from './data.js?v=20260807-2';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260807-2';
+import { supabase } from './supabase-client.js?v=20260807-2';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260807-2';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260807-2';
+import { normalizeDisplayName } from './display-name.js?v=20260807-2';
+import * as catalog from './catalog.js?v=20260807-2';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260807-2';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260807-2';
+import { createLoadGuard } from './load-guard.js?v=20260807-2';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260807-2';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260807-1';
+const FRONTEND_VERSION = '20260807-2';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -95,7 +95,8 @@ class App extends Component {
     return {
       frameW: (typeof window !== 'undefined') ? window.innerWidth : 1200,
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
-      darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', navRailSide, weekStartDay, fontSize,
+      darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize,
+      productSectionPickerKey: null, productSectionPickerQuery: '', adminSearchQuery: '',
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
       productSelectionMode: false, selectedProductIds: [], productSelectionScope: '',
@@ -390,6 +391,10 @@ class App extends Component {
       { key: 'alt', open: !!st.altModal, zIndex: 20, onClose: this.closeAltModal, onSubmit: null, busy: false, dirty: false, multiline: false },
       // Produtos: simple read-only detail modal (photo/nome/categoria/preço).
       { key: 'productDetail', open: !!st.selectedProductId, zIndex: 21, onClose: this.closeProductDetail, onSubmit: null, busy: false, dirty: false, multiline: false },
+      // "Seções de Produtos" click-to-add-products picker — a search field
+      // (multiline: false) with no single "primary" submit action (every row
+      // toggles its own checkbox), so onSubmit is null like productDetail.
+      { key: 'productSectionPicker', open: !!st.productSectionPickerKey, zIndex: 21, onClose: this.closeProductSectionPicker, onSubmit: null, busy: false, dirty: false, multiline: false },
       // Confirm-delete — a "simple modal/dialog" whose Enter key confirms
       // the destructive action, same as clicking its own "Excluir" button;
       // never while a delete is already mid-flight.
@@ -1119,18 +1124,19 @@ class App extends Component {
   };
   onSetWeekStartDay = (v) => { this.setState({ weekStartDay: Number(v) }); this.persist(LS_KEYS.weekStartDay, Number(v)); };
   onBackFromAdmin = () => { this.animateTo('profile'); this.setState({ screen: 'profile' }); };
-  setAdminTabRecipes = () => this.setState({ adminTab: 'recipes' });
-  setAdminTabProducts = () => this.setState({ adminTab: 'products' });
-  setAdminTabCategories = () => this.setState({ adminTab: 'categories' });
-  setAdminTabMyRecipes = () => this.setState({ adminTab: 'myRecipes' });
-  setAdminTabMyProducts = () => this.setState({ adminTab: 'myProducts' });
-  setAdminTabMyCategories = () => this.setState({ adminTab: 'myCategories' });
+  onAdminSearchChange = (e) => this.setState({ adminSearchQuery: e.target.value });
+  setAdminTabRecipes = () => this.setState({ adminTab: 'recipes', adminSearchQuery: '' });
+  setAdminTabProducts = () => this.setState({ adminTab: 'products', adminSearchQuery: '' });
+  setAdminTabCategories = () => this.setState({ adminTab: 'categories', adminSearchQuery: '' });
+  setAdminTabMyRecipes = () => this.setState({ adminTab: 'myRecipes', adminSearchQuery: '' });
+  setAdminTabMyProducts = () => this.setState({ adminTab: 'myProducts', adminSearchQuery: '' });
+  setAdminTabMyCategories = () => this.setState({ adminTab: 'myCategories', adminSearchQuery: '' });
   // Refetches "Compartilhadas Comigo" every time the tab is opened (cheap,
   // guarded against overlap by loadSharedLibrary's own in-flight check) —
   // not just once on first "Modo de Criação" entry — so a redemption made
   // in another tab/device, or a revocation by the owner, is reflected the
   // next time the user comes back to this tab without a manual reload.
-  setAdminTabSharedRecipes = () => { this.setState({ adminTab: 'sharedRecipes' }); if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
+  setAdminTabSharedRecipes = () => { this.setState({ adminTab: 'sharedRecipes', adminSearchQuery: '' }); if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
 
   flashAdmin = (msg) => { this.setState({ adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 4000); };
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
@@ -2282,7 +2288,7 @@ class App extends Component {
       if (this._loadGuard.isCurrent('myRequests', runId)) this.setState({ myRequestsLoading: false });
     }
   };
-  setAdminTabMyRequests = () => { this.setState({ adminTab: 'myRequests' }); if (this.state.session) this.loadMyRequests(this.state.session.user.id); };
+  setAdminTabMyRequests = () => { this.setState({ adminTab: 'myRequests', adminSearchQuery: '' }); if (this.state.session) this.loadMyRequests(this.state.session.user.id); };
   setRequestFilterStatus = (status) => this.setState({ requestFilterStatus: status });
   onCancelMyRequest = async (id) => {
     const { error } = await catalog.cancelChangeRequest(id);
@@ -2345,7 +2351,7 @@ class App extends Component {
       if (this._loadGuard.isCurrent('allRequests', runId)) this.setState({ allRequestsLoading: false });
     }
   };
-  setAdminTabRequestsInbox = () => { this.setState({ adminTab: 'requestsInbox' }); this.loadAllRequests(); };
+  setAdminTabRequestsInbox = () => { this.setState({ adminTab: 'requestsInbox', adminSearchQuery: '' }); this.loadAllRequests(); };
 
   onOpenReturnRequestModal = () => this.setState({ showReturnRequestModal: true, returnNoteValue: '', requestActionError: '' });
   onCloseReturnRequestModal = () => this.setState({ showReturnRequestModal: false });
@@ -2420,15 +2426,16 @@ class App extends Component {
     return { homeSections };
   });
   onNewSectionLabelChange = (e) => this.setState({ newSectionLabel: e.target.value });
+  onPickSectionIcon = (iconKey) => this.setState({ newSectionIcon: iconKey });
   addHomeSection = () => {
     const label = this.state.newSectionLabel.trim();
     if (!label) return;
     const slug = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('secao_' + Date.now());
     this.setState(s => {
       if (s.homeSections.some(h => h.key === slug)) return {};
-      const homeSections = [...s.homeSections, { key: slug, label, enabled: true, custom: true }];
+      const homeSections = [...s.homeSections, { key: slug, label, enabled: true, custom: true, icon: s.newSectionIcon }];
       this.persist(LS_KEYS.sections, homeSections);
-      return { homeSections, newSectionLabel: '' };
+      return { homeSections, newSectionLabel: '', newSectionIcon: 'star' };
     });
   };
   removeHomeSection = (key) => this.setState(s => {
@@ -2459,21 +2466,37 @@ class App extends Component {
     return { productSections };
   });
   onNewProductSectionLabelChange = (e) => this.setState({ newProductSectionLabel: e.target.value });
+  onPickProductSectionIcon = (iconKey) => this.setState({ newProductSectionIcon: iconKey });
   addProductSection = () => {
     const label = this.state.newProductSectionLabel.trim();
     if (!label) return;
     const slug = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('secao_' + Date.now());
     this.setState(s => {
       if (s.productSections.some(h => h.key === slug)) return {};
-      const productSections = [...s.productSections, { key: slug, label, enabled: true, custom: true }];
+      const productSections = [...s.productSections, { key: slug, label, enabled: true, custom: true, icon: s.newProductSectionIcon }];
       this.persist(LS_KEYS.productSections, productSections);
-      return { productSections, newProductSectionLabel: '' };
+      return { productSections, newProductSectionLabel: '', newProductSectionIcon: 'star' };
     });
   };
   removeProductSection = (key) => this.setState(s => {
     const productSections = s.productSections.filter(h => h.key !== key);
     this.persist(LS_KEYS.productSections, productSections);
     return { productSections };
+  });
+  // Click-to-add-products picker (product sections only, per user request —
+  // recipe sections intentionally do not get this).
+  openProductSectionPicker = (key) => this.setState({ productSectionPickerKey: key, productSectionPickerQuery: '' });
+  closeProductSectionPicker = () => this.setState({ productSectionPickerKey: null, productSectionPickerQuery: '' });
+  onProductSectionPickerSearchChange = (e) => this.setState({ productSectionPickerQuery: e.target.value });
+  toggleProductInSection = (productId, sectionKey) => this.setState(s => {
+    const products = s.products.map(p => {
+      if (p.id !== productId) return p;
+      const cur = p.tags || [];
+      const tags = cur.includes(sectionKey) ? cur.filter(t => t !== sectionKey) : [...cur, sectionKey];
+      return { ...p, tags };
+    });
+    this.persist(LS_KEYS.products, products);
+    return { products };
   });
   startProductSectionRowPress = (key) => {
     clearTimeout(this._productSectionPressTimer);
@@ -2999,34 +3022,70 @@ class App extends Component {
     const homeSectionSource = publicHomeSections.length
       ? publicHomeSections.map(c => ({ key: c.slug, label: c.name }))
       : SECTION_DEFS.map(d => ({ key: d.key, label: d.label }));
+    // icon carried through per-section (set on custom sections at creation
+    // time, see addHomeSection/addProductSection) — used by
+    // resolveSectionIcon in template.js, falling back to the key-based
+    // lookup when a section (default or public-catalog) has none.
+    const sectionIconByKey = {}; s.homeSections.forEach(h => { if (h.icon) sectionIconByKey[h.key] = h.icon; });
     const homeSectionBlocks = homeSectionSource
       .filter(sec => sectionOn(sec.key))
       .map(sec => ({ key: sec.key, label: sec.label, items: byTag(sec.key) }))
-      .filter(b => b.items.length > 0);
+      .filter(b => b.items.length > 0)
+      .map(b => ({ ...b, icon: sectionIconByKey[b.key] }));
     // Produtos (mirrors homeSectionBlocks above, but local-only — see
     // productSections state/CRUD, no Supabase-synced counterpart exists for
     // products the way it does for recipe sections).
     const byProductTag = (tag) => s.products.filter(p => p.tags && p.tags.includes(tag)).map((p, i) => this.makeProductCard(p, i));
     const productHomeSectionBlocks = s.productSections
       .filter(sec => sec.enabled)
-      .map(sec => ({ key: sec.key, label: sec.label, items: byProductTag(sec.key) }))
+      .map(sec => ({ key: sec.key, label: sec.label, icon: sec.icon, items: byProductTag(sec.key) }))
       .filter(b => b.items.length > 0);
     const productCategoryChips = ['Todas', ...s.productCategories.filter(c => c.enabled).map(c => c.label)].map(cat => ({
       label: cat, onClick: () => this.setProductsCategoryFilter(cat),
       style: `padding:9px 18px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;background:${s.productsCategoryFilter === cat ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.productsCategoryFilter === cat ? 'var(--neutral-0)' : 'var(--neutral-800)'}`,
     }));
-    const productsCategoryFiltered = s.products.filter(p => s.productsCategoryFilter === 'Todas' || p.categoria === s.productsCategoryFilter);
-    const allProductsBlock = { key: 'todos', label: 'Todos os Produtos', items: productsCategoryFiltered.map((p, i) => this.makeProductCard(p, i)) };
+    // Produtos page: one carousel per enabled product category/badge
+    // (Bovinos, Suínos, Aves...) instead of a single "Todos os Produtos"
+    // catch-all — replaces every product's guaranteed visibility with
+    // per-category visibility instead, respecting the category chip filter
+    // exactly like the old catch-all did (each block naturally collapses to
+    // empty/hidden when a specific chip other than its own is selected).
+    const categoryBlocks = s.productCategories.filter(c => c.enabled).map(c => ({
+      key: 'cat_' + c.key, label: c.label,
+      items: s.products.filter(p => p.categoria === c.label && (s.productsCategoryFilter === 'Todas' || p.categoria === s.productsCategoryFilter)).map((p, i) => this.makeProductCard(p, i)),
+    })).filter(b => b.items.length > 0);
     const productSectionBlocksFiltered = productHomeSectionBlocks.map(b => ({
       ...b, items: b.items.filter(it => s.productsCategoryFilter === 'Todas' || it.categoria === s.productsCategoryFilter),
     })).filter(b => b.items.length > 0);
-    const productPageBlocks = [...productSectionBlocksFiltered, allProductsBlock];
+    const productPageBlocks = [...productSectionBlocksFiltered, ...categoryBlocks];
     const inicioProductItems = s.products.slice(0, 12).map((p, i) => this.makeProductCard(p, i));
     const inicioProductBlock = { key: 'inicio_produtos', label: 'Produtos em Destaque', items: (byProductTag('recomendado').length ? byProductTag('recomendado') : inicioProductItems) };
     let selectedProduct = null;
     if (s.selectedProductId) {
       const p = s.products.find(x => x.id === s.selectedProductId);
-      if (p) selectedProduct = { id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, precoLabel: this.formatBRL(p.preco), imagem: p.imagem || FALLBACK_IMG };
+      if (p) {
+        const relatedRecipes = s.recipes.filter(r => r.ingredientes && r.ingredientes.some(i => i.produtoId === p.id)).map(r => ({
+          id: r.id, nome: r.nome,
+          onOpen: () => { this.closeProductDetail(); this.setState({ previousDetailScreen: 'products' }); this.selectRecipe(r.id); },
+        }));
+        selectedProduct = { id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, precoLabel: this.formatBRL(p.preco), imagem: p.imagem || FALLBACK_IMG, relatedRecipes };
+      }
+    }
+    // "Seções de Produtos" click-to-add-products picker (#1) — search
+    // filters s.products by nome, case-insensitive.
+    let productSectionPickerRows = [];
+    let productSectionPickerLabel = '';
+    if (s.productSectionPickerKey) {
+      const sec = s.productSections.find(h => h.key === s.productSectionPickerKey);
+      productSectionPickerLabel = sec ? sec.label : '';
+      const q = (s.productSectionPickerQuery || '').trim().toLowerCase();
+      productSectionPickerRows = s.products
+        .filter(p => !q || p.nome.toLowerCase().includes(q))
+        .map(p => ({
+          id: p.id, nome: p.nome, imagem: p.imagem || FALLBACK_IMG, categoria: p.categoria,
+          checked: !!(p.tags && p.tags.includes(s.productSectionPickerKey)),
+          onToggle: () => this.toggleProductInSection(p.id, s.productSectionPickerKey),
+        }));
     }
 
     const heroTagged = visibleRecipes.filter(r => r.tags.includes('destaque'));
@@ -3159,13 +3218,13 @@ class App extends Component {
       const checked = h.enabled;
       const selected = s.selectedProductSectionKeys.includes(h.key);
       return {
-        key: h.key, label: h.label, isCustom: h.custom, onToggle: () => this.toggleProductSection(h.key), onRemove: () => this.removeProductSection(h.key), draggable: true, onDragStart: () => this.onLocalProductSectionDragStart(h.key), onDragOver: this.onLocalProductSectionDragOver, onDrop: () => this.onLocalProductSectionDrop(h.key),
+        key: h.key, label: h.label, isCustom: h.custom, onToggle: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.toggleProductSection(h.key); }, onRemove: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.removeProductSection(h.key); }, draggable: true, onDragStart: () => this.onLocalProductSectionDragStart(h.key), onDragOver: this.onLocalProductSectionDragOver, onDrop: () => this.onLocalProductSectionDrop(h.key),
         showCheckbox: s.productSectionSelectionMode, showControls: !s.productSectionSelectionMode,
         checkboxStyle: `width:22px;height:22px;border-radius:7px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`,
         checkMark: selected ? '✓' : '',
-        rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.productSectionSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
+        rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:pointer;user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
         onPressStart: () => this.startProductSectionRowPress(h.key), onPressEnd: this.endProductSectionRowPress,
-        onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSectionSelectionMode) this.toggleProductSectionSelected(h.key); },
+        onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSectionSelectionMode) { this.toggleProductSectionSelected(h.key); return; } this.openProductSectionPicker(h.key); },
         trackStyle: `width:44px;height:26px;border-radius:var(--radius-full);cursor:pointer;position:relative;transition:background 0.15s ease;background:${checked ? 'var(--brand-700)' : 'var(--neutral-200)'}`,
         thumbStyle: `width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;left:${checked ? '21px' : '3px'};transition:left 0.15s ease;box-shadow:var(--shadow-sm)`,
       };
@@ -3324,6 +3383,13 @@ class App extends Component {
     };
     const updatedAtLabel = new Date(s.indicatorsUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+    // Shared search bar across every "Modo de Criação" admin tab (#2) — one
+    // query field, reset on every tab switch (see onSetAdminTabX), matched
+    // case-insensitively against whichever field(s) a given tab's rows show
+    // as their primary label.
+    const adminSearchNeedle = s.adminSearchQuery.trim().toLowerCase();
+    const matchesSearch = (...texts) => !adminSearchNeedle || texts.some(t => String(t || '').toLowerCase().includes(adminSearchNeedle));
+
     // ---- Modo de Criação: "Minhas Receitas / Meus Produtos / Minhas Categorias" ----
     // Badge/label helper shared by every recipe-row source below (personal,
     // shared, admin/site) so a user can tell at a glance which of the four
@@ -3341,21 +3407,21 @@ class App extends Component {
       source: 'personal', sourceLabel: 'Privada', sourceBadgeStyle: statusBadge('Privada', SOURCE_BADGE_COLORS.personal),
       showCheckbox: s.selectionMode && s.recipeSelectionScope === 'my', showActions: !(s.selectionMode && s.recipeSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.selectionMode && s.recipeSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedRecipeRowPress(r.id, 'my'), onPressEnd: this.endRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.selectionMode && this.state.recipeSelectionScope === 'my') this.toggleRecipeSelected(r.id); },
       onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteRecipeChecked(r.id),
-    }); });
+    }); }).filter(row => matchesSearch(row.name));
     const myProductRows = s.myProducts.map(p => { const selected = s.productSelectionScope === 'my' && s.selectedProductIds.includes(p.id); return ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), imagem: p.image_url || FALLBACK_IMG,
       active: p.active, activeLabel: p.active ? 'Ativo' : 'Inativo', toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'my', showActions: !(s.productSelectionMode && s.productSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'my'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'my') this.toggleProductSelected(p.id); },
       onEdit: () => this.onEditMyProduct(p), onToggleActive: () => this.onToggleMyProductActive(p), onDelete: () => this.askDeleteMyProduct(p.id),
       onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
-    }); });
+    }); }).filter(row => matchesSearch(row.name));
     const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : 'Proteína/Produto';
     const myCategoryRows = s.myCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       active: c.active, activeLabel: c.active ? 'Ativa' : 'Inativa', toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       onEdit: () => this.onEditMyCategory(c), onToggleActive: () => this.onToggleMyCategoryActive(c), onDelete: () => this.askDeleteMyCategory(c.id),
       onRequestPublish: () => this.onOpenPublishRequest('category', c.id, c.name),
-    }));
+    })).filter(row => matchesSearch(row.name));
     const sharedLibraryRows = s.sharedLibrary.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
       source: 'shared', sourceLabel: 'Compartilhada', sourceBadgeStyle: statusBadge('Compartilhada', SOURCE_BADGE_COLORS.shared),
@@ -3366,7 +3432,7 @@ class App extends Component {
       // later (see onRedeemSubmit) or the next time this tab is opened.
       justRedeemed: s.justRedeemedRecipeId === r.id,
       onOpen: () => this.onOpenMyRecipeDetail(r.id),
-    }));
+    })).filter(row => matchesSearch(row.name));
 
     const myRecipeCategoryOptions = this.myRecipeCategories().map(c => ({ value: c.id, label: c.name }));
     const myProteinCategoryOptions = this.myProteinCategories().map(c => ({ value: c.id, label: c.name }));
@@ -3457,7 +3523,7 @@ class App extends Component {
         onToggleStatus: () => this.onToggleSiteRecipeStatus(r), onEdit: () => this.onEditSiteRecipe(r),
         onDelete: () => this.askDeleteRecipeChecked(r.id),
       };
-    });
+    }).filter(row => matchesSearch(row.name));
     const siteProductRows = s.siteProducts.map(p => { const selected = s.productSelectionScope === 'site' && s.selectedProductIds.includes(p.id); return ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), imagem: p.image_url || FALLBACK_IMG,
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
@@ -3467,7 +3533,7 @@ class App extends Component {
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'site'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
       onDelete: () => this.askDeleteSiteProduct(p.id),
-    }); });
+    }); }).filter(row => matchesSearch(row.name));
     const siteCategoryRows = s.siteCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
@@ -3476,7 +3542,7 @@ class App extends Component {
       updatedAtLabel: this.formatDateTime(c.updated_at),
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
       onDelete: () => this.askDeleteSiteCategory(c.id), draggable: c.type === 'secao', isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id),
-    }));
+    })).filter(row => matchesSearch(row.name));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
     const siteProteinCategoryOptions = this.siteProteinCategories().map(c => ({ value: c.id, label: c.name }));
     const siteRecipeSectionRows = this.siteSectionCategories().map(c => ({
@@ -3538,7 +3604,7 @@ class App extends Component {
       isResubmitBusy: s.resubmitBusyRequestId === r.id,
       onOpenDetail: () => this.onOpenRequestDetail(r.id), onCancel: () => this.onCancelMyRequest(r.id),
       onEditItem: () => this.onEditRequestedItem(r), onResubmit: () => this.onResubmitMyRequest(r),
-    }));
+    })).filter(row => matchesSearch(row.code, row.itemCode));
 
     const allRequestRows = filterRequests(s.allRequests).map(r => ({
       id: r.id, code: r.request_code, requesterName: r.requester_display_name_snapshot,
@@ -3547,7 +3613,7 @@ class App extends Component {
       statusLabel: requestStatusLabel(r.status), statusBadgeStyle: statusBadge('', requestStatusColor(r.status)),
       revision: r.current_revision, canReview: ['submitted', 'resubmitted'].includes(r.status),
       onOpenDetail: () => this.onOpenRequestDetail(r.id),
-    }));
+    })).filter(row => matchesSearch(row.requesterName, row.code, row.itemCode));
     const pendingRequestsCount = s.allRequests.filter(r => r.status === 'submitted' || r.status === 'resubmitted').length;
 
     let requestDetail = null;
@@ -3641,8 +3707,14 @@ class App extends Component {
       // Produtos page + Início aggregator
       productHomeSectionBlocks, productCategoryChips, productPageBlocks, inicioProductBlock,
       productsEmpty: s.products.length === 0,
-      showProductDetailModal: !!s.selectedProductId && !!selectedProduct, productDetailData: selectedProduct || { nome: '', categoria: '', unidade: '', precoLabel: '', imagem: FALLBACK_IMG },
+      showProductDetailModal: !!s.selectedProductId && !!selectedProduct, productDetailData: selectedProduct || { nome: '', categoria: '', unidade: '', precoLabel: '', imagem: FALLBACK_IMG, relatedRecipes: [] },
       onOpenProductDetail: (id) => this.openProductDetail(id), onCloseProductDetail: this.closeProductDetail,
+      // "Seções de Produtos" click-to-add-products picker (#1).
+      showProductSectionPicker: !!s.productSectionPickerKey, productSectionPickerLabel, productSectionPickerRows,
+      productSectionPickerQuery: s.productSectionPickerQuery, onProductSectionPickerSearchChange: this.onProductSectionPickerSearchChange,
+      onCloseProductSectionPicker: this.closeProductSectionPicker,
+      // Admin search bar shared across the 9 "Modo de Criação" tabs (#2).
+      adminSearchQuery: s.adminSearchQuery, onAdminSearchChange: this.onAdminSearchChange,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
       adminStatusLabel: !s.session ? 'Toque para fazer login' : 'Toque para abrir o painel',
       hasSession: !!s.session, onLogout: this.onLogout,
@@ -3799,7 +3871,9 @@ class App extends Component {
       adminTabProductsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'products' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'products' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabCategoriesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'categories' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'categories' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       sectionToggleRows, proteinToggleRows, destaqueRecipeRows, newSectionLabel: s.newSectionLabel, onNewSectionLabelChange: this.onNewSectionLabelChange, onAddSection: this.addHomeSection,
+      newSectionIcon: s.newSectionIcon, onPickSectionIcon: this.onPickSectionIcon,
       productSectionToggleRows, newProductSectionLabel: s.newProductSectionLabel, onNewProductSectionLabelChange: this.onNewProductSectionLabelChange, onAddProductSection: this.addProductSection,
+      newProductSectionIcon: s.newProductSectionIcon, onPickProductSectionIcon: this.onPickProductSectionIcon,
       productSectionSelectionMode: s.productSectionSelectionMode, selectedProductSectionCountLabel: `${s.selectedProductSectionKeys.length} selecionada(s)`, onBulkDeleteProductSectionsAsk: this.askBulkDeleteProductSections, onCancelProductSectionSelection: this.onCancelProductSectionSelection,
       newProteinLabel: s.newProteinLabel, onNewProteinLabelChange: this.onNewProteinLabelChange, onAddProtein: this.addProductCategory,
       selectionMode: s.selectionMode, selectedCountLabel: `${s.selectedRecipeIds.length} selecionada(s)`,
@@ -3969,7 +4043,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260807-1';
+import { renderApp } from './template.js?v=20260807-2';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
