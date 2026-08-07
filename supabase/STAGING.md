@@ -943,3 +943,13 @@ ideal (mixes environments), but not a credential leak.
 ## PR: Dados sales persistence
 
 - `supabase/013_sales_data.sql` adds `public.sales` with `owner_id default auth.uid()` and own-row RLS so records from the Dados tab are stored in Supabase and linked to the authenticated user.
+
+
+## PR: Home/Produtos redesign + product photos
+
+- `supabase/014_product_images.sql` adds a nullable `image_url text` column to `public.products` (idempotent `add column if not exists`, no RLS changes needed — existing policies already cover the whole row). Run manually in the Supabase SQL Editor (staging) before this PR's frontend is deployed there; never auto-applied.
+- Manual functional checklist after applying, in Modo de Criação:
+  - Create a product in "Meus Produtos" with an image URL set → thumbnail appears in the row list, and the URL persists after a page reload.
+  - Edit an existing product to add/clear an image URL → the change round-trips through `updateProduct`/`updateSiteProduct` correctly (clearing sends `null`, not an empty string that silently fails validation).
+  - Create/edit a product in "Catálogo: Produtos" (admin) the same way and confirm it shows correctly on the new Produtos page for a non-admin visitor.
+  - Confirm a product with no image URL still renders (falls back to `FALLBACK_IMG`, never a broken `<img>`).

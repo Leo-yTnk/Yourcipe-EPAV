@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260805-1';
-import { CustomSelect } from './custom-select.js?v=20260805-1';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260807-1';
+import { CustomSelect } from './custom-select.js?v=20260807-1';
 import {
-  LS_KEYS, SECTION_DEFS, FALLBACK_IMG,
+  LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260805-1';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260805-1';
-import { supabase } from './supabase-client.js?v=20260805-1';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260805-1';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260805-1';
-import { normalizeDisplayName } from './display-name.js?v=20260805-1';
-import * as catalog from './catalog.js?v=20260805-1';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260805-1';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260805-1';
-import { createLoadGuard } from './load-guard.js?v=20260805-1';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260805-1';
+} from './data.js?v=20260807-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260807-1';
+import { supabase } from './supabase-client.js?v=20260807-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260807-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260807-1';
+import { normalizeDisplayName } from './display-name.js?v=20260807-1';
+import * as catalog from './catalog.js?v=20260807-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260807-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260807-1';
+import { createLoadGuard } from './load-guard.js?v=20260807-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260807-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260805-1';
+const FRONTEND_VERSION = '20260807-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -52,6 +52,7 @@ class App extends Component {
   state = (() => {
     let products = DEFAULT_PRODUCTS, recipes = DEFAULT_RECIPES, favoriteIds = [], profile = null, darkMode = false, hiddenRecipeIds = [], vendas = [];
     let homeSections = SECTION_DEFS.map(d => ({ key: d.key, label: d.label, enabled: true, custom: false }));
+    let productSections = PRODUCT_SECTION_DEFS.map(d => ({ key: d.key, label: d.label, enabled: true, custom: false }));
     let productCategories = CATEGORIAS_PRODUTO.map(c => ({ key: c, label: c, enabled: true, custom: false }));
     try {
       const sp = localStorage.getItem(LS_KEYS.products); if (sp) products = JSON.parse(sp);
@@ -66,6 +67,12 @@ class App extends Component {
         const parsed = JSON.parse(ss);
         if (Array.isArray(parsed)) homeSections = parsed;
         else homeSections = homeSections.map(h => ({ ...h, enabled: parsed[h.key] !== undefined ? parsed[h.key] : h.enabled }));
+      }
+      const sps = localStorage.getItem(LS_KEYS.productSections);
+      if (sps) {
+        const parsedPs = JSON.parse(sps);
+        if (Array.isArray(parsedPs)) productSections = parsedPs;
+        else productSections = productSections.map(h => ({ ...h, enabled: parsedPs[h.key] !== undefined ? parsedPs[h.key] : h.enabled }));
       }
       const spt = localStorage.getItem(LS_KEYS.proteins);
       if (spt) {
@@ -88,14 +95,16 @@ class App extends Component {
     return {
       frameW: (typeof window !== 'undefined') ? window.innerWidth : 1200,
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
-      darkMode, hiddenRecipeIds, homeSections, productCategories, newSectionLabel: '', newProteinLabel: '', navRailSide, weekStartDay, fontSize,
+      darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', navRailSide, weekStartDay, fontSize,
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
       productSelectionMode: false, selectedProductIds: [], productSelectionScope: '',
       sectionSelectionMode: false, selectedSectionKeys: [],
+      productSectionSelectionMode: false, selectedProductSectionKeys: [],
       proteinSelectionMode: false, selectedProteinKeys: [],
       heroIndex: 0,
-      screen: 'home',
+      screen: 'inicio',
+      selectedProductId: null,
       isFullscreen: false,
       products, recipes, favoriteIds, profile,
       vendas, salesModalOpen: false, saleForm: { valor: '', ipc: '', data: '' }, editingSaleId: null,
@@ -131,6 +140,7 @@ class App extends Component {
       profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' },
       searchQuery: '',
       activeFilter: 'Todas',
+      productsCategoryFilter: 'Todas',
       selectedRecipeId: null,
       checklists: {},
       ingredientOverrides: {},
@@ -193,6 +203,7 @@ class App extends Component {
       importResult: null,
       importFileInputKey: 0,
       homeSectionDragKey: null,
+      productSectionDragKey: null,
       homeSectionOrderBusy: false,
       adminFlash: '',
       session: null,
@@ -377,6 +388,8 @@ class App extends Component {
       // Local (non-Supabase) demo data.
       { key: 'sales', open: !!st.salesModalOpen, zIndex: 20, onClose: this.onCloseSalesModal, onSubmit: this.onSaveSale, busy: false, dirty: true, multiline: false },
       { key: 'alt', open: !!st.altModal, zIndex: 20, onClose: this.closeAltModal, onSubmit: null, busy: false, dirty: false, multiline: false },
+      // Produtos: simple read-only detail modal (photo/nome/categoria/preço).
+      { key: 'productDetail', open: !!st.selectedProductId, zIndex: 21, onClose: this.closeProductDetail, onSubmit: null, busy: false, dirty: false, multiline: false },
       // Confirm-delete — a "simple modal/dialog" whose Enter key confirms
       // the destructive action, same as clicking its own "Excluir" button;
       // never while a delete is already mid-flight.
@@ -592,7 +605,7 @@ class App extends Component {
     if (mode !== this.state.deviceMode || w !== this.state.frameW) this.setState({ deviceMode: mode, frameW: w });
   };
 
-  screenOrder = { home: 0, search: 1, favorites: 2, dados: 3, profile: 4, detail: 5, admin: 6, salesHistory: 7 };
+  screenOrder = { inicio: 0, home: 1, products: 2, search: 3, favorites: 4, dados: 5, profile: 6, detail: 7, admin: 8, salesHistory: 9 };
   animateTo = (next) => {
     const prev = this.state.screen;
     if (prev === next) return;
@@ -792,11 +805,19 @@ class App extends Component {
     markWelcomeSeen(localStorage, LS_KEYS.welcomeSeen);
     if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' } });
   };
+  goInicio = () => { this.animateTo('inicio'); this.setState({ screen: 'inicio' }); };
   goHome = () => { this.animateTo('home'); this.setState({ screen: 'home' }); };
+  goProducts = () => { this.animateTo('products'); this.setState({ screen: 'products' }); };
   goSearch = () => { this.animateTo('search'); this.setState({ screen: 'search' }); };
   goFavorites = () => { this.animateTo('favorites'); this.setState({ screen: 'favorites' }); };
   goDados = () => { this.animateTo('dados'); this.setState({ screen: 'dados' }); };
   goSearchWithFilter = (cat) => { this.animateTo('search'); this.setState({ screen: 'search', activeFilter: cat }); };
+  onInicioSearchSubmit = (e) => {
+    if (e && e.key && e.key !== 'Enter') return;
+    this.goSearch();
+  };
+  openProductDetail = (id) => this.setState({ selectedProductId: id });
+  closeProductDetail = () => this.setState({ selectedProductId: null });
   goProfile = () => {
     this.animateTo('profile');
     this.setState({ screen: 'profile' });
@@ -823,6 +844,7 @@ class App extends Component {
 
   onSearchChange = (e) => this.setState({ searchQuery: e.target.value });
   setFilter = (cat) => this.setState({ activeFilter: cat });
+  setProductsCategoryFilter = (cat) => this.setState({ productsCategoryFilter: cat });
 
   onProfileIdadeChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, idade: e.target.value } }));
   onProfileCargoChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, cargo: e.target.value } }));
@@ -1328,18 +1350,18 @@ class App extends Component {
   // alongside askDeleteRecipeChecked (openCategoryDeleteImpact).
 
   // ---- Meus Produtos ----
-  onNewMyProduct = () => this.setState({ showMyProductForm: true, myProductFormMode: 'new', myFormError: '', myProductForm: { id: null, name: '', categoryId: (this.myProteinCategories()[0] && this.myProteinCategories()[0].id) || '', unit: 'kg', price: 0 } });
-  onEditMyProduct = (p) => this.setState({ showMyProductForm: true, myProductFormMode: 'edit', myFormError: '', myProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price } });
+  onNewMyProduct = () => this.setState({ showMyProductForm: true, myProductFormMode: 'new', myFormError: '', myProductForm: { id: null, name: '', categoryId: (this.myProteinCategories()[0] && this.myProteinCategories()[0].id) || '', unit: 'kg', price: 0, imageUrl: '' } });
+  onEditMyProduct = (p) => this.setState({ showMyProductForm: true, myProductFormMode: 'edit', myFormError: '', myProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, imageUrl: p.image_url || '' } });
   onCancelMyProductForm = () => this.setState({ showMyProductForm: false, myProductForm: null, myFormError: '' });
   myProductFormField = (field) => (e) => this.setState(s => ({ myProductForm: { ...s.myProductForm, [field]: e.target.value } }));
   onSaveMyProductForm = async () => {
     const f = this.state.myProductForm;
     const uid = this.state.session.user.id;
     if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ myFormError: 'Informe o nome e a categoria do produto.' }); return; }
-    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0 };
+    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0, image_url: (f.imageUrl || '').trim() || null };
     const res = f.id
       ? await catalog.updateProduct(f.id, patch)
-      : await catalog.createProduct(uid, { name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price });
+      : await catalog.createProduct(uid, { name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, imageUrl: patch.image_url });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar o produto.' }); return; }
     this.setState({ showMyProductForm: false, myProductForm: null });
     this.refreshAfterMyCreationMutation(uid, 'Produto salvo com sucesso.');
@@ -1970,6 +1992,12 @@ class App extends Component {
       // the data source changes, from a local seed to live Supabase data.
       const products = (prodsRes.data || []).map(p => ({
         id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
+        imagem: p.image_url || FALLBACK_IMG,
+        // Local-only "Seções de Produtos" tags (see productSections state)
+        // have no Supabase-synced counterpart — a live-catalog product
+        // therefore starts with no section tags and only ever shows up in
+        // the "Todos os Produtos" catch-all until that changes.
+        tags: [],
       }));
       const recipes = (recsRes.data || []).map(r => {
         const tags = (secByRecipe[r.id] || []).map(s => s.slug).filter(Boolean);
@@ -2088,18 +2116,18 @@ class App extends Component {
     this.refreshAdminCatalog();
   };
 
-  onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true } });
-  onEditSiteProduct = (p) => this.setState({ showSiteProductForm: true, siteProductFormMode: 'edit', siteFormError: '', siteProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, active: p.active } });
+  onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true, imageUrl: '' } });
+  onEditSiteProduct = (p) => this.setState({ showSiteProductForm: true, siteProductFormMode: 'edit', siteFormError: '', siteProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, active: p.active, imageUrl: p.image_url || '' } });
   onCancelSiteProductForm = () => this.setState({ showSiteProductForm: false, siteProductForm: null, siteFormError: '' });
   siteProductFormField = (field) => (e) => this.setState(s => ({ siteProductForm: { ...s.siteProductForm, [field]: e.target.value } }));
   toggleSiteProductFormActive = (e) => this.setState(s => ({ siteProductForm: { ...s.siteProductForm, active: e.target.checked } }));
   onSaveSiteProductForm = async () => {
     const f = this.state.siteProductForm;
     if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ siteFormError: 'Informe o nome e a categoria do produto.' }); return; }
-    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0, active: !!f.active };
+    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0, active: !!f.active, image_url: (f.imageUrl || '').trim() || null };
     const res = f.id
       ? await catalog.updateSiteProduct(f.id, patch)
-      : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active });
+      : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active, imageUrl: patch.image_url });
     if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
     this.setState({ showSiteProductForm: false, siteProductForm: null });
     this.refreshAdminCatalog();
@@ -2423,6 +2451,62 @@ class App extends Component {
   });
   onCancelSectionSelection = () => this.setState({ sectionSelectionMode: false, selectedSectionKeys: [] });
   askBulkDeleteSections = () => this.setState({ confirmDelete: { type: 'bulk-delete-sections', ids: [...this.state.selectedSectionKeys], message: `Excluir ${this.state.selectedSectionKeys.length} seção(ões) selecionada(s)? Esta ação não pode ser desfeita.` } });
+
+  // ---- Seções de Produtos (local-only, mirrors "Seções de Receitas" above) ----
+  toggleProductSection = (key) => this.setState(s => {
+    const productSections = s.productSections.map(h => h.key === key ? { ...h, enabled: !h.enabled } : h);
+    this.persist(LS_KEYS.productSections, productSections);
+    return { productSections };
+  });
+  onNewProductSectionLabelChange = (e) => this.setState({ newProductSectionLabel: e.target.value });
+  addProductSection = () => {
+    const label = this.state.newProductSectionLabel.trim();
+    if (!label) return;
+    const slug = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || ('secao_' + Date.now());
+    this.setState(s => {
+      if (s.productSections.some(h => h.key === slug)) return {};
+      const productSections = [...s.productSections, { key: slug, label, enabled: true, custom: true }];
+      this.persist(LS_KEYS.productSections, productSections);
+      return { productSections, newProductSectionLabel: '' };
+    });
+  };
+  removeProductSection = (key) => this.setState(s => {
+    const productSections = s.productSections.filter(h => h.key !== key);
+    this.persist(LS_KEYS.productSections, productSections);
+    return { productSections };
+  });
+  startProductSectionRowPress = (key) => {
+    clearTimeout(this._productSectionPressTimer);
+    this._productSectionPressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
+      this.setState(s => ({ productSectionSelectionMode: true, selectedProductSectionKeys: s.selectedProductSectionKeys.includes(key) ? s.selectedProductSectionKeys : [...s.selectedProductSectionKeys, key] }));
+    }, MULTI_SELECT_LONG_PRESS_MS);
+  };
+  endProductSectionRowPress = () => clearTimeout(this._productSectionPressTimer);
+  toggleProductSectionSelected = (key) => this.setState(s => {
+    const has = s.selectedProductSectionKeys.includes(key);
+    const selectedProductSectionKeys = has ? s.selectedProductSectionKeys.filter(x => x !== key) : [...s.selectedProductSectionKeys, key];
+    return { selectedProductSectionKeys, productSectionSelectionMode: selectedProductSectionKeys.length > 0 };
+  });
+  onCancelProductSectionSelection = () => this.setState({ productSectionSelectionMode: false, selectedProductSectionKeys: [] });
+  askBulkDeleteProductSections = () => this.setState({ confirmDelete: { type: 'bulk-delete-product-sections', ids: [...this.state.selectedProductSectionKeys], message: `Excluir ${this.state.selectedProductSectionKeys.length} seção(ões) de produtos selecionada(s)? Esta ação não pode ser desfeita.` } });
+  onLocalProductSectionDragStart = (key) => this.setState({ productSectionDragKey: key });
+  onLocalProductSectionDragOver = (e) => { if (e && e.preventDefault) e.preventDefault(); };
+  onLocalProductSectionDrop = (targetKey) => {
+    const sourceKey = this.state.productSectionDragKey;
+    if (!sourceKey || sourceKey === targetKey) { this.setState({ productSectionDragKey: null }); return; }
+    this.setState(s => {
+      const productSections = [...s.productSections];
+      const from = productSections.findIndex(h => h.key === sourceKey);
+      const to = productSections.findIndex(h => h.key === targetKey);
+      if (from < 0 || to < 0) return { productSectionDragKey: null };
+      const [moved] = productSections.splice(from, 1);
+      productSections.splice(to, 0, moved);
+      this.persist(LS_KEYS.productSections, productSections);
+      return { productSections, productSectionDragKey: null };
+    });
+  };
+
   toggleProtein = (key) => this.setState(s => {
     const productCategories = s.productCategories.map(c => c.key === key ? { ...c, enabled: !c.enabled } : c);
     this.persist(LS_KEYS.proteins, productCategories);
@@ -2575,6 +2659,18 @@ class App extends Component {
     };
   };
 
+  makeProductCard = (p, idx) => {
+    const d = Math.min(idx || 0, 12) * 65;
+    const rise = `animation:ycRise 0.5s cubic-bezier(0.22,0.8,0.24,1) ${d}ms backwards`;
+    return {
+      id: p.id, nome: p.nome, imagem: p.imagem || FALLBACK_IMG, categoria: p.categoria,
+      tempoLabel: this.formatBRL(p.preco), dificuldade: p.unidade,
+      carouselStyle: `flex:0 0 ${this.state.deviceMode === 'desktop' ? 280 : (this.state.deviceMode === 'tablet' ? 260 : 240)}px;cursor:pointer;transition:transform 0.18s ease,flex-basis 0.2s ease;scroll-snap-align:start;${rise}`,
+      gridCardStyle: `position:relative;cursor:pointer;background:var(--neutral-0);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--neutral-100);transition:transform 0.18s ease,box-shadow 0.18s ease;${rise}`,
+      onOpen: () => this.openProductDetail(p.id),
+    };
+  };
+
   askDeleteRecipe = (id, nome) => this.setState({ confirmDelete: { type: 'recipe', id, message: `Excluir a receita "${nome}"? Esta ação não pode ser desfeita.` } });
   askDeleteProduct = (id, nome) => this.setState({ confirmDelete: { type: 'product', id, message: `Excluir o produto "${nome}"? Ele será removido também das receitas que o usam.` } });
   onConfirmDeleteNo = () => this.setState({ confirmDelete: null });
@@ -2643,6 +2739,10 @@ class App extends Component {
       const homeSections = this.state.homeSections.filter(h => !cd.ids.includes(h.key));
       this.setState({ homeSections, confirmDelete: null, sectionSelectionMode: false, selectedSectionKeys: [] });
       this.persist(LS_KEYS.sections, homeSections);
+    } else if (cd.type === 'bulk-delete-product-sections') {
+      const productSections = this.state.productSections.filter(h => !cd.ids.includes(h.key));
+      this.setState({ productSections, confirmDelete: null, productSectionSelectionMode: false, selectedProductSectionKeys: [] });
+      this.persist(LS_KEYS.productSections, productSections);
     } else if (cd.type === 'bulk-delete-proteins') {
       const productCategories = this.state.productCategories.filter(c => !cd.ids.includes(c.key));
       this.setState({ productCategories, confirmDelete: null, proteinSelectionMode: false, selectedProteinKeys: [] });
@@ -2687,15 +2787,21 @@ class App extends Component {
 
   onNewProduct = () => this.setState({
     showProductForm: true, productFormMode: 'new',
-    productForm: { id: null, nome: '', categoria: (this.state.productCategories.find(c => c.enabled) || {}).label || this.categoriasProduto[0] || 'Bovinos', unidade: this.unidades[0] || 'kg', preco: 0 },
+    productForm: { id: null, nome: '', categoria: (this.state.productCategories.find(c => c.enabled) || {}).label || this.categoriasProduto[0] || 'Bovinos', unidade: this.unidades[0] || 'kg', preco: 0, imagem: '', tags: [] },
   });
-  onEditProduct = (p) => this.setState({ showProductForm: true, productFormMode: 'edit', productForm: { id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, preco: p.preco } });
+  onEditProduct = (p) => this.setState({ showProductForm: true, productFormMode: 'edit', productForm: { id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, preco: p.preco, imagem: p.imagem || '', tags: [...(p.tags || [])] } });
   onCancelProductForm = () => this.setState({ showProductForm: false, productForm: null });
   productFormField = (field) => (e) => this.setState(st => ({ productForm: { ...st.productForm, [field]: e.target.value } }));
+  toggleProductFormTag = (key) => this.setState(s => {
+    const cur = s.productForm.tags || [];
+    const tags = cur.includes(key) ? cur.filter(t => t !== key) : [...cur, key];
+    return { productForm: { ...s.productForm, tags } };
+  });
+  onRandomProductImage = () => this.setState(s => ({ productForm: { ...s.productForm, imagem: `https://picsum.photos/seed/p${Date.now()}/900/650` } }));
   onSaveProductForm = () => {
     const f = this.state.productForm;
     if (!f || !String(f.nome || '').trim()) return;
-    const product = { id: f.id || ('p_' + Date.now()), nome: String(f.nome).trim(), categoria: f.categoria, unidade: f.unidade, preco: parseFloat(String(f.preco).replace(',', '.')) || 0 };
+    const product = { id: f.id || ('p_' + Date.now()), nome: String(f.nome).trim(), categoria: f.categoria, unidade: f.unidade, preco: parseFloat(String(f.preco).replace(',', '.')) || 0, imagem: (f.imagem || '').trim(), tags: [...(f.tags || [])] };
     const products = f.id ? this.state.products.map(p => p.id === f.id ? product : p) : [...this.state.products, product];
     this.setState({ products, showProductForm: false, productForm: null });
     this.persist(LS_KEYS.products, products);
@@ -2870,7 +2976,7 @@ class App extends Component {
     const frameMaxWidth = '100%';
     const frameMaxHeight = '100%';
     const navRailSide = s.navRailSide === 'right' ? 'right' : 'left';
-    const showsRail = isWide && (screen === 'home' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile');
+    const showsRail = isWide && (screen === 'inicio' || screen === 'home' || screen === 'products' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile');
     const stagePadLeft = showsRail ? (navRailSide === 'left' ? navRailWidth : 0) : 0;
     const stagePadRight = showsRail ? (navRailSide === 'right' ? navRailWidth : 0) : 0;
     const navRailSideStyle = navRailSide === 'right' ? 'right:0' : 'left:0';
@@ -2897,6 +3003,32 @@ class App extends Component {
       .filter(sec => sectionOn(sec.key))
       .map(sec => ({ key: sec.key, label: sec.label, items: byTag(sec.key) }))
       .filter(b => b.items.length > 0);
+    // Produtos (mirrors homeSectionBlocks above, but local-only — see
+    // productSections state/CRUD, no Supabase-synced counterpart exists for
+    // products the way it does for recipe sections).
+    const byProductTag = (tag) => s.products.filter(p => p.tags && p.tags.includes(tag)).map((p, i) => this.makeProductCard(p, i));
+    const productHomeSectionBlocks = s.productSections
+      .filter(sec => sec.enabled)
+      .map(sec => ({ key: sec.key, label: sec.label, items: byProductTag(sec.key) }))
+      .filter(b => b.items.length > 0);
+    const productCategoryChips = ['Todas', ...s.productCategories.filter(c => c.enabled).map(c => c.label)].map(cat => ({
+      label: cat, onClick: () => this.setProductsCategoryFilter(cat),
+      style: `padding:9px 18px;border-radius:var(--radius-full);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;background:${s.productsCategoryFilter === cat ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.productsCategoryFilter === cat ? 'var(--neutral-0)' : 'var(--neutral-800)'}`,
+    }));
+    const productsCategoryFiltered = s.products.filter(p => s.productsCategoryFilter === 'Todas' || p.categoria === s.productsCategoryFilter);
+    const allProductsBlock = { key: 'todos', label: 'Todos os Produtos', items: productsCategoryFiltered.map((p, i) => this.makeProductCard(p, i)) };
+    const productSectionBlocksFiltered = productHomeSectionBlocks.map(b => ({
+      ...b, items: b.items.filter(it => s.productsCategoryFilter === 'Todas' || it.categoria === s.productsCategoryFilter),
+    })).filter(b => b.items.length > 0);
+    const productPageBlocks = [...productSectionBlocksFiltered, allProductsBlock];
+    const inicioProductItems = s.products.slice(0, 12).map((p, i) => this.makeProductCard(p, i));
+    const inicioProductBlock = { key: 'inicio_produtos', label: 'Produtos em Destaque', items: (byProductTag('recomendado').length ? byProductTag('recomendado') : inicioProductItems) };
+    let selectedProduct = null;
+    if (s.selectedProductId) {
+      const p = s.products.find(x => x.id === s.selectedProductId);
+      if (p) selectedProduct = { id: p.id, nome: p.nome, categoria: p.categoria, unidade: p.unidade, precoLabel: this.formatBRL(p.preco), imagem: p.imagem || FALLBACK_IMG };
+    }
+
     const heroTagged = visibleRecipes.filter(r => r.tags.includes('destaque'));
     const heroSourceList = heroTagged.length ? heroTagged : (visibleRecipes[0] ? [visibleRecipes[0]] : []);
     const heroRecipes = heroSourceList.map((r, i) => this.makeRecipeCard(r, 'home', i));
@@ -3023,6 +3155,22 @@ class App extends Component {
       };
     });
     const recipeFormTagRows = s.homeSections.map(h => ({ key: h.key, label: h.label, checked: !!(s.recipeForm && s.recipeForm.tags && s.recipeForm.tags.includes(h.key)), onToggle: () => this.toggleFormTag(h.key) }));
+    const productSectionToggleRows = s.productSections.map(h => {
+      const checked = h.enabled;
+      const selected = s.selectedProductSectionKeys.includes(h.key);
+      return {
+        key: h.key, label: h.label, isCustom: h.custom, onToggle: () => this.toggleProductSection(h.key), onRemove: () => this.removeProductSection(h.key), draggable: true, onDragStart: () => this.onLocalProductSectionDragStart(h.key), onDragOver: this.onLocalProductSectionDragOver, onDrop: () => this.onLocalProductSectionDrop(h.key),
+        showCheckbox: s.productSectionSelectionMode, showControls: !s.productSectionSelectionMode,
+        checkboxStyle: `width:22px;height:22px;border-radius:7px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`,
+        checkMark: selected ? '✓' : '',
+        rowStyle: `display:flex;align-items:center;justify-content:space-between;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:14px 16px;margin-bottom:8px;cursor:${s.productSectionSelectionMode ? 'pointer' : 'default'};user-select:none;transition:background 0.15s ease,border-color 0.15s ease`,
+        onPressStart: () => this.startProductSectionRowPress(h.key), onPressEnd: this.endProductSectionRowPress,
+        onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSectionSelectionMode) this.toggleProductSectionSelected(h.key); },
+        trackStyle: `width:44px;height:26px;border-radius:var(--radius-full);cursor:pointer;position:relative;transition:background 0.15s ease;background:${checked ? 'var(--brand-700)' : 'var(--neutral-200)'}`,
+        thumbStyle: `width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:3px;left:${checked ? '21px' : '3px'};transition:left 0.15s ease;box-shadow:var(--shadow-sm)`,
+      };
+    });
+    const productFormTagRows = s.productSections.map(h => ({ key: h.key, label: h.label, checked: !!(s.productForm && s.productForm.tags && s.productForm.tags.includes(h.key)), onToggle: () => this.toggleProductFormTag(h.key) }));
     const proteinToggleRows = s.productCategories.map(c => {
       const checked = c.enabled;
       const selected = s.selectedProteinKeys.includes(c.key);
@@ -3195,7 +3343,7 @@ class App extends Component {
       onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteRecipeChecked(r.id),
     }); });
     const myProductRows = s.myProducts.map(p => { const selected = s.productSelectionScope === 'my' && s.selectedProductIds.includes(p.id); return ({
-      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
+      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), imagem: p.image_url || FALLBACK_IMG,
       active: p.active, activeLabel: p.active ? 'Ativo' : 'Inativo', toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'my', showActions: !(s.productSelectionMode && s.productSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'my'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'my') this.toggleProductSelected(p.id); },
       onEdit: () => this.onEditMyProduct(p), onToggleActive: () => this.onToggleMyProductActive(p), onDelete: () => this.askDeleteMyProduct(p.id),
@@ -3311,7 +3459,7 @@ class App extends Component {
       };
     });
     const siteProductRows = s.siteProducts.map(p => { const selected = s.productSelectionScope === 'site' && s.selectedProductIds.includes(p.id); return ({
-      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price),
+      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), imagem: p.image_url || FALLBACK_IMG,
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
@@ -3469,14 +3617,16 @@ class App extends Component {
       publicCatalogLoading: s.publicCatalogSource === 'loading',
       hasPublicCatalogFallback: s.publicCatalogSource === 'demo-fallback', publicCatalogError: s.publicCatalogError,
       onRetryPublicCatalog: () => this.loadPublicCatalog(),
-      isHome: s.dataLoaded && screen === 'home', isSearch: s.dataLoaded && screen === 'search', isFavorites: s.dataLoaded && screen === 'favorites', isDados: s.dataLoaded && screen === 'dados', isProfile: s.dataLoaded && screen === 'profile', isDetail: s.dataLoaded && screen === 'detail', isAdmin: s.dataLoaded && screen === 'admin', isSalesHistory: s.dataLoaded && screen === 'salesHistory',
+      isHome: s.dataLoaded && screen === 'home', isInicio: s.dataLoaded && screen === 'inicio', isProducts: s.dataLoaded && screen === 'products', isSearch: s.dataLoaded && screen === 'search', isFavorites: s.dataLoaded && screen === 'favorites', isDados: s.dataLoaded && screen === 'dados', isProfile: s.dataLoaded && screen === 'profile', isDetail: s.dataLoaded && screen === 'detail', isAdmin: s.dataLoaded && screen === 'admin', isSalesHistory: s.dataLoaded && screen === 'salesHistory',
       hasSelectedRecipe: !!selectedRecipe,
       deviceMode, isCompact, isWide, navRailWidth, frameMaxWidth, frameMaxHeight, stagePadLeft, stagePadRight, scrollBottomPad, navRailSideStyle, navRailBorderStyle,
       detailPadX: isWide ? 92 : 40, detailTitleInset: isWide ? 92 : 32,
-      showBottomTabBar: (screen === 'home' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile') && isCompact,
-      showSideNavRail: (screen === 'home' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile') && isWide,
-      goHome: this.goHome, goSearch: this.goSearch, goFavorites: this.goFavorites, goDados: this.goDados, goProfile: this.goProfile,
+      showBottomTabBar: (screen === 'inicio' || screen === 'home' || screen === 'products' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile') && isCompact,
+      showSideNavRail: (screen === 'inicio' || screen === 'home' || screen === 'products' || screen === 'search' || screen === 'favorites' || screen === 'dados' || screen === 'profile') && isWide,
+      goInicio: this.goInicio, goHome: this.goHome, goProducts: this.goProducts, goSearch: this.goSearch, goFavorites: this.goFavorites, goDados: this.goDados, goProfile: this.goProfile,
+      navInicioColor: screen === 'inicio' ? 'var(--brand-700)' : 'var(--neutral-400)',
       navHomeColor: screen === 'home' ? 'var(--brand-700)' : 'var(--neutral-400)',
+      navProductsColor: screen === 'products' ? 'var(--brand-700)' : 'var(--neutral-400)',
       navSearchColor: screen === 'search' ? 'var(--brand-700)' : 'var(--neutral-400)',
       navFavColor: screen === 'favorites' ? 'var(--brand-700)' : 'var(--neutral-400)',
       navDadosColor: screen === 'dados' ? 'var(--brand-700)' : 'var(--neutral-400)',
@@ -3486,7 +3636,13 @@ class App extends Component {
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
       homeSectionBlocks, homeCategoryChips, homeCategoriesEmpty,
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
+      onInicioSearchSubmit: this.onInicioSearchSubmit,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
+      // Produtos page + Início aggregator
+      productHomeSectionBlocks, productCategoryChips, productPageBlocks, inicioProductBlock,
+      productsEmpty: s.products.length === 0,
+      showProductDetailModal: !!s.selectedProductId && !!selectedProduct, productDetailData: selectedProduct || { nome: '', categoria: '', unidade: '', precoLabel: '', imagem: FALLBACK_IMG },
+      onOpenProductDetail: (id) => this.openProductDetail(id), onCloseProductDetail: this.closeProductDetail,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
       adminStatusLabel: !s.session ? 'Toque para fazer login' : 'Toque para abrir o painel',
       hasSession: !!s.session, onLogout: this.onLogout,
@@ -3559,6 +3715,7 @@ class App extends Component {
       showSiteProductForm: s.showSiteProductForm, siteProductFormTitle: s.siteProductFormMode === 'new' ? 'Novo Produto do Catálogo' : 'Editar Produto do Catálogo', siteProductForm: s.siteProductForm || {},
       siteProductFormOnName: this.siteProductFormField('name'), siteProductFormOnCategorySet: this.setFormField('siteProductForm', 'categoryId'),
       siteProductFormOnUnitSet: this.setFormField('siteProductForm', 'unit'), siteProductFormOnPrice: this.siteProductFormField('price'), siteProductFormOnActive: this.toggleSiteProductFormActive,
+      siteProductFormOnImageUrl: this.siteProductFormField('imageUrl'),
       siteProteinCategoryOptions, unidadeOptionsSite: this.unidades,
       onCancelSiteProductForm: this.onCancelSiteProductForm, onSaveSiteProductForm: this.onSaveSiteProductForm,
       showSiteCategoryForm: s.showSiteCategoryForm, siteCategoryFormTitle: s.siteCategoryFormMode === 'new' ? 'Nova Categoria do Catálogo' : 'Editar Categoria do Catálogo', siteCategoryForm: s.siteCategoryForm || {},
@@ -3609,6 +3766,7 @@ class App extends Component {
       showMyProductForm: s.showMyProductForm, myProductFormTitle: s.myProductFormMode === 'new' ? 'Novo Produto' : 'Editar Produto', myProductForm: s.myProductForm || {},
       myProductFormOnName: this.myProductFormField('name'), myProductFormOnCategorySet: this.setFormField('myProductForm', 'categoryId'),
       myProductFormOnUnitSet: this.setFormField('myProductForm', 'unit'), myProductFormOnPrice: this.myProductFormField('price'),
+      myProductFormOnImageUrl: this.myProductFormField('imageUrl'),
       myProteinCategoryOptions, unidadeOptionsMy: this.unidades,
       onCancelMyProductForm: this.onCancelMyProductForm, onSaveMyProductForm: this.onSaveMyProductForm,
       // Minha categoria: form modal
@@ -3641,6 +3799,8 @@ class App extends Component {
       adminTabProductsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'products' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'products' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabCategoriesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'categories' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'categories' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       sectionToggleRows, proteinToggleRows, destaqueRecipeRows, newSectionLabel: s.newSectionLabel, onNewSectionLabelChange: this.onNewSectionLabelChange, onAddSection: this.addHomeSection,
+      productSectionToggleRows, newProductSectionLabel: s.newProductSectionLabel, onNewProductSectionLabelChange: this.onNewProductSectionLabelChange, onAddProductSection: this.addProductSection,
+      productSectionSelectionMode: s.productSectionSelectionMode, selectedProductSectionCountLabel: `${s.selectedProductSectionKeys.length} selecionada(s)`, onBulkDeleteProductSectionsAsk: this.askBulkDeleteProductSections, onCancelProductSectionSelection: this.onCancelProductSectionSelection,
       newProteinLabel: s.newProteinLabel, onNewProteinLabelChange: this.onNewProteinLabelChange, onAddProtein: this.addProductCategory,
       selectionMode: s.selectionMode, selectedCountLabel: `${s.selectedRecipeIds.length} selecionada(s)`,
       onBulkHideAsk: this.askBulkHide, onBulkDeleteAsk: this.askBulkDelete, onCancelSelection: this.onCancelSelection,
@@ -3780,6 +3940,7 @@ class App extends Component {
       onCancelRecipeForm: this.onCancelRecipeForm, onSaveRecipeForm: this.onSaveRecipeForm,
       showProductForm: s.showProductForm, productFormTitle: s.productFormMode === 'new' ? 'Novo Produto' : 'Editar Produto', productForm: s.productForm || {},
       productFormOnNome: this.productFormField('nome'), productFormOnCategoriaSet: this.setFormField('productForm', 'categoria'), productFormOnUnidadeSet: this.setFormField('productForm', 'unidade'), productFormOnPreco: this.productFormField('preco'),
+      productFormOnImagem: this.productFormField('imagem'), onRandomProductImage: this.onRandomProductImage, productFormTagRows,
       categoriaProdutoOptions: s.productCategories.filter(c => c.enabled).map(c => c.label), unidadeOptions: this.unidades,
       onCancelProductForm: this.onCancelProductForm, onSaveProductForm: this.onSaveProductForm,
       showImportModal: s.showImportModal, onOpenImportModal: this.onOpenImportModal, onCloseImportModal: this.onCloseImportModal, onBackToInstructions: this.onBackToInstructions,
@@ -3808,7 +3969,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260805-1';
+import { renderApp } from './template.js?v=20260807-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

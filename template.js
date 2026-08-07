@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260805-1';
-import { CustomSelect } from './custom-select.js?v=20260805-1';
+import { html } from './vendor/htm-preact-standalone.js?v=20260807-1';
+import { CustomSelect } from './custom-select.js?v=20260807-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -35,7 +35,9 @@ export function renderApp(app) {
           <div ref=${(el) => { app.stageRef.current = el; }} style=${`padding-left:${v.stagePadLeft}px;padding-right:${v.stagePadRight}px;transition:padding 0.2s ease`}>
 
             ${v.notLoaded && html`<div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--neutral-600);font-size:15px">Carregando receitas...</div>`}
+            ${v.isInicio && renderInicio(app, v)}
             ${v.isHome && renderHome(app, v)}
+            ${v.isProducts && renderProducts(app, v)}
             ${v.isSearch && renderSearch(app, v)}
             ${v.isFavorites && renderFavorites(app, v)}
             ${v.isDados && renderDados(app, v)}
@@ -47,6 +49,7 @@ export function renderApp(app) {
         </div>
 
         ${v.isDetail && renderDetailButtons(app, v)}
+        ${v.showProductDetailModal && renderProductDetailModal(app, v)}
         ${v.showBottomTabBar && renderBottomTabBar(app, v)}
         ${v.showSideNavRail && renderSideNavRail(app, v)}
         ${v.showProfileSetup && renderProfileSetupModal(app, v)}
@@ -112,24 +115,12 @@ function carouselSection(icon, title, list, onSeeAll) {
   `;
 }
 
-function renderHome(app, v) {
+// Shared "Receita do Dia" hero carousel — used by both renderHome (Receitas)
+// and renderInicio (the new aggregator Home). Only one <div ref=...> ever
+// mounts app.heroRef at a time (Início and Receitas are never both on
+// screen simultaneously), so sharing the ref here is safe.
+function heroSection(app, v) {
   return html`
-    <div style="padding:40px 40px 8px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:14px;color:var(--neutral-600);font-weight:500">Olá, ${v.userGreetingName}</div>
-          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;color:var(--neutral-950)">O que vamos cozinhar hoje?</div>
-        </div>
-        <div style="width:52px;height:52px;border-radius:var(--radius-full);background:var(--brand-100);display:flex;align-items:center;justify-content:center;font-weight:700;color:#F4F2F1;font-size:20px">${v.profileInitial}</div>
-      </div>
-      ${v.hasPublicCatalogFallback && html`
-        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
-          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
-        </div>
-      `}
-    </div>
-
     <div style="padding:24px 40px 8px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="#B24019"><path d="M12 2c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 4.4-3.6 8-8 8s-8-3.6-8-8c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.8 5-7.5z"></path></svg>
@@ -170,6 +161,28 @@ function renderHome(app, v) {
         `}
       </div>
     </div>
+  `;
+}
+
+function renderHome(app, v) {
+  return html`
+    <div style="padding:40px 40px 8px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:14px;color:var(--neutral-600);font-weight:500">Olá, ${v.userGreetingName}</div>
+          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;color:var(--neutral-950)">O que vamos cozinhar hoje?</div>
+        </div>
+        <div style="width:52px;height:52px;border-radius:var(--radius-full);background:var(--brand-100);display:flex;align-items:center;justify-content:center;font-weight:700;color:#F4F2F1;font-size:20px">${v.profileInitial}</div>
+      </div>
+      ${v.hasPublicCatalogFallback && html`
+        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
+          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+        </div>
+      `}
+    </div>
+
+    ${heroSection(app, v)}
 
     <div style="padding:20px 0 4px">
       <div className="yc-scroll" style="display:flex;gap:10px;overflow-x:auto;padding:0 40px">
@@ -184,6 +197,41 @@ function renderHome(app, v) {
   `;
 }
 
+// Início: aggregator home — hero + search bar + a recipe carousel + a
+// product carousel. Search bar reuses the same screen/state as renderSearch
+// (v.searchQuery/onSearchChange); submitting just navigates there so the
+// results grid is never duplicated here.
+function renderInicio(app, v) {
+  return html`
+    <div style="padding:40px 40px 8px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:14px;color:var(--neutral-600);font-weight:500">Olá, ${v.userGreetingName}</div>
+          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;color:var(--neutral-950)">O que vamos cozinhar hoje?</div>
+        </div>
+        <div style="width:52px;height:52px;border-radius:var(--radius-full);background:var(--brand-100);display:flex;align-items:center;justify-content:center;font-weight:700;color:#F4F2F1;font-size:20px">${v.profileInitial}</div>
+      </div>
+      ${v.hasPublicCatalogFallback && html`
+        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
+          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+        </div>
+      `}
+      <div style="position:relative;margin-top:20px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2" style="position:absolute;left:18px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="text" value=${v.searchQuery} onInput=${v.onSearchChange} onKeyDown=${v.onInicioSearchSubmit} placeholder="Buscar receitas..." style="color:var(--neutral-900);width:100%;padding:16px 20px 16px 46px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:16px;font-family:var(--font-sans);background:var(--neutral-0);outline:none;box-sizing:border-box"/>
+      </div>
+    </div>
+
+    ${heroSection(app, v)}
+
+    ${(() => {
+      const recommended = v.homeSectionBlocks.find((b) => b.key === 'recomendado') || v.homeSectionBlocks[0];
+      return recommended ? carouselSection(homeSectionIcon(recommended.key), recommended.label, recommended.items, v.goHome) : null;
+    })()}
+    ${carouselSection(productSectionIcon(), v.inicioProductBlock.label, v.inicioProductBlock.items, v.goProducts)}
+  `;
+}
 
 function homeSectionIcon(key) {
   const icons = {
@@ -193,8 +241,94 @@ function homeSectionIcon(key) {
     rapido: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M13 2L5 14h6l-1 8 9-12h-6l1-8z"></path></svg>`,
     churrasco: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M12 3c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 3.6-3.6 6.5-8 6.5s-8-2.9-8-6.5c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.5 5-7.5z"></path></svg>`,
     petisco: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><circle cx="12" cy="13" r="7"></circle><path d="M12 6V3M8 3h8"></path></svg>`,
+    promocao: html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M20.6 12.6L12 21.2 2.8 12 12 2.8h8.2z"></path><circle cx="9" cy="9" r="1.5"></circle></svg>`,
   };
   return icons[key] || html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
+}
+
+function productSectionIcon() {
+  return html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="2"><path d="M4 8l1.5-4h13L20 8"></path><path d="M4 8h16v12H4z"></path><path d="M9 12a3 3 0 006 0"></path></svg>`;
+}
+
+// Produtos — mirrors renderHome's structure (header + category chips +
+// section carousels), but for products instead of recipes: reuses
+// productCard (below) instead of recipeCard, and always ends with a
+// "Todos os Produtos" catch-all so a product with no section tag is never
+// invisible (see productPageBlocks in computeViewModel — it already
+// appends this catch-all).
+function productCard(item) {
+  return html`
+    <div key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
+      <div style="position:relative;border-radius:var(--radius-lg);overflow:hidden;height:160px;box-shadow:var(--shadow-sm)">
+        <img loading="lazy" decoding="async" src=${item.imagem} alt=${item.nome} style="width:100%;height:100%;object-fit:cover"/>
+        <div style="position:absolute;top:10px;left:10px;background:rgba(14,12,11,0.55);color:#F4F2F1;padding:5px 11px;border-radius:var(--radius-full);font-size:11px;font-weight:600">${item.tempoLabel}</div>
+      </div>
+      <div style="font-size:15px;font-weight:600;margin-top:10px;color:var(--neutral-900)">${item.nome}</div>
+      <div style="font-size:13px;color:var(--neutral-600);margin-top:2px">${item.categoria} · ${item.dificuldade}</div>
+    </div>
+  `;
+}
+
+function productCarouselSection(icon, title, list) {
+  if (!list.length) return null;
+  return html`
+    <div style="padding:18px 0 18px">
+      <div style="display:flex;align-items:center;gap:8px;padding:0 40px;margin-bottom:14px">
+        ${icon}
+        <div style="font-size:20px;font-weight:700;letter-spacing:-0.01em">${title}</div>
+      </div>
+      <div className="yc-scroll" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
+        ${list.map(productCard)}
+      </div>
+    </div>
+  `;
+}
+
+function renderProducts(app, v) {
+  return html`
+    <div style="padding:40px 40px 8px">
+      <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;color:var(--neutral-950)">Produtos</div>
+      ${v.hasPublicCatalogFallback && html`
+        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
+          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
+        </div>
+      `}
+    </div>
+
+    <div style="padding:20px 0 4px">
+      <div className="yc-scroll" style="display:flex;gap:10px;overflow-x:auto;padding:0 40px">
+        ${v.productCategoryChips.map((chip) => html`<div key=${chip.label} onClick=${chip.onClick} style=${chip.style}>${chip.label}</div>`)}
+      </div>
+    </div>
+
+    ${v.productPageBlocks.map((sec) => productCarouselSection(sec.key === 'todos' ? productSectionIcon() : homeSectionIcon(sec.key), sec.label, sec.items))}
+    ${v.productsEmpty && html`<div style="padding:60px 40px;text-align:center;color:var(--neutral-600);font-size:15px">Nenhum produto cadastrado ainda.</div>`}
+  `;
+}
+
+// Simple product detail modal — photo, nome, categoria, unidade, preço.
+// Chrome mirrors renderMyRecipeDetailModal (overlay, close button, centered
+// card).
+function renderProductDetailModal(app, v) {
+  const p = v.productDetailData;
+  return html`
+    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:21;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+      <div className="yc-scroll" style="width:460px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+        <div style="position:relative;height:220px;overflow:hidden;border-radius:var(--radius-xl) var(--radius-xl) 0 0">
+          <img loading="lazy" decoding="async" src=${p.imagem} alt=${p.nome} style="width:100%;height:100%;object-fit:cover"/>
+          <div onClick=${v.onCloseProductDetail} aria-label="Fechar" role="button" tabindex="0" style="position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:var(--radius-full);background:rgba(14,12,11,0.55);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;cursor:pointer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          </div>
+        </div>
+        <div style="padding:24px">
+          <div style="font-size:22px;font-weight:700;margin-bottom:6px">${p.nome}</div>
+          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:16px">${p.categoria} · por ${p.unidade}</div>
+          <div style="font-size:26px;font-weight:700;color:var(--brand-700)">${p.precoLabel}</div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderSearch(app, v) {
@@ -518,11 +652,21 @@ function renderProfile(app, v) {
           <div style="flex:1">
             <div style="font-size:22px;font-weight:700">${v.authDisplayName || 'Visitante'}</div>
             <div style="font-size:14px;color:var(--neutral-600);margin-top:4px">${v.profile.cargo} · ${v.profile.idade} anos · ${v.profile.genero}</div>
-            <div style="font-size:13px;color:var(--brand-700);font-weight:600;margin-top:8px">${v.favoritesCount} receitas favoritas</div>
           </div>
           <div onClick=${v.onEditProfile} style="font-size:14px;font-weight:600;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-700);padding:10px 16px;border-radius:var(--radius-full);transition:transform 0.15s ease">Editar</div>
         </div>
       `}
+
+      <div onClick=${v.goFavorites} style=${`display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;margin-top:16px;cursor:pointer;transition:transform 0.15s ease;border-color:${v.settingsBorderColor}`}>
+        <div style="display:flex;align-items:center;gap:14px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="1.8"><path d="M12 21s-7.5-4.6-10-9.3C.4 8.3 2 4.5 5.6 4c2-.3 3.9.6 5 2.2C11.7 4.6 13.6 3.7 15.6 4c3.6.5 5.2 4.3 3.6 7.7C19.5 16.4 12 21 12 21z"></path></svg>
+          <div>
+            <div style="font-size:16px;font-weight:600">Favoritos</div>
+            <div style="font-size:13px;color:var(--neutral-600)">${v.favoritesCount} receitas favoritas</div>
+          </div>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2"><path d="M9 6l6 6-6 6"></path></svg>
+      </div>
 
       <div style="margin-top:32px;font-size:13px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--neutral-600);margin-bottom:10px">Configurações</div>
       <div style=${`display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;margin-bottom:12px;border-color:${v.settingsBorderColor}`}>
@@ -717,9 +861,9 @@ function renderDetailButtons(app, v) {
 
 function navItems(v) {
   return [
-    { onClick: v.goHome, color: v.navHomeColor, label: 'Início', path: html`<path d="M4 11l8-7 8 7"></path><path d="M6 9.5V20h12V9.5"></path>` },
-    { onClick: v.goSearch, color: v.navSearchColor, label: 'Buscar', path: html`<circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path>` },
-    { onClick: v.goFavorites, color: v.navFavColor, label: 'Favoritos', path: html`<path d="M12 21s-7.5-4.6-10-9.3C.4 8.3 2 4.5 5.6 4c2-.3 3.9.6 5 2.2C11.7 4.6 13.6 3.7 15.6 4c3.6.5 5.2 4.3 3.6 7.7C19.5 16.4 12 21 12 21z"></path>` },
+    { onClick: v.goInicio, color: v.navInicioColor, label: 'Início', path: html`<path d="M4 11l8-7 8 7"></path><path d="M6 9.5V20h12V9.5"></path>` },
+    { onClick: v.goHome, color: v.navHomeColor, label: 'Receitas', path: html`<path d="M12 2c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 4.4-3.6 8-8 8s-8-3.6-8-8c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.8 5-7.5z"></path>` },
+    { onClick: v.goProducts, color: v.navProductsColor, label: 'Produtos', path: html`<path d="M4 8l1.5-4h13L20 8"></path><path d="M4 8h16v12H4z"></path><path d="M9 12a3 3 0 006 0"></path>` },
     { onClick: v.goDados, color: v.navDadosColor, label: 'Dados', path: html`<path d="M5 20V10M12 20V4M19 20v-7"></path>` },
     { onClick: v.goProfile, color: v.navProfileColor, label: 'Perfil', path: html`<circle cx="12" cy="8" r="4"></circle><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6"></path>` },
   ];
@@ -1140,14 +1284,23 @@ function renderLocalHomeCustomization(app, v) {
   return html`
     <div style="margin-top:24px;border-top:1px solid var(--neutral-100);padding-top:20px">
       <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-700);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:18px">Personalização local — válida apenas neste dispositivo, não é sincronizada com o Supabase.</div>
-      <div style="font-size:15px;font-weight:700;margin-top:6px;margin-bottom:4px">Seções da Home</div>
-      <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na tela inicial. Segure uma seção para selecionar várias e excluir de uma vez.</div>
+      <div style="font-size:15px;font-weight:700;margin-top:6px;margin-bottom:4px">Seções de Receitas</div>
+      <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na Home/Receitas. Arraste para reordenar. Segure uma seção para selecionar várias e excluir de uma vez.</div>
       ${v.sectionSelectionMode && selectionBar(v.selectedSectionCountLabel, v.onBulkDeleteSectionsAsk, v.onCancelSectionSelection)}
       ${v.homeSectionOrderBusy && html`<div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">Sincronizando ordem das seções...</div>`}
       ${v.sectionToggleRows.map(toggleRow)}
       <div style="display:flex;gap:10px;margin-top:6px">
         <input type="text" placeholder="Nova seção (ex: Sopas de Inverno)" value=${v.newSectionLabel} onInput=${v.onNewSectionLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
         <div onClick=${v.onAddSection} style="padding:12px 18px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">+ Adicionar</div>
+      </div>
+
+      <div style="font-size:15px;font-weight:700;margin-top:26px;margin-bottom:4px">Seções de Produtos</div>
+      <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na página Produtos/Início. Arraste para reordenar. Segure uma seção para selecionar várias e excluir de uma vez.</div>
+      ${v.productSectionSelectionMode && selectionBar(v.selectedProductSectionCountLabel, v.onBulkDeleteProductSectionsAsk, v.onCancelProductSectionSelection)}
+      ${v.productSectionToggleRows.map(toggleRow)}
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <input type="text" placeholder="Nova seção (ex: Promoções)" value=${v.newProductSectionLabel} onInput=${v.onNewProductSectionLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
+        <div onClick=${v.onAddProductSection} style="padding:12px 18px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">+ Adicionar</div>
       </div>
 
       <div style="font-size:15px;font-weight:700;margin-top:26px;margin-bottom:4px">Proteínas / Categorias de Produtos</div>
@@ -1211,6 +1364,7 @@ function renderSiteProductsTab(app, v) {
       ${v.siteProductRows.map((row) => html`
         <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
+          <img loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
@@ -1353,6 +1507,7 @@ function renderMyProductsTab(app, v) {
       ${v.myProductRows.map((row) => html`
         <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
+          <img loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
@@ -1467,7 +1622,16 @@ function renderProductFormModal(app, v) {
           <${CustomSelect} options=${v.categoriaProdutoOptions} value=${f.categoria} onChange=${v.productFormOnCategoriaSet} />
           <${CustomSelect} options=${v.unidadeOptions} value=${f.unidade} onChange=${v.productFormOnUnidadeSet} />
           <input type="number" step="0.01" placeholder="Preço (R$)" value=${f.preco} onInput=${v.productFormOnPreco} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <input type="text" placeholder="URL da imagem" value=${f.imagem} onInput=${v.productFormOnImagem} style="background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
+          <div onClick=${v.onRandomProductImage} style="padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--brand-500);color:var(--brand-700);font-weight:600;font-size:14px;text-align:center;cursor:pointer">Gerar imagem aleatória</div>
         </div>
+        ${v.productFormTagRows.length > 0 && html`
+          <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap">
+            ${v.productFormTagRows.map((row) => html`
+              <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+            `)}
+          </div>
+        `}
         <div style="display:flex;gap:10px;margin-top:22px">
           <div onClick=${v.onCancelProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
           <div onClick=${v.onSaveProductForm} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>
@@ -1556,6 +1720,7 @@ function renderMyProductFormModal(app, v) {
           ${field('Categoria (proteína/produto)', html`<${CustomSelect} options=${v.myProteinCategoryOptions} value=${f.categoryId} onChange=${v.myProductFormOnCategorySet} />`, { required: true })}
           ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsMy} value=${f.unit} onChange=${v.myProductFormOnUnitSet} />`, { required: true })}
           ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.myProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.myProductFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`)}
         </div>
         ${v.myProteinCategoryOptions.length === 0 && html`<div style="font-size:12px;color:var(--neutral-600);margin-top:8px">Cadastre antes uma categoria do tipo "Proteína/Produto" em Minhas Categorias.</div>`}
         <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
@@ -2003,6 +2168,7 @@ function renderSiteProductFormModal(app, v) {
           ${field('Categoria (proteína/produto)', html`<${CustomSelect} options=${v.siteProteinCategoryOptions} value=${f.categoryId} onChange=${v.siteProductFormOnCategorySet} />`, { required: true })}
           ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />`, { required: true })}
           ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.siteProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.siteProductFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`)}
           <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);flex-wrap:wrap"><input type="checkbox" checked=${!!f.active} onChange=${v.siteProductFormOnActive}/> Ativo (visível publicamente)</label>
         </div>
         <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
