@@ -1718,6 +1718,7 @@ class App extends Component {
       this.refreshAfterMyCreationMutation(this.state.session.user.id, 'Item excluído com sucesso.');
     } else {
       this.loadSiteCatalogData(this.state.authRole);
+      this.loadPublicCatalog();
       this.flashAdmin('Item excluído com sucesso.');
     }
   };
@@ -2743,11 +2744,11 @@ class App extends Component {
     } else if (cd.type === 'bulk-delete-my-recipes' || cd.type === 'bulk-delete-site-recipes') {
       for (const id of cd.ids) await catalog.deleteRecipeChecked(id, { revokeShares: true, cancelPendingRequests: true });
       this.setState({ confirmDelete: null, selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '' });
-      if (cd.type === 'bulk-delete-site-recipes') this.loadSiteCatalogData(this.state.authRole); else this.loadMyCreationData(this.state.session && this.state.session.user.id);
+      if (cd.type === 'bulk-delete-site-recipes') { this.loadSiteCatalogData(this.state.authRole); this.loadPublicCatalog(); } else this.loadMyCreationData(this.state.session && this.state.session.user.id);
     } else if (cd.type === 'bulk-delete-my-products' || cd.type === 'bulk-delete-site-products') {
       for (const id of cd.ids) await catalog.deleteProductResolved(id, {});
       this.setState({ confirmDelete: null, productSelectionMode: false, selectedProductIds: [], productSelectionScope: '' });
-      if (cd.type === 'bulk-delete-site-products') this.loadSiteCatalogData(this.state.authRole); else this.loadMyCreationData(this.state.session && this.state.session.user.id);
+      if (cd.type === 'bulk-delete-site-products') { this.loadSiteCatalogData(this.state.authRole); this.loadPublicCatalog(); } else this.loadMyCreationData(this.state.session && this.state.session.user.id);
     } else if (cd.type === 'sale') {
       if (this.state.session) { await catalog.deleteSale(cd.id); await this.loadSalesData(); this.setState({ confirmDelete: null }); }
       else { const vendas = this.state.vendas.filter(v => v.id !== cd.id); this.setState({ vendas, confirmDelete: null }); this.persist(LS_KEYS.vendas, vendas); }
@@ -2984,7 +2985,7 @@ class App extends Component {
     const { data, error } = await catalog.adminImportPublicRecipes(s.importMode, s.importParsedRecipes);
     this.setState({ importBusy: false });
     if (error) { this.setState({ importParseError: error.message || 'Falha ao importar. Nenhuma alteração foi aplicada.' }); return; }
-    await this.refreshAfterSiteCatalogMutation();
+    this.refreshAdminCatalog();
     const msg = `Importação concluída: ${data.added || 0} adicionada(s), ${data.replaced || 0} substituída(s), ${data.ignored || 0} ignorada(s), ${data.removed || 0} removida(s).`;
     this.setState({ importResult: msg, adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 5000);
   };
