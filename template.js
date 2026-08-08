@@ -1307,6 +1307,22 @@ function renderCategoryReferencesModal(app, v) {
             `}
           </div>
         `)}
+        ${m && m.productSectionRows.length > 0 && html`<div style="font-size:13px;font-weight:700;margin-bottom:6px">Seções em produtos (substituir ou remover)</div>`}
+        ${(m ? m.productSectionRows : []).map(row => html`
+          <div key=${'ps-' + row.key} style="border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:14px;margin-bottom:10px">
+            <div style="font-size:14px;font-weight:700;margin-bottom:8px">${row.label}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${row.action === 'replace' ? '8px' : '0'}">
+              <div onClick=${() => row.onSetAction('replace')} style=${REF_ACTION_BTN(row.action === 'replace')}>Substituir seção</div>
+              <div onClick=${() => row.onSetAction('remove')} style=${REF_ACTION_BTN(row.action === 'remove')}>Remover seção do produto</div>
+            </div>
+            ${row.action === 'replace' && html`
+              <select value=${row.replacementCategoryId} onChange=${(e) => row.onSetReplacement(e.target.value)} style=${REF_SELECT_STYLE}>
+                <option value="">Selecione a categoria substituta…</option>
+                ${row.options.map(o => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+              </select>
+            `}
+          </div>
+        `)}
         ${m && m.pendingRequestCount > 0 && html`
           <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-600);border-radius:var(--radius-md);padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px">${m.pendingRequestCount} solicitação(ões) pendente(s) (${m.pendingRequestCodes.join(', ')}) referenciam esta categoria e permanecerão com seu histórico preservado.</div>
         `}
@@ -2300,6 +2316,14 @@ function renderSiteProductFormModal(app, v) {
           ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.siteProductFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`)}
           <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);flex-wrap:wrap"><input type="checkbox" checked=${!!f.active} onChange=${v.siteProductFormOnActive}/> Ativo (visível publicamente)</label>
         </div>
+
+        <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:6px">Seções (opcional)</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">
+          ${v.siteProductSectionRows.map((row) => html`
+            <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+          `)}
+        </div>
+
         <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
           <div onClick=${v.onCancelSiteProductForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>
           <div onClick=${v.onSaveSiteProductForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease">Salvar</div>

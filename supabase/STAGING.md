@@ -953,3 +953,19 @@ ideal (mixes environments), but not a credential leak.
   - Edit an existing product to add/clear an image URL → the change round-trips through `updateProduct`/`updateSiteProduct` correctly (clearing sends `null`, not an empty string that silently fails validation).
   - Create/edit a product in "Catálogo: Produtos" (admin) the same way and confirm it shows correctly on the new Produtos page for a non-admin visitor.
   - Confirm a product with no image URL still renders (falls back to `FALLBACK_IMG`, never a broken `<img>`).
+
+
+## PR: Supabase-backed Produtos page sections ("Seções de Produtos")
+
+- `supabase/015_product_sections.sql` — new migration, run manually in the Supabase SQL Editor (staging) before this PR's frontend is deployed there; never auto-applied. Depends on 004, 006, 010, 011, 012 already applied.
+  - Adds `secao_produto` to `categories.type`'s check constraint (new vocabulary alongside `receita`/`secao`/`proteina`, managed the same way in the admin Categorias tab).
+  - Adds `public.product_categories` (many-to-many products↔categories, exact structural mirror of `public.recipe_categories`), with its own reference-enforcement trigger and personal/admin RLS policies.
+  - Adds `list_public_product_sections(uuid[])` (anon-safe bulk read, mirrors `list_public_recipe_sections`) and `admin_reorder_product_sections(jsonb)` (mirrors `admin_reorder_home_sections`).
+  - Replaces `get_category_delete_impact`/`delete_category_resolved`/`get_product_delete_impact` (010) to add product-section awareness — every existing field/branch reproduced unchanged; only new, additive fields/branches for `secao_produto` categories and `product_categories` rows.
+- Root cause: the Produtos page's "Seções de Produtos" admin editor was entirely client-local (`app.js` `productSections` state, `localStorage`-backed) — creating/reordering/deleting a product section, or assigning a product to one, never touched Supabase, so it never reached any other visitor/session. This migration + the matching `catalog.js`/`app.js`/`template.js` changes give it the same Supabase-backed authoring path Receitas/Início sections already had (admin Categorias tab for the section vocabulary, a "Seções" checkbox list on the site product form for assignment).
+- Manual functional checklist after applying, in Modo de Criação (admin):
+  - Categorias tab → create a category with type "Seção de Produto" → it appears in the site product form's "Seções" checklist.
+  - Drag to reorder two "Seção de Produto" rows in the Categorias tab list → order persists after a reload, and the Produtos page (as a non-admin visitor) shows the sections in the same order.
+  - Edit a site product, check one or more sections, save → the product appears in that section's carousel on the Produtos/Início pages for a non-admin visitor without a manual reload.
+  - Delete a "Seção de Produto" category that still has products assigned → the reference-resolution modal lists those products under "Seções em produtos" and blocks deletion until each is replaced or removed.
+  - Delete a site product that belongs to a section → it disappears from that section's carousel (cascade via `product_categories.product_id on delete cascade`), no separate resolution step required.
