@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260807-2';
-import { CustomSelect } from './custom-select.js?v=20260807-2';
+import { html } from './vendor/htm-preact-standalone.js?v=20260810-2';
+import { CustomSelect } from './custom-select.js?v=20260810-2';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -1460,9 +1460,9 @@ function renderSiteRecipesTab(app, v) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
           Nova Receita no Catálogo
         </div>
-        <div onClick=${v.onOpenImportModal} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--neutral-50);color:var(--brand-700);border:1.5px solid var(--brand-500);border-radius:var(--radius-md);padding:14px;font-weight:700;font-size:15px;cursor:pointer;transition:transform 0.15s ease">
-          Importar Planilha
-        </div>
+        <button type="button" onClick=${v.onOpenImportModal} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--neutral-50);color:var(--brand-700);border:1.5px solid var(--brand-500);border-radius:var(--radius-md);padding:14px;font-family:var(--font-sans);font-weight:700;font-size:15px;cursor:pointer;transition:transform 0.15s ease">
+          Nova Importação
+        </button>
       </div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
@@ -2366,7 +2366,7 @@ function renderImportModal(app, v) {
         </div>
 
         ${v.importStepInstructions && html`
-          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:18px">Envie um arquivo <strong>.xlsx</strong> com duas abas: <strong>Produtos</strong> e <strong>Receitas</strong>. Veja o modelo esperado abaixo antes de enviar.</div>
+          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:18px">Envie um arquivo <strong>.xlsx</strong> com três abas: <strong>Categorias</strong>, <strong>Produtos</strong> e <strong>Receitas</strong>. Veja o modelo esperado abaixo antes de enviar.</div>
 
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:12px">
             <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Produtos"</div>
@@ -2396,7 +2396,7 @@ function renderImportModal(app, v) {
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">
             <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Categorias" (opcional, mas recomendada)</div>
             <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
-              <strong>tipo</strong> — obrigatório: "proteina" (nova categoria de produto) ou "secao" (nova seção da home)<br/>
+              <strong>tipo</strong> — obrigatório: "proteina" (categoria de produto), "receita" (categoria de receita) ou "secao" (seção da home)<br/>
               <strong>nome</strong> — obrigatório, nome da nova categoria ou seção<br/>
               Use esta aba para declarar as categorias/seções que ainda não existem no app antes de referenciá-las nas abas Produtos e Receitas.
             </div>
@@ -2411,10 +2411,10 @@ function renderImportModal(app, v) {
         `}
 
         ${v.importStepResult && html`
-          <div style="font-size:14px;color:var(--neutral-800);margin-bottom:14px">Arquivo: <strong>${v.importFileName}</strong> — ${v.importProductsCount} produtos e ${v.importRecipesCount} receitas encontrados.</div>
+          <div style="font-size:14px;color:var(--neutral-800);margin-bottom:14px">Arquivo: <strong>${v.importFileName}</strong> — ${v.importCategoriesCount} categorias, ${v.importProductsCount} produtos e ${v.importRecipesCount} receitas encontrados.</div>
           ${v.importSummary && html`
-            <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--neutral-800);line-height:1.8">
-              <strong>Resumo:</strong> ${v.importSummary.totalRows} linha(s); ${v.importSummary.valid} válida(s); ${v.importSummary.invalid} inválida(s); ${v.importSummary.newCount} nova(s); ${v.importSummary.replaceCount} a substituir; ${v.importSummary.duplicateCount} duplicada(s); ${v.importSummary.ignoredCount} ignorada(s); ${v.importSummary.removedCount} removida(s).
+            <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--neutral-800)">
+              <strong>Resumo:</strong> ${v.importSummary.totalRows} linha(s) nas três abas; ${v.importSummary.invalid} erro(s) de validação.
             </div>
           `}
           ${v.importResult && html`<div style="background:rgba(52,178,62,0.1);border:1px solid var(--green-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--green-600);font-weight:700">${v.importResult}</div>`}
@@ -2439,19 +2439,18 @@ function renderImportModal(app, v) {
           `}
 
           ${v.importCanProceed && html`
-            <div style="font-weight:700;font-size:14px;margin-bottom:10px">Como deseja importar?</div>
-            <label style=${`display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid ${v.importModeMergeBorder};margin-bottom:10px;cursor:pointer`}>
-              <input type="radio" name="importMode" checked=${v.importModeIsMerge} onChange=${v.onSetImportModeMerge}/>
-              <div><div style="font-weight:600;font-size:14px">Adicionar receitas</div><div style="font-size:12px;color:var(--neutral-600)">Adiciona receitas novas e ignora nomes equivalentes já existentes no catálogo público.</div></div>
-            </label>
-            <label style=${`display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid ${v.importModeReplaceMatchingBorder};margin-bottom:10px;cursor:pointer`}>
-              <input type="radio" name="importMode" checked=${v.importModeIsReplaceMatching} onChange=${v.onSetImportModeReplaceMatching}/>
-              <div><div style="font-weight:600;font-size:14px">Adicionar e substituir receitas de mesmo nome</div><div style="font-size:12px;color:var(--neutral-600)">Receitas da planilha com nome igual a uma já cadastrada são totalmente substituídas; as demais receitas e produtos existentes são mantidos.</div></div>
-            </label>
-            <label style=${`display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid ${v.importModeReplaceBorder};margin-bottom:6px;cursor:pointer`}>
-              <input type="radio" name="importMode" checked=${v.importModeIsReplace} onChange=${v.onSetImportModeReplace}/>
-              <div><div style="font-weight:600;font-size:14px">Substituir todas as receitas</div><div style="font-size:12px;color:var(--neutral-600)">Substitui todas as receitas públicas atuais pelas receitas válidas da planilha; receitas pessoais não são alteradas.</div></div>
-            </label>
+            <div style="font-weight:700;font-size:14px;margin-bottom:10px">Como deseja importar cada grupo?</div>
+            ${[
+              ['categories', 'Categorias', v.importCategoriesCount],
+              ['products', 'Produtos', v.importProductsCount],
+              ['recipes', 'Receitas', v.importRecipesCount],
+            ].map(([key, label, count]) => html`
+              <div key=${key} style="display:grid;grid-template-columns:minmax(100px,1fr) minmax(220px,2fr);gap:12px;align-items:center;padding:12px 14px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-md);margin-bottom:10px">
+                <div><strong>${label}</strong><div style="font-size:12px;color:var(--neutral-600)">${count} item(ns)</div></div>
+                <${CustomSelect} options=${v.importModeOptions} value=${v.importModes[key]} onChange=${mode => v.onSetImportMode(key, mode)} />
+              </div>
+            `)}
+            <div style="font-size:12px;color:var(--neutral-600);line-height:1.5">As escolhas são independentes. Categorias e produtos ainda não cadastrados podem ser declarados nas respectivas abas e serão tratados conforme a opção selecionada.</div>
           `}
 
           <div style="display:flex;gap:10px;margin-top:20px">

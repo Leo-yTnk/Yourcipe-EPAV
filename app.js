@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260807-2';
-import { CustomSelect } from './custom-select.js?v=20260807-2';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260810-2';
+import { CustomSelect } from './custom-select.js?v=20260810-2';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260807-2';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260807-2';
-import { supabase } from './supabase-client.js?v=20260807-2';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260807-2';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260807-2';
-import { normalizeDisplayName } from './display-name.js?v=20260807-2';
-import * as catalog from './catalog.js?v=20260807-2';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260807-2';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260807-2';
-import { createLoadGuard } from './load-guard.js?v=20260807-2';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260807-2';
+} from './data.js?v=20260810-2';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260810-2';
+import { supabase } from './supabase-client.js?v=20260810-2';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260810-2';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260810-2';
+import { normalizeDisplayName } from './display-name.js?v=20260810-2';
+import * as catalog from './catalog.js?v=20260810-2';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260810-2';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260810-2';
+import { createLoadGuard } from './load-guard.js?v=20260810-2';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260810-2';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260807-2';
+const FRONTEND_VERSION = '20260810-2';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -194,11 +194,12 @@ class App extends Component {
       importParseError: '',
       importParsedProducts: [],
       importParsedRecipes: [],
+      importParsedCategories: [],
       importErrors: [],
       importWarnings: [],
       importNewProductCategories: [],
       importNewSections: [],
-      importMode: 'add',
+      importModes: { recipes: 'add', products: 'add', categories: 'add' },
       importSummary: null,
       importBusy: false,
       importResult: null,
@@ -2924,12 +2925,10 @@ class App extends Component {
     this.persist(LS_KEYS.recipes, recipes);
   };
 
-  onOpenImportModal = () => { if (this.state.authRole !== 'admin') return; this.setState({ showImportModal: true, importStep: 'instructions', importFileName: '', importParseError: '', importParsedProducts: [], importParsedRecipes: [], importErrors: [], importWarnings: [], importNewProductCategories: [], importNewSections: [], importMode: 'add', importSummary: null, importBusy: false, importResult: null, importFileInputKey: this.state.importFileInputKey + 1 }); };
+  onOpenImportModal = () => { if (this.state.authRole !== 'admin') return; this.setState({ showImportModal: true, importStep: 'instructions', importFileName: '', importParseError: '', importParsedProducts: [], importParsedRecipes: [], importParsedCategories: [], importErrors: [], importWarnings: [], importNewProductCategories: [], importNewSections: [], importModes: { recipes: 'add', products: 'add', categories: 'add' }, importSummary: null, importBusy: false, importResult: null, importFileInputKey: this.state.importFileInputKey + 1 }); };
   onCloseImportModal = () => this.setState({ showImportModal: false });
   onBackToInstructions = () => this.setState({ importStep: 'instructions', importParseError: '' });
-  onSetImportModeMerge = () => this.setState({ importMode: 'add' }, () => this.recomputeImportSummary());
-  onSetImportModeReplaceMatching = () => this.setState({ importMode: 'upsert' }, () => this.recomputeImportSummary());
-  onSetImportModeReplace = () => this.setState({ importMode: 'replace_all' }, () => this.recomputeImportSummary());
+  onSetImportMode = (entity, mode) => this.setState({ importModes: { ...this.state.importModes, [entity]: mode } }, () => this.recomputeImportSummary());
 
   onDownloadTemplate = () => {
     if (!window.XLSX) return;
@@ -2972,61 +2971,94 @@ class App extends Component {
 
   processImportWorkbook = (wb, fileName) => {
     if (this.state.authRole !== 'admin') return;
-    const norm = (txt) => this.normalizeImportText(txt).replace(/[^a-z0-9]+/g, '');
-    const get = (row, names) => { const map = Object.fromEntries(Object.keys(row).map(k => [norm(k), row[k]])); for (const name of names) if (Object.prototype.hasOwnProperty.call(map, norm(name))) return map[norm(name)]; return ''; };
-    const recSheetName = wb.SheetNames.find(n => this.normalizeImportText(n) === 'receitas') || wb.SheetNames[0];
-    const recRows = recSheetName ? XLSX.utils.sheet_to_json(wb.Sheets[recSheetName], { defval: '' }) : [];
-    const errors = [], warnings = [], parsedRecipes = [];
-    const categoryNames = new Set((this.state.siteCategories || []).filter(c => c.type === 'receita' && c.active !== false).map(c => this.normalizeImportText(c.name)));
-    const productNames = new Set((this.state.siteProducts || []).filter(p => p.active !== false).map(p => this.normalizeImportText(p.name)));
-    const sectionKeys = new Set((this.state.siteCategories || []).filter(c => c.type === 'secao' && c.active !== false).flatMap(c => [this.normalizeImportText(c.slug), this.normalizeImportText(c.name)]));
-    const seen = new Set();
-    if (!recRows.length) errors.push('Arquivo vazio ou sem aba Receitas com dados.');
-    recRows.forEach((row, i) => {
-      const line = i + 2;
-      const nome = String(get(row, ['nome', 'name', 'receita']) || '').trim();
-      const categoria = String(get(row, ['categoria', 'categoria da receita']) || '').trim();
-      const tempo = parseInt(get(row, ['tempo', 'tempo de preparo', 'prep_time']), 10);
-      const porcoes = parseInt(get(row, ['porcoes', 'porções', 'servings']), 10);
-      const dificuldade = String(get(row, ['dificuldade', 'difficulty']) || '').trim() || 'Fácil';
-      const imagem = String(get(row, ['imagem', 'url da imagem', 'image_url', 'imagem url']) || '').trim();
-      const destaqueRaw = String(get(row, ['destaque', 'featured']) || '').trim().toLowerCase();
-      const tagsRaw = String(get(row, ['tags', 'secoes', 'seções']) || '').trim();
-      const ingRaw = String(get(row, ['ingredientes', 'ingredients']) || '').trim();
-      const modoRaw = String(get(row, ['modoPreparo', 'modo de preparo', 'instrucoes', 'instruções', 'instructions']) || '').trim();
-      const extrasRaw = String(get(row, ['extras', 'descrição', 'descricao']) || '').trim();
-      const dicasRaw = String(get(row, ['dicas', 'tips']) || '').trim();
-      const nameKey = this.normalizeImportText(nome);
-      if (!nome) errors.push(`Receitas, linha ${line}: campo nome ausente.`); else if (seen.has(nameKey)) errors.push(`Receitas, linha ${line} ("${nome}"): nome duplicado na planilha.`); else seen.add(nameKey);
-      if (!categoria || !categoryNames.has(this.normalizeImportText(categoria))) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): categoria inexistente no catálogo público: "${categoria}".`);
-      if (!tempo || isNaN(tempo) || tempo < 0) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): tempo de preparo inválido.`);
-      if (!porcoes || isNaN(porcoes) || porcoes < 0) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): porções inválidas.`);
-      if (!DIFICULDADES.includes(dificuldade)) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): dificuldade inválida: "${dificuldade}".`);
-      if (!ingRaw) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): ingredientes ausentes.`);
-      if (!modoRaw) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): modo de preparo ausente.`);
-      const ingredients = [];
-      this.splitImportList(ingRaw).forEach(part => { const sep = part.lastIndexOf(':'); if (sep === -1) { errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): ingrediente "${part}" fora do formato Produto:quantidade.`); return; } const product = part.slice(0, sep).trim(); const quantity = parseFloat(part.slice(sep + 1).replace(',', '.')); if (!productNames.has(this.normalizeImportText(product))) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): ingrediente/produto público inexistente: "${product}".`); if (!quantity || isNaN(quantity) || quantity <= 0) errors.push(`Receitas, linha ${line} ("${nome || 'sem nome'}"): quantidade inválida para "${product}".`); ingredients.push({ product, quantity }); });
-      const sections = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean).filter(t => { const ok = this.normalizeImportText(t) === 'destaque' || sectionKeys.has(this.normalizeImportText(t)); if (!ok) warnings.push(`Receitas, linha ${line} ("${nome}"): seção "${t}" não existe no catálogo público e será ignorada.`); return ok; }).filter(t => this.normalizeImportText(t) !== 'destaque') : [];
-      parsedRecipes.push({ name: nome, category: categoria, prep_time: isNaN(tempo) ? 0 : tempo, servings: isNaN(porcoes) ? 0 : porcoes, difficulty: dificuldade, image_url: imagem, featured: ['sim','true','1','x'].includes(destaqueRaw) || tagsRaw.split(',').some(t => this.normalizeImportText(t) === 'destaque'), ingredients, sections, extras: this.splitImportList(extrasRaw), instructions: this.splitImportList(modoRaw), tips: this.splitImportList(dicasRaw) });
+    const normKey = (txt) => this.normalizeImportText(txt).replace(/[^a-z0-9]+/g, '');
+    const get = (row, names) => { const map = Object.fromEntries(Object.keys(row).map(k => [normKey(k), row[k]])); for (const name of names) if (Object.prototype.hasOwnProperty.call(map, normKey(name))) return map[normKey(name)]; return ''; };
+    const rows = (sheet) => { const name = wb.SheetNames.find(n => this.normalizeImportText(n) === sheet); return name ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' }) : []; };
+    const categoryRows = rows('categorias'), productRows = rows('produtos'), recipeRows = rows('receitas');
+    const errors = [], warnings = [], parsedCategories = [], parsedProducts = [], parsedRecipes = [];
+    const categoryKeys = new Set((this.state.siteCategories || []).filter(c => c.active !== false).map(c => `${c.type}:${this.normalizeImportText(c.name)}`));
+    const seenCategories = new Set();
+    categoryRows.forEach((row, i) => {
+      const typeRaw = this.normalizeImportText(get(row, ['tipo', 'type']));
+      const type = typeRaw === 'secao_produto' ? 'secao' : typeRaw;
+      const name = String(get(row, ['nome', 'name', 'categoria']) || '').trim();
+      const key = `${type}:${this.normalizeImportText(name)}`;
+      if (!['proteina', 'receita', 'secao'].includes(type)) errors.push(`Categorias, linha ${i + 2}: tipo inválido "${typeRaw}".`);
+      if (!name) errors.push(`Categorias, linha ${i + 2}: campo nome ausente.`);
+      else if (seenCategories.has(key)) errors.push(`Categorias, linha ${i + 2} ("${name}"): categoria duplicada.`);
+      else { seenCategories.add(key); categoryKeys.add(key); parsedCategories.push({ type, name }); }
     });
-    this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedProducts: [], importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importNewProductCategories: [], importNewSections: [], importResult: null }, () => this.recomputeImportSummary());
+
+    const productNames = new Set((this.state.siteProducts || []).filter(p => p.active !== false).map(p => this.normalizeImportText(p.name)));
+    const seenProducts = new Set();
+    productRows.forEach((row, i) => {
+      const name = String(get(row, ['nome', 'name', 'produto']) || '').trim();
+      const category = String(get(row, ['categoria', 'category']) || '').trim();
+      const unit = this.normalizeImportText(get(row, ['unidade', 'unit']));
+      const price = Number(String(get(row, ['preco', 'preço', 'price'])).replace(',', '.'));
+      const key = this.normalizeImportText(name);
+      if (!name) errors.push(`Produtos, linha ${i + 2}: campo nome ausente.`);
+      else if (seenProducts.has(key)) errors.push(`Produtos, linha ${i + 2} ("${name}"): produto duplicado.`);
+      else seenProducts.add(key);
+      if (!categoryKeys.has(`proteina:${this.normalizeImportText(category)}`)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
+      if (!['kg', 'un', 'pacote', 'caixa', 'pote'].includes(unit)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): unidade inválida.`);
+      if (!Number.isFinite(price) || price < 0) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): preço inválido.`);
+      parsedProducts.push({ name, category, unit, price: Number.isFinite(price) ? price : 0 });
+      productNames.add(key);
+    });
+
+    const recipeCategoryNames = new Set([...categoryKeys].filter(k => k.startsWith('receita:')).map(k => k.slice(8)));
+    const sectionKeys = new Set([...categoryKeys].filter(k => k.startsWith('secao:')).map(k => k.slice(6)));
+    const seenRecipes = new Set();
+    recipeRows.forEach((row, i) => {
+      const line = i + 2, name = String(get(row, ['nome', 'name', 'receita']) || '').trim();
+      const category = String(get(row, ['categoria', 'categoria da receita']) || '').trim();
+      const prepTime = parseInt(get(row, ['tempo', 'tempo de preparo', 'prep_time']), 10);
+      const servings = parseInt(get(row, ['porcoes', 'porções', 'servings']), 10);
+      const difficulty = String(get(row, ['dificuldade', 'difficulty']) || '').trim() || 'Fácil';
+      const ingredientsRaw = String(get(row, ['ingredientes', 'ingredients']) || '').trim();
+      const instructionsRaw = String(get(row, ['modoPreparo', 'modo de preparo', 'instrucoes', 'instruções', 'instructions']) || '').trim();
+      const tagsRaw = String(get(row, ['tags', 'secoes', 'seções']) || '').trim();
+      const key = this.normalizeImportText(name);
+      if (!name) errors.push(`Receitas, linha ${line}: campo nome ausente.`); else if (seenRecipes.has(key)) errors.push(`Receitas, linha ${line} ("${name}"): receita duplicada.`); else seenRecipes.add(key);
+      if (!recipeCategoryNames.has(this.normalizeImportText(category))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
+      if (!Number.isFinite(prepTime) || prepTime < 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): tempo inválido.`);
+      if (!Number.isFinite(servings) || servings < 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): porções inválidas.`);
+      if (!DIFICULDADES.includes(difficulty)) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): dificuldade inválida.`);
+      const ingredients = [];
+      this.splitImportList(ingredientsRaw).forEach(part => { const sep = part.lastIndexOf(':'); const product = sep < 0 ? part : part.slice(0, sep).trim(); const quantity = sep < 0 ? NaN : parseFloat(part.slice(sep + 1).replace(',', '.')); if (!productNames.has(this.normalizeImportText(product))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): produto não cadastrado nem declarado na aba Produtos: "${product}".`); if (!Number.isFinite(quantity) || quantity <= 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): quantidade inválida para "${product}".`); ingredients.push({ product, quantity }); });
+      if (!ingredients.length) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): ingredientes ausentes.`);
+      if (!instructionsRaw) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): modo de preparo ausente.`);
+      const sections = tagsRaw.split(',').map(x => x.trim()).filter(x => x && this.normalizeImportText(x) !== 'destaque').filter(x => { const ok = sectionKeys.has(this.normalizeImportText(x)); if (!ok) warnings.push(`Receitas, linha ${line}: seção "${x}" não cadastrada; será ignorada.`); return ok; });
+      parsedRecipes.push({ name, category, prep_time: prepTime || 0, servings: servings || 0, difficulty, image_url: String(get(row, ['imagem', 'image_url']) || '').trim(), featured: tagsRaw.split(',').some(x => this.normalizeImportText(x) === 'destaque'), ingredients, sections, extras: this.splitImportList(get(row, ['extras', 'descricao', 'descrição'])), instructions: this.splitImportList(instructionsRaw), tips: this.splitImportList(get(row, ['dicas', 'tips'])) });
+    });
+    if (!categoryRows.length && !productRows.length && !recipeRows.length) errors.push('Arquivo sem dados nas abas Categorias, Produtos ou Receitas.');
+    this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedCategories: parsedCategories, importParsedProducts: parsedProducts, importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importResult: null }, () => this.recomputeImportSummary());
   };
 
   recomputeImportSummary = () => {
-    const norm = (x) => this.normalizeImportText(x), imported = this.state.importParsedRecipes || [], publicNames = new Set((this.state.siteRecipes || []).map(r => norm(r.name))), importNames = new Set(imported.map(r => norm(r.name))), duplicateRows = imported.filter(r => publicNames.has(norm(r.name))).map(r => r.name);
-    this.setState({ importSummary: { totalRows: imported.length, valid: this.state.importErrors.length ? 0 : imported.length, invalid: this.state.importErrors.length, newCount: imported.filter(r => !publicNames.has(norm(r.name))).length, replaceCount: this.state.importMode === 'add' ? 0 : imported.filter(r => publicNames.has(norm(r.name))).length, duplicateCount: duplicateRows.length, duplicateRows, ignoredCount: this.state.importMode === 'add' ? duplicateRows.length : 0, removedCount: this.state.importMode === 'replace_all' ? (this.state.siteRecipes || []).filter(r => !importNames.has(norm(r.name))).length : 0 } });
+    const norm = x => this.normalizeImportText(x);
+    const entities = [
+      ['categories', this.state.importParsedCategories || [], this.state.siteCategories || []],
+      ['products', this.state.importParsedProducts || [], this.state.siteProducts || []],
+      ['recipes', this.state.importParsedRecipes || [], this.state.siteRecipes || []],
+    ];
+    const details = {};
+    entities.forEach(([kind, imported, existing]) => { const existingKeys = new Set(existing.map(x => kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))); const importedKeys = new Set(imported.map(x => kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))); const equivalent = imported.filter(x => existingKeys.has(kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))).length; const mode = this.state.importModes[kind]; details[kind] = { total: imported.length, newCount: imported.length - equivalent, replaceCount: mode === 'add' ? 0 : equivalent, ignoredCount: mode === 'add' ? equivalent : 0, removedCount: mode === 'replace_all' ? existing.filter(x => !importedKeys.has(kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))).length : 0 }; });
+    this.setState({ importSummary: { details, totalRows: entities.reduce((n, x) => n + x[1].length, 0), invalid: this.state.importErrors.length } });
   };
 
   onConfirmImport = async () => {
     const s = this.state;
     if (s.authRole !== 'admin' || s.importBusy || s.importErrors.length) return;
-    if (s.importMode === 'replace_all' && !window.confirm('Esta operação substituirá todas as receitas públicas atuais pelas receitas válidas da planilha. Receitas pessoais não serão alteradas. Deseja continuar?')) return;
+    if (Object.values(s.importModes).includes('replace_all') && !window.confirm('Substituir tudo desativará os itens públicos ausentes da planilha nas seções selecionadas. Receitas pessoais não serão alteradas. Deseja continuar?')) return;
     this.setState({ importBusy: true, importParseError: '', importResult: null });
-    const { data, error } = await catalog.adminImportPublicRecipes(s.importMode, s.importParsedRecipes);
+    const { data, error } = await catalog.adminImportPublicCatalog(s.importModes, s.importParsedCategories, s.importParsedProducts, s.importParsedRecipes);
     this.setState({ importBusy: false });
     if (error) { this.setState({ importParseError: error.message || 'Falha ao importar. Nenhuma alteração foi aplicada.' }); return; }
     this.refreshAdminCatalog();
-    const msg = `Importação concluída: ${data.added || 0} adicionada(s), ${data.replaced || 0} substituída(s), ${data.ignored || 0} ignorada(s), ${data.removed || 0} removida(s).`;
+    const total = ['categories', 'products', 'recipes'].reduce((acc, kind) => { const item = data[kind] || {}; acc.added += item.added || 0; acc.replaced += item.replaced || 0; acc.ignored += item.ignored || 0; acc.removed += item.removed || 0; return acc; }, { added: 0, replaced: 0, ignored: 0, removed: 0 });
+    const msg = `Importação concluída: ${total.added} adicionada(s), ${total.replaced} substituída(s), ${total.ignored} ignorada(s), ${total.removed} desativada(s).`;
     this.setState({ importResult: msg, adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 5000);
   };
 
@@ -4089,17 +4121,17 @@ class App extends Component {
       importStepInstructions: s.importStep === 'instructions', importStepResult: s.importStep === 'result',
       onDownloadTemplate: this.onDownloadTemplate, onImportFileChange: this.onImportFileChange, importSummary: s.importSummary, importBusy: s.importBusy, importResult: s.importResult, importFileInputKey: s.importFileInputKey,
       importParseError: s.importParseError, hasImportParseError: !!s.importParseError,
-      importFileName: s.importFileName, importProductsCount: s.importParsedProducts.length, importRecipesCount: s.importParsedRecipes.length,
+      importFileName: s.importFileName, importCategoriesCount: s.importParsedCategories.length, importProductsCount: s.importParsedProducts.length, importRecipesCount: s.importParsedRecipes.length,
       importErrors: s.importErrors, hasImportErrors: s.importErrors.length > 0,
       importWarnings: s.importWarnings, hasImportWarnings: s.importWarnings.length > 0,
-      hasImportNewCategories: ((s.importNewProductCategories || []).length + (s.importNewSections || []).length) > 0,
-      importNewProductCategoriesList: [...(s.importNewProductCategories || []).map(c => c.label + ' (proteína)'), ...(s.importNewSections || []).map(c => c.label + ' (seção)')].join(', '),
-      importCanProceed: s.importStep === 'result' && s.importErrors.length === 0,
-      importModeIsMerge: s.importMode === 'add', importModeIsReplaceMatching: s.importMode === 'upsert', importModeIsReplace: s.importMode === 'replace_all',
-      importModeMergeBorder: s.importMode === 'add' ? 'var(--brand-500)' : 'var(--neutral-200)',
-      importModeReplaceMatchingBorder: s.importMode === 'upsert' ? 'var(--brand-500)' : 'var(--neutral-200)',
-      importModeReplaceBorder: s.importMode === 'replace_all' ? 'var(--brand-500)' : 'var(--neutral-200)',
-      onSetImportModeMerge: this.onSetImportModeMerge, onSetImportModeReplaceMatching: this.onSetImportModeReplaceMatching, onSetImportModeReplace: this.onSetImportModeReplace, onConfirmImport: this.onConfirmImport,
+      importCanProceed: s.importStep === 'result' && s.importErrors.length === 0 && (s.importParsedCategories.length + s.importParsedProducts.length + s.importParsedRecipes.length) > 0,
+      importModes: s.importModes,
+      importModeOptions: [
+        { value: 'add', label: 'Adicionar (ignorar equivalentes)' },
+        { value: 'upsert', label: 'Substituir equivalentes' },
+        { value: 'replace_all', label: 'Substituir tudo' },
+      ],
+      onSetImportMode: this.onSetImportMode, onConfirmImport: this.onConfirmImport,
       categoriasProdutoList: s.productCategories.filter(c => c.enabled).map(c => c.label).join(', '), categoriasReceitaList: CATEGORIAS_RECEITA.join(', '),
       adminFlash: s.adminFlash, hasAdminFlash: !!s.adminFlash,
     };
@@ -4111,7 +4143,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260807-2';
+import { renderApp } from './template.js?v=20260810-2';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
