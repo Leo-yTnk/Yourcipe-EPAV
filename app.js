@@ -2925,9 +2925,21 @@ class App extends Component {
     this.persist(LS_KEYS.recipes, recipes);
   };
 
-  onOpenImportModal = () => { if (this.state.authRole !== 'admin') return; this.setState({ showImportModal: true, importStep: 'instructions', importFileName: '', importParseError: '', importParsedProducts: [], importParsedRecipes: [], importParsedCategories: [], importErrors: [], importWarnings: [], importNewProductCategories: [], importNewSections: [], importModes: { recipes: 'add', products: 'add', categories: 'add' }, importSummary: null, importBusy: false, importResult: null, importFileInputKey: this.state.importFileInputKey + 1 }); };
+  freshImportState = () => ({
+    importStep: 'instructions', importFileName: '', importParseError: '',
+    importParsedProducts: [], importParsedRecipes: [], importParsedCategories: [],
+    importErrors: [], importWarnings: [], importNewProductCategories: [], importNewSections: [],
+    importModes: { recipes: 'add', products: 'add', categories: 'add' },
+    importSummary: null, importBusy: false, importResult: null,
+    importFileInputKey: this.state.importFileInputKey + 1,
+  });
+  onOpenImportModal = () => {
+    if (this.state.authRole !== 'admin') return;
+    this.setState({ showImportModal: true, ...this.freshImportState() });
+  };
   onCloseImportModal = () => this.setState({ showImportModal: false });
   onBackToInstructions = () => this.setState({ importStep: 'instructions', importParseError: '' });
+  onNewImport = () => this.setState(this.freshImportState());
   onSetImportMode = (entity, mode) => this.setState({ importModes: { ...this.state.importModes, [entity]: mode } }, () => this.recomputeImportSummary());
 
   onDownloadTemplate = () => {
@@ -4117,7 +4129,7 @@ class App extends Component {
       productFormOnImagem: this.productFormField('imagem'), onRandomProductImage: this.onRandomProductImage, productFormTagRows,
       categoriaProdutoOptions: s.productCategories.filter(c => c.enabled).map(c => c.label), unidadeOptions: this.unidades,
       onCancelProductForm: this.onCancelProductForm, onSaveProductForm: this.onSaveProductForm,
-      showImportModal: s.showImportModal, onOpenImportModal: this.onOpenImportModal, onCloseImportModal: this.onCloseImportModal, onBackToInstructions: this.onBackToInstructions,
+      showImportModal: s.showImportModal, onOpenImportModal: this.onOpenImportModal, onCloseImportModal: this.onCloseImportModal, onBackToInstructions: this.onBackToInstructions, onNewImport: this.onNewImport,
       importStepInstructions: s.importStep === 'instructions', importStepResult: s.importStep === 'result',
       onDownloadTemplate: this.onDownloadTemplate, onImportFileChange: this.onImportFileChange, importSummary: s.importSummary, importBusy: s.importBusy, importResult: s.importResult, importFileInputKey: s.importFileInputKey,
       importParseError: s.importParseError, hasImportParseError: !!s.importParseError,

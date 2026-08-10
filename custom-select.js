@@ -25,15 +25,17 @@ export class CustomSelect extends Component {
 
     return html`
       <div style="position:relative;font-family:var(--font-sans,inherit);width:100%">
-        <div onClick=${this.toggle} style=${triggerStyle}>
+        <div role="button" tabIndex="0" aria-label=${this.props.ariaLabel || displayLabel} aria-haspopup="listbox" aria-expanded=${open} onClick=${this.toggle} onKeyDown=${(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.toggle(); } }} style=${triggerStyle}>
           <span style=${labelStyle}>${displayLabel}</span>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-600)" stroke-width="2.2" style=${chevronStyle}><path d="M6 9l6 6 6-6"></path></svg>
         </div>
         ${open && html`
-          <div style=${menuStyle}>
+          <div role="listbox" aria-label=${this.props.ariaLabel || displayLabel} style=${menuStyle}>
             ${norm.map((o) => html`
               <div
                 key=${String(o.value)}
+                role="option"
+                aria-selected=${o.value === this.props.value}
                 onClick=${() => this.select(o.value)}
                 style=${`padding:12px 14px;font-size:14px;font-weight:600;cursor:pointer;color:${o.value === this.props.value ? 'var(--brand-700)' : 'var(--neutral-900)'};background:${o.value === this.props.value ? 'var(--neutral-50)' : 'transparent'}`}
               >${o.label}</div>
