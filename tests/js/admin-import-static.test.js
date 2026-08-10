@@ -24,6 +24,15 @@ describe('admin spreadsheet import wiring', () => {
     expect(app).toContain('Receitas pessoais não serão alteradas');
   });
 
+  it('starts a clean new import and uses CustomSelect for each conflict mode', () => {
+    expect(app).toContain('onNewImport = () => this.setState(this.freshImportState())');
+    expect(app).toContain('onNewImport: this.onNewImport');
+    expect(template).toContain("v.importResult ? 'Nova Importação' : 'Voltar'");
+    expect(template).toContain('ariaLabel=${`Modo de importação de ${label}`}');
+    expect(template).toContain('onChange=${mode => v.onSetImportMode(key, mode)}');
+    expect(template).not.toContain('<select aria-label=${`Modo de importação de ${label}`}');
+  });
+
   it('installs server-side authorization and scope protections', () => {
     expect(sql).toContain('not public.is_admin()');
     expect(sql).toContain("scope = 'site'");

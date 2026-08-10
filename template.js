@@ -2447,18 +2447,23 @@ function renderImportModal(app, v) {
             ].map(([key, label, count]) => html`
               <div key=${key} style="display:grid;grid-template-columns:minmax(100px,1fr) minmax(220px,2fr);gap:12px;align-items:center;padding:12px 14px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-md);margin-bottom:10px">
                 <div><strong>${label}</strong><div style="font-size:12px;color:var(--neutral-600)">${count} item(ns)</div></div>
-                <select aria-label=${`Modo de importação de ${label}`} value=${v.importModes[key]} onChange=${e => v.onSetImportMode(key, e.target.value)} style="padding:10px;border:1px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--neutral-900)">
-                  <option value="add">Adicionar (ignorar equivalentes)</option>
-                  <option value="upsert">Substituir equivalentes</option>
-                  <option value="replace_all">Substituir tudo</option>
-                </select>
+                <${CustomSelect}
+                  ariaLabel=${`Modo de importação de ${label}`}
+                  options=${[
+                    { value: 'add', label: 'Adicionar (ignorar equivalentes)' },
+                    { value: 'upsert', label: 'Substituir equivalentes' },
+                    { value: 'replace_all', label: 'Substituir tudo' },
+                  ]}
+                  value=${v.importModes[key]}
+                  onChange=${mode => v.onSetImportMode(key, mode)}
+                />
               </div>
             `)}
             <div style="font-size:12px;color:var(--neutral-600);line-height:1.5">As escolhas são independentes. Categorias e produtos ainda não cadastrados podem ser declarados nas respectivas abas e serão tratados conforme a opção selecionada.</div>
           `}
 
           <div style="display:flex;gap:10px;margin-top:20px">
-            <div onClick=${v.onBackToInstructions} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50)">Voltar</div>
+            <div onClick=${v.importResult ? v.onNewImport : v.onBackToInstructions} style="flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50)">${v.importResult ? 'Nova Importação' : 'Voltar'}</div>
             ${v.importCanProceed && html`<div onClick=${v.onConfirmImport} style=${`flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:${v.importBusy ? 'not-allowed' : 'pointer'};color:#F4F2F1;background:${v.importBusy ? 'var(--neutral-300)' : 'var(--brand-700)'}`}>${v.importBusy ? 'Importando...' : 'Confirmar Importação'}</div>`}
           </div>
         `}
