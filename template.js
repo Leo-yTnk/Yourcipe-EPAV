@@ -2374,7 +2374,8 @@ function renderImportModal(app, v) {
               <strong>nome</strong> — obrigatório<br/>
               <strong>categoria</strong> — obrigatório, uma de: ${v.categoriasProdutoList}<br/>
               <strong>unidade</strong> — obrigatório: kg, un, pacote, caixa, pote<br/>
-              <strong>preco</strong> — obrigatório, número (ex: 34.90)
+              <strong>preco</strong> — obrigatório, número (ex: 34.90)<br/>
+              <strong>imagem</strong> — obrigatório, URL completa da foto (http ou https)
             </div>
           </div>
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">

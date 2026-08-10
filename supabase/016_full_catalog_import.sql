@@ -31,7 +31,7 @@ begin
     if btrim(coalesce(v_item->>'name', '')) = '' or coalesce(v_item->>'type', '') not in ('proteina', 'receita', 'secao') then raise exception 'invalid_category'; end if;
   end loop;
   for v_item in select * from jsonb_array_elements(coalesce(p_products, '[]'::jsonb)) loop
-    if btrim(coalesce(v_item->>'name', '')) = '' or coalesce(v_item->>'unit', '') not in ('kg', 'un', 'pacote', 'caixa', 'pote') or coalesce((v_item->>'price')::numeric, -1) < 0 then raise exception 'invalid_product: %', v_item->>'name'; end if;
+    if btrim(coalesce(v_item->>'name', '')) = '' or coalesce(v_item->>'unit', '') not in ('kg', 'un', 'pacote', 'caixa', 'pote') or coalesce((v_item->>'price')::numeric, -1) < 0 or btrim(coalesce(v_item->>'image_url', '')) !~* '^https?://[^[:space:]]+$' then raise exception 'invalid_product: %', v_item->>'name'; end if;
     if not exists (select 1 from public.categories c where c.scope = 'site' and c.owner_id is null and c.type = 'proteina' and public.normalize_catalog_name(c.name) = public.normalize_catalog_name(v_item->>'category'))
        and not exists (select 1 from jsonb_array_elements(coalesce(p_categories, '[]'::jsonb)) x where x->>'type' = 'proteina' and public.normalize_catalog_name(x->>'name') = public.normalize_catalog_name(v_item->>'category')) then raise exception 'category_not_found: %', v_item->>'category'; end if;
   end loop;
@@ -60,8 +60,8 @@ begin
     if v_category_id is null then raise exception 'active_category_not_found: %', v_item->>'category'; end if;
     select id into v_id from public.products where scope = 'site' and owner_id is null and public.normalize_catalog_name(name) = public.normalize_catalog_name(v_item->>'name') limit 1;
     if v_id is not null and v_product_mode = 'add' then v_product_ignored := v_product_ignored + 1;
-    elsif v_id is not null then update public.products set name = btrim(v_item->>'name'), category_id = v_category_id, unit = v_item->>'unit', price = (v_item->>'price')::numeric, active = true, updated_at = now(), updated_by = auth.uid() where id = v_id; v_product_replaced := v_product_replaced + 1;
-    else insert into public.products(scope, owner_id, name, category_id, unit, price, active, created_by, updated_by) values ('site', null, btrim(v_item->>'name'), v_category_id, v_item->>'unit', (v_item->>'price')::numeric, true, auth.uid(), auth.uid()); v_product_added := v_product_added + 1; end if;
+    elsif v_id is not null then update public.products set name = btrim(v_item->>'name'), category_id = v_category_id, unit = v_item->>'unit', price = (v_item->>'price')::numeric, image_url = btrim(v_item->>'image_url'), active = true, updated_at = now(), updated_by = auth.uid() where id = v_id; v_product_replaced := v_product_replaced + 1;
+    else insert into public.products(scope, owner_id, name, category_id, unit, price, image_url, active, created_by, updated_by) values ('site', null, btrim(v_item->>'name'), v_category_id, v_item->>'unit', (v_item->>'price')::numeric, btrim(v_item->>'image_url'), true, auth.uid(), auth.uid()); v_product_added := v_product_added + 1; end if;
   end loop;
 
   v_recipe_result := public.admin_import_public_recipes(v_recipe_mode, coalesce(p_recipes, '[]'::jsonb));

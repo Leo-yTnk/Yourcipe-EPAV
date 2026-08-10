@@ -2939,14 +2939,14 @@ class App extends Component {
   };
   onCloseImportModal = () => this.setState({ showImportModal: false });
   onBackToInstructions = () => this.setState({ importStep: 'instructions', importParseError: '' });
-  onNewImport = () => this.setState(this.freshImportState());
+  onNewImport = () => this.setState({ showImportModal: false, ...this.freshImportState() });
   onSetImportMode = (entity, mode) => this.setState({ importModes: { ...this.state.importModes, [entity]: mode } }, () => this.recomputeImportSummary());
 
   onDownloadTemplate = () => {
     if (!window.XLSX) return;
     const produtosSheet = XLSX.utils.json_to_sheet([
-      { nome: 'Picanha', categoria: 'Bovinos', unidade: 'kg', preco: 89.90 },
-      { nome: 'Sal Grosso', categoria: 'Mercearia', unidade: 'pacote', preco: 6.90 },
+      { nome: 'Picanha', categoria: 'Bovinos', unidade: 'kg', preco: 89.90, imagem: 'https://picsum.photos/seed/picanha/900/650' },
+      { nome: 'Sal Grosso', categoria: 'Mercearia', unidade: 'pacote', preco: 6.90, imagem: 'https://picsum.photos/seed/sal-grosso/900/650' },
     ]);
     const receitasSheet = XLSX.utils.json_to_sheet([
       { nome: 'Picanha na Brasa', categoria: 'Bovina', tempo: 50, porcoes: 6, dificuldade: 'Fácil', imagem: 'https://picsum.photos/seed/exemplo/900/650', tags: 'destaque,ocasiao', ingredientes: 'Picanha:1.5; Sal Grosso:0.2', extras: 'Carvão para churrasqueira; Pimenta a gosto', modoPreparo: 'Tempere a carne com sal grosso.; Grelhe na churrasqueira até o ponto desejado.; Deixe descansar antes de fatiar.', dicas: 'Não fure a carne ao virar.' },
@@ -3008,6 +3008,7 @@ class App extends Component {
       const category = String(get(row, ['categoria', 'category']) || '').trim();
       const unit = this.normalizeImportText(get(row, ['unidade', 'unit']));
       const price = Number(String(get(row, ['preco', 'preço', 'price'])).replace(',', '.'));
+      const imageUrl = String(get(row, ['imagem', 'image_url', 'url da imagem']) || '').trim();
       const key = this.normalizeImportText(name);
       if (!name) errors.push(`Produtos, linha ${i + 2}: campo nome ausente.`);
       else if (seenProducts.has(key)) errors.push(`Produtos, linha ${i + 2} ("${name}"): produto duplicado.`);
@@ -3015,7 +3016,8 @@ class App extends Component {
       if (!categoryKeys.has(`proteina:${this.normalizeImportText(category)}`)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
       if (!['kg', 'un', 'pacote', 'caixa', 'pote'].includes(unit)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): unidade inválida.`);
       if (!Number.isFinite(price) || price < 0) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): preço inválido.`);
-      parsedProducts.push({ name, category, unit, price: Number.isFinite(price) ? price : 0 });
+      if (!/^https?:\/\/\S+$/i.test(imageUrl)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): URL de imagem ausente ou inválida.`);
+      parsedProducts.push({ name, category, unit, price: Number.isFinite(price) ? price : 0, image_url: imageUrl });
       productNames.add(key);
     });
 

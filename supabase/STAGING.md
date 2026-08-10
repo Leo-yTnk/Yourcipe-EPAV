@@ -969,3 +969,8 @@ ideal (mixes environments), but not a credential leak.
   - Edit a site product, check one or more sections, save → the product appears in that section's carousel on the Produtos/Início pages for a non-admin visitor without a manual reload.
   - Delete a "Seção de Produto" category that still has products assigned → the reference-resolution modal lists those products under "Seções em produtos" and blocks deletion until each is replaced or removed.
   - Delete a site product that belongs to a section → it disappears from that section's carousel (cascade via `product_categories.product_id on delete cascade`), no separate resolution step required.
+
+
+## PR: Product images in full catalog imports
+
+- Reapply `supabase/016_full_catalog_import.sql` in the Supabase SQL Editor after `supabase/014_product_images.sql`. The import RPC now requires an HTTP(S) `image_url` for every product and stores it on both inserted and replaced public products.
