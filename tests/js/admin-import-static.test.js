@@ -25,12 +25,21 @@ describe('admin spreadsheet import wiring', () => {
   });
 
   it('starts a clean new import and uses CustomSelect for each conflict mode', () => {
-    expect(app).toContain('onNewImport = () => this.setState(this.freshImportState())');
+    expect(app).toContain("onNewImport = () => this.setState({ showImportModal: false, ...this.freshImportState() })");
     expect(app).toContain('onNewImport: this.onNewImport');
     expect(template).toContain("v.importResult ? 'Nova Importação' : 'Voltar'");
     expect(template).toContain('ariaLabel=${`Modo de importação de ${label}`}');
     expect(template).toContain('onChange=${mode => v.onSetImportMode(key, mode)}');
     expect(template).not.toContain('<select aria-label=${`Modo de importação de ${label}`}');
+  });
+
+  it('requires and persists an image URL for every imported product', () => {
+    expect(app).toContain("get(row, ['imagem', 'image_url', 'url da imagem'])");
+    expect(app).toContain('URL de imagem ausente ou inválida');
+    expect(app).toContain('image_url: imageUrl');
+    expect(template).toContain('<strong>imagem</strong> — obrigatório, URL completa da foto');
+    expect(catalogSql).toContain("image_url = btrim(v_item->>'image_url')");
+    expect(catalogSql).toContain('unit, price, image_url, active');
   });
 
   it('installs server-side authorization and scope protections', () => {
