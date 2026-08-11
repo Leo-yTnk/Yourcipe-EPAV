@@ -984,3 +984,10 @@ attempting a duplicate insert. In the admin UI, an existing product can be
 updated from a compact `Produtos` sheet containing only `nome` and `preco`;
 its category, unit, and image are retained and the product mode automatically
 switches to **Substituir equivalentes**.
+
+## Migration 019 — replacement precedence for equivalent categories
+
+Apply `supabase/019_import_replacement_precedence.sql` after migration 018.
+Category and section writes are serialized and use the public `(type, slug)`
+unique identity as an upsert target, so **Substituir equivalentes** updates an
+existing row instead of allowing a uniqueness collision to abort the import.

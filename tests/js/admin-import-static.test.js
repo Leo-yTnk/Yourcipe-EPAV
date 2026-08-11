@@ -8,6 +8,7 @@ describe('admin spreadsheet import wiring', () => {
   const catalogSql = fs.readFileSync('supabase/016_full_catalog_import.sql', 'utf8');
   const nativeSectionsSql = fs.readFileSync('supabase/017_native_import_sections.sql', 'utf8');
   const collisionSafeSql = fs.readFileSync('supabase/018_collision_safe_import.sql', 'utf8');
+  const replacementPrecedenceSql = fs.readFileSync('supabase/019_import_replacement_precedence.sql', 'utf8');
 
   it('shows Importar Planilha only through admin site catalog UI and guards the opener', () => {
     expect(template).toContain('v.isAdminRole && v.isAdminRecipesTab && renderSiteRecipesTab');
@@ -43,7 +44,7 @@ describe('admin spreadsheet import wiring', () => {
     for (const tag of ['recomendado', 'pratico', 'ocasiao', 'rapido', 'churrasco', 'petisco']) {
       expect(fs.readFileSync('data.js', 'utf8')).toContain(`key: '${tag}'`);
     }
-    expect(template).toContain('Avisos — seções não cadastradas usadas em receitas');
+    expect(template).toContain('Avisos da importação');
     expect(template).not.toContain('Avisos — produtos não cadastrados usados em receitas');
     expect(nativeSectionsSql).toContain('ensure_native_recipe_sections');
     expect(nativeSectionsSql).toContain('perform public.ensure_native_recipe_sections()');
@@ -66,15 +67,24 @@ describe('admin spreadsheet import wiring', () => {
     expect(collisionSafeSql).toContain("order by (slug = public.slugify(v_item->>'name')) desc");
   });
 
-  it('identifies equivalent spreadsheet categories with actionable details', () => {
+  it('does not let equivalent spreadsheet categories block replacement', () => {
     expect(app).toContain('const seenCategories = new Map()');
     expect(app).toContain('Categorias, linhas ${first.line}');
-    expect(app).toContain('nome simplificado: "${this.normalizeImportSlug(name)}"');
+    expect(app).toContain('a duplicada não impedirá a importação');
+    expect(app).not.toContain('errors.push(`Categorias, linhas ${first.line}');
+    expect(app).toContain('warnings.push(`Categorias, linhas ${first.line}');
     expect(app).toContain('source_line: i + 2');
     expect(app).toContain('formatImportFailure = (error) =>');
     expect(app).toContain('Conflito na aba Categorias:');
     expect(app).toContain('Nenhuma alteração foi aplicada.');
     expect(app).not.toContain('Há duas categorias equivalentes (mesmo tipo e nome simplificado).');
+    expect(replacementPrecedenceSql).toContain("pg_advisory_xact_lock(pg_catalog.hashtext('admin_import_public_catalog:categories'))");
+    expect(replacementPrecedenceSql).toContain("on conflict (type, slug) where scope = 'site' do update");
+    expect(replacementPrecedenceSql).toContain('returning (xmax = 0) into v_was_added');
+  });
+
+  it('shows the release version at the end of the profile page', () => {
+    expect(template).toContain('>V0.38</div>');
   });
 
   it('installs server-side authorization and scope protections', () => {
