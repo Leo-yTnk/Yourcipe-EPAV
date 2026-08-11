@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260811-1';
-import { CustomSelect } from './custom-select.js?v=20260811-1';
+import { html } from './vendor/htm-preact-standalone.js?v=20260811-2';
+import { CustomSelect } from './custom-select.js?v=20260811-2';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -858,7 +858,7 @@ function renderProfile(app, v) {
           </div>
         `}
       `}
-      <div style="text-align:center;color:var(--neutral-400);font-size:12px;margin-top:32px;padding-bottom:4px">V0.38</div>
+      <div style="text-align:center;color:var(--neutral-400);font-size:12px;margin-top:32px;padding-bottom:4px">V0.39</div>
     </div>
   `;
 }

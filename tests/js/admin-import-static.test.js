@@ -9,6 +9,7 @@ describe('admin spreadsheet import wiring', () => {
   const nativeSectionsSql = fs.readFileSync('supabase/017_native_import_sections.sql', 'utf8');
   const collisionSafeSql = fs.readFileSync('supabase/018_collision_safe_import.sql', 'utf8');
   const nativeNameEquivalenceSql = fs.readFileSync('supabase/019_native_section_name_equivalence.sql', 'utf8');
+  const nativeSectionResolutionSql = fs.readFileSync('supabase/020_native_recipe_section_resolution.sql', 'utf8');
 
   it('shows Importar Planilha only through admin site catalog UI and guards the opener', () => {
     expect(template).toContain('v.isAdminRole && v.isAdminRecipesTab && renderSiteRecipesTab');
@@ -81,8 +82,30 @@ describe('admin spreadsheet import wiring', () => {
     expect(nativeNameEquivalenceSql).toContain('public.normalize_catalog_name(name) = public.normalize_catalog_name(v_section.name)');
   });
 
+  it('resolves stable native tag keys to persisted section display names', () => {
+    for (const [key, name] of [
+      ['recomendado', 'Recomendados'],
+      ['pratico', 'Práticos para o Dia a Dia'],
+      ['ocasiao', 'Ocasiões Especiais'],
+      ['rapido', 'Pronto em 30 Minutos'],
+      ['churrasco', 'Direto da Churrasqueira'],
+      ['petisco', 'Petiscos para Compartilhar'],
+    ]) {
+      expect(nativeSectionResolutionSql).toContain(`when '${key}' then '${name}'`);
+    }
+    expect(nativeSectionResolutionSql.match(/case v_sec#>>'\{\}'/g)).toHaveLength(2);
+    expect(nativeSectionResolutionSql).toContain('section_not_found');
+  });
+
+  it('surfaces actionable server diagnostics instead of a generic import failure', () => {
+    expect(app).toContain('Produto usado como ingrediente não encontrado:');
+    expect(app).toContain('Seção de receita não encontrada:');
+    expect(app).toContain('A validação do servidor rejeitou os dados');
+    expect(app).toContain('Detalhe técnico: ${diagnostic}');
+  });
+
   it('shows the release version at the end of the profile page', () => {
-    expect(template).toContain('>V0.38</div>');
+    expect(template).toContain('>V0.39</div>');
   });
 
   it('installs server-side authorization and scope protections', () => {
