@@ -1131,6 +1131,11 @@ class App extends Component {
   onSetWeekStartDay = (v) => { this.setState({ weekStartDay: Number(v) }); this.persist(LS_KEYS.weekStartDay, Number(v)); };
   onBackFromAdmin = () => { this.animateTo('profile'); this.setState({ screen: 'profile' }); };
   onAdminSearchChange = (e) => this.setState({ adminSearchQuery: e.target.value });
+  onAdminSearchSubmit = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    // Empty submissions deliberately restore every item in the active tab.
+    this.setState(s => ({ adminSearchQuery: s.adminSearchQuery.trim() }));
+  };
   setAdminTabRecipes = () => this.setState({ adminTab: 'recipes', adminSearchQuery: '' });
   setAdminTabProducts = () => this.setState({ adminTab: 'products', adminSearchQuery: '' });
   setAdminTabCategories = () => this.setState({ adminTab: 'categories', adminSearchQuery: '' });
@@ -1886,7 +1891,8 @@ class App extends Component {
 
   // ---- Perfil: "Cadastrar Receita por ID" ----
   onRedeemCodeChange = (e) => this.setState({ redeemCode: e.target.value, redeemMessage: '' });
-  onRedeemSubmit = async () => {
+  onRedeemSubmit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     const code = this.state.redeemCode.trim();
     if (!code || this.state.redeemBusy) return;
     this.setState({ redeemBusy: true, redeemMessage: '' });
@@ -2693,6 +2699,14 @@ class App extends Component {
     return { selectedRecipeIds, selectionMode: selectedRecipeIds.length > 0, recipeSelectionScope: selectedRecipeIds.length ? s.recipeSelectionScope : '' };
   });
   onCancelSelection = () => this.setState({ selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '' });
+  setBulkRecipeStatus = async (status) => {
+    if (this.state.recipeSelectionScope !== 'site') return;
+    const results = await Promise.all(this.state.selectedRecipeIds.map(id => catalog.updateSiteRecipe(id, { status })));
+    if (results.some(result => result.error)) { this.flashAdmin('Não foi possível atualizar todas as receitas selecionadas.'); return; }
+    this.onCancelSelection();
+    this.refreshAdminCatalog();
+    this.flashAdmin(status === 'published' ? 'Receitas ativadas.' : 'Receitas desativadas.');
+  };
   askBulkHide = () => this.setState({ confirmDelete: { type: 'bulk-hide', ids: [...this.state.selectedRecipeIds], message: `Ocultar ${this.state.selectedRecipeIds.length} receita(s) selecionada(s)? Elas deixarão de aparecer para os usuários.` } });
   askBulkDelete = () => { const scope = this.state.recipeSelectionScope || (this.state.adminTab === 'recipes' ? 'site' : this.state.adminTab === 'myRecipes' ? 'my' : 'local'); this.setState({ confirmDelete: { type: scope === 'site' ? 'bulk-delete-site-recipes' : scope === 'my' ? 'bulk-delete-my-recipes' : 'bulk-delete', ids: [...this.state.selectedRecipeIds], message: `Excluir ${this.state.selectedRecipeIds.length} receita(s) selecionada(s)? Esta ação não pode ser desfeita.` } }); };
 
@@ -2853,6 +2867,20 @@ class App extends Component {
     return { selectedProductIds, productSelectionMode: selectedProductIds.length > 0, productSelectionScope: selectedProductIds.length ? s.productSelectionScope : '' };
   });
   onCancelProductSelection = () => this.setState({ productSelectionMode: false, selectedProductIds: [], productSelectionScope: '' });
+  setBulkProductsActive = async (active) => {
+    const scope = this.state.productSelectionScope;
+    const results = await Promise.all(this.state.selectedProductIds.map(id => scope === 'site'
+      ? catalog.updateSiteProduct(id, { active })
+      : catalog.setProductActive(id, active)));
+    if (results.some(result => result.error)) { this.flashAdmin('Não foi possível atualizar todos os produtos selecionados.'); return; }
+    this.onCancelProductSelection();
+    if (scope === 'site') {
+      this.refreshAdminCatalog();
+      this.flashAdmin(active ? 'Produtos ativados.' : 'Produtos desativados.');
+    } else {
+      this.refreshAfterMyCreationMutation(this.state.session.user.id, active ? 'Produtos ativados.' : 'Produtos desativados.');
+    }
+  };
   askBulkDeleteProducts = () => { const scope = this.state.productSelectionScope || (this.state.adminTab === 'products' ? 'site' : this.state.adminTab === 'myProducts' ? 'my' : 'local'); this.setState({ confirmDelete: { type: scope === 'site' ? 'bulk-delete-site-products' : scope === 'my' ? 'bulk-delete-my-products' : 'bulk-delete-products', ids: [...this.state.selectedProductIds], message: `Excluir ${this.state.selectedProductIds.length} produto(s) selecionado(s)? Esta ação não pode ser desfeita.` } }); };
 
   onNewProduct = () => this.setState({
@@ -3874,7 +3902,7 @@ class App extends Component {
       productSectionPickerQuery: s.productSectionPickerQuery, onProductSectionPickerSearchChange: this.onProductSectionPickerSearchChange,
       onCloseProductSectionPicker: this.closeProductSectionPicker,
       // Admin search bar shared across the 9 "Modo de Criação" tabs (#2).
-      adminSearchQuery: s.adminSearchQuery, onAdminSearchChange: this.onAdminSearchChange,
+      adminSearchQuery: s.adminSearchQuery, onAdminSearchChange: this.onAdminSearchChange, onAdminSearchSubmit: this.onAdminSearchSubmit,
       hasProfile: !!s.profile, profile: s.profile || {}, favoritesCount,
       adminStatusLabel: !s.session ? 'Toque para fazer login' : 'Toque para abrir o painel',
       hasSession: !!s.session, onLogout: this.onLogout,
@@ -4038,7 +4066,9 @@ class App extends Component {
       newProteinLabel: s.newProteinLabel, onNewProteinLabelChange: this.onNewProteinLabelChange, onAddProtein: this.addProductCategory,
       selectionMode: s.selectionMode, selectedCountLabel: `${s.selectedRecipeIds.length} selecionada(s)`,
       onBulkHideAsk: this.askBulkHide, onBulkDeleteAsk: this.askBulkDelete, onCancelSelection: this.onCancelSelection,
+      onBulkRecipesActivate: () => this.setBulkRecipeStatus('published'), onBulkRecipesDeactivate: () => this.setBulkRecipeStatus('draft'),
       productSelectionMode: s.productSelectionMode, selectedProductCountLabel: `${s.selectedProductIds.length} selecionado(s)`, onBulkDeleteProductsAsk: this.askBulkDeleteProducts, onCancelProductSelection: this.onCancelProductSelection,
+      onBulkProductsActivate: () => this.setBulkProductsActive(true), onBulkProductsDeactivate: () => this.setBulkProductsActive(false),
       sectionSelectionMode: s.sectionSelectionMode, selectedSectionCountLabel: `${s.selectedSectionKeys.length} selecionada(s)`, onBulkDeleteSectionsAsk: this.askBulkDeleteSections, onCancelSectionSelection: this.onCancelSectionSelection,
       proteinSelectionMode: s.proteinSelectionMode, selectedProteinCountLabel: `${s.selectedProteinKeys.length} selecionada(s)`, onBulkDeleteProteinsAsk: this.askBulkDeleteProteins, onCancelProteinSelection: this.onCancelProteinSelection,
       appThemeClass: `${s.darkMode ? 'yc-dark' : ''} ${s.fontSize === 'small' ? 'yc-font-sm' : s.fontSize === 'large' ? 'yc-font-lg' : ''}`.trim(), onToggleDarkMode: this.toggleDarkMode,

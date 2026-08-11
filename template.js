@@ -833,14 +833,17 @@ function renderProfile(app, v) {
           </div>
         </div>
 
-        <div style="margin-top:32px;font-size:13px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--neutral-600);margin-bottom:10px">Cadastrar Receita por ID</div>
-        <div style="background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px">
-          <div style="font-size:13px;color:var(--neutral-600);margin-bottom:12px">Informe o ID de compartilhamento (ex: YSH-XXXXXXXXXX) que alguém te enviou para adicionar a receita à sua biblioteca, em modo somente leitura.</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <input type="text" placeholder="YSH-XXXXXXXXXX" autocomplete="off" value=${v.redeemCode} onInput=${v.onRedeemCodeChange} style="flex:1;min-width:200px;background:var(--neutral-0);color:var(--neutral-900);padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px"/>
-            <div onClick=${v.onRedeemSubmit} style="padding:12px 20px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">${v.redeemBusy ? 'Verificando...' : 'Cadastrar'}</div>
+        <div className="yc-redeem-card">
+          <div className="yc-redeem-icon"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.1.1l2-2a5 5 0 00-7.1-7.1l-1.1 1.1"></path><path d="M14 11a5 5 0 00-7.1-.1l-2 2A5 5 0 0012 20l1.1-1.1"></path></svg></div>
+          <div style="min-width:0;flex:1">
+            <div style="font-size:17px;font-weight:700;margin-bottom:5px">Cadastrar receita por ID</div>
+            <div style="font-size:13px;color:var(--neutral-600);line-height:1.5;margin-bottom:14px">Cole o ID de compartilhamento enviado por outra pessoa. A receita será adicionada à sua biblioteca em modo somente leitura.</div>
+            <form onSubmit=${v.onRedeemSubmit} className="yc-redeem-form">
+              <input aria-label="ID de compartilhamento da receita" type="text" placeholder="YSH-XXXXXXXXXX" autocomplete="off" value=${v.redeemCode} onInput=${v.onRedeemCodeChange}/>
+              <button type="submit" disabled=${v.redeemBusy}>${v.redeemBusy ? 'Verificando...' : 'Cadastrar receita'}</button>
+            </form>
+            ${v.hasRedeemMessage && html`<div style=${`margin-top:10px;font-size:13px;font-weight:600;color:${v.redeemMessageIsError ? 'var(--red-600)' : 'var(--green-600)'}`}>${v.redeemMessage}</div>`}
           </div>
-          ${v.hasRedeemMessage && html`<div style=${`margin-top:10px;font-size:13px;font-weight:600;color:${v.redeemMessageIsError ? 'var(--red-600)' : 'var(--green-600)'}`}>${v.redeemMessage}</div>`}
         </div>
 
         ${v.hasSharedLibraryRows && html`
@@ -1352,7 +1355,7 @@ function renderSplash(app, v) {
 
 function selectionBar(count, onDelete, onCancel, extraAction) {
   return html`
-    <div style="position:fixed;left:40px;right:40px;top:14px;z-index:35;display:flex;align-items:center;justify-content:space-between;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px 16px;box-shadow:var(--shadow-md);animation:ycFadeIn 0.2s ease">
+    <div className="yc-selection-bar" role="toolbar" aria-label="Ações dos itens selecionados">
       <div style="font-size:14px;font-weight:600">${count}</div>
       <div style="display:flex;gap:10px">
         ${extraAction}
@@ -1360,6 +1363,13 @@ function selectionBar(count, onDelete, onCancel, extraAction) {
         <div onClick=${onCancel} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Cancelar</div>
       </div>
     </div>
+  `;
+}
+
+function bulkStatusActions(onActivate, onDeactivate) {
+  return html`
+    <div onClick=${onActivate} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Ativar</div>
+    <div onClick=${onDeactivate} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Desativar</div>
   `;
 }
 
@@ -1400,11 +1410,15 @@ function iconChoiceRow(selectedKey, onPick) {
 // Visual style mirrors renderSearch's canonical search input (magnifying
 // glass icon + pill input).
 function adminSearchBar(v) {
+  const isProductTab = v.isAdminProductsTab || v.isAdminMyProductsTab;
+  const placeholder = isProductTab ? 'Pesquisar produtos...' : (v.isAdminRecipesTab || v.isAdminMyRecipesTab ? 'Pesquisar receitas...' : 'Pesquisar nesta aba...');
   return html`
-    <div style="position:relative;margin-bottom:16px">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2" style="position:absolute;left:14px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
-      <input type="text" value=${v.adminSearchQuery} onInput=${v.onAdminSearchChange} placeholder="Buscar..." style="color:var(--neutral-900);width:100%;padding:12px 14px 12px 40px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);font-family:var(--font-sans);font-size:14px;outline:none;box-sizing:border-box"/>
-    </div>
+    <form onSubmit=${v.onAdminSearchSubmit} role="search" style="display:flex;gap:10px;margin-bottom:16px">
+      <input aria-label=${placeholder} type="search" value=${v.adminSearchQuery} onInput=${v.onAdminSearchChange} placeholder=${placeholder} style="color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);font-family:var(--font-sans);font-size:14px;outline:none;box-sizing:border-box"/>
+      <button type="submit" aria-label="Pesquisar" title="Pesquisar" className="yc-search-button">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+      </button>
+    </form>
   `;
 }
 
@@ -1467,7 +1481,7 @@ function renderSiteRecipesTab(app, v) {
       </div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-      ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection)}
+      ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection, bulkStatusActions(v.onBulkRecipesActivate, v.onBulkRecipesDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
       ${v.siteRecipeRows.map((row) => html`
         <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
@@ -1498,7 +1512,7 @@ function renderSiteProductsTab(app, v) {
       </div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-      ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection)}
+      ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
       ${v.siteProductRows.map((row) => html`
         <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
@@ -1644,7 +1658,7 @@ function renderMyProductsTab(app, v) {
       </div>
       ${adminSearchBar(v)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-      ${v.productSelectionMode && v.productSelectionScope === 'my' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection)}
+      ${v.productSelectionMode && v.productSelectionScope === 'my' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.myCreationLoading && !v.hasMyProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem produtos próprios.</div>`}
       ${v.myProductRows.map((row) => html`
         <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>

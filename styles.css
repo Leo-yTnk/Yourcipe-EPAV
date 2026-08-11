@@ -69,3 +69,50 @@ body { margin: 0; font-family: var(--font-sans); }
 
 /* Keep checkbox labels readable even when template whitespace collapses. */
 input[type="checkbox"] { margin-right: 8px; }
+
+.yc-search-button {
+  width: 46px; min-width: 46px; border: 0; border-radius: var(--radius-md);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  color: #F4F2F1; background: var(--brand-700); font-family: var(--font-sans);
+  transition: transform .15s ease, background .15s ease;
+}
+.yc-search-button:hover { background: var(--brand-900); transform: translateY(-1px); }
+
+.yc-selection-bar {
+  position: fixed; left: 40px; right: 40px; top: 14px; z-index: 35;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  color: #F4F2F1; background: var(--brand-700); border-radius: var(--radius-md);
+  padding: 14px 16px; box-shadow: var(--shadow-md); animation: ycFadeIn .2s ease;
+}
+
+.yc-redeem-card {
+  display: flex; align-items: flex-start; gap: 16px; margin-top: 32px;
+  padding: 22px; border: 1px solid var(--neutral-100); border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(178,64,25,.09), transparent 55%), var(--neutral-0);
+  box-shadow: var(--shadow-sm);
+}
+.yc-redeem-icon {
+  width: 46px; height: 46px; flex: 0 0 46px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: #F4F2F1; background: var(--brand-700);
+}
+.yc-redeem-form { display: flex; gap: 10px; }
+.yc-redeem-form input {
+  flex: 1; min-width: 0; padding: 13px 14px; border: 1.5px solid var(--neutral-200);
+  border-radius: var(--radius-md); color: var(--neutral-900); background: var(--neutral-0);
+  font: 600 14px ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .03em;
+}
+.yc-redeem-form button {
+  padding: 13px 20px; border: 0; border-radius: var(--radius-md); white-space: nowrap;
+  color: #F4F2F1; background: var(--brand-700); font: 700 14px var(--font-sans); cursor: pointer;
+}
+.yc-redeem-form button:disabled { opacity: .65; cursor: wait; }
+
+@media (max-width: 600px) {
+  .yc-selection-bar { left: 12px; right: 12px; top: 10px; align-items: flex-start; flex-direction: column; }
+  .yc-selection-bar > div:last-child { width: 100%; overflow-x: auto; }
+  .yc-redeem-card { padding: 18px; }
+  .yc-redeem-icon { display: none; }
+  .yc-redeem-form { flex-direction: column; }
+  .yc-redeem-form button { width: 100%; }
+}
