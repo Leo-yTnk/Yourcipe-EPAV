@@ -992,3 +992,12 @@ Native-section restoration now recognizes either the internal vocabulary key
 or the simplified display name. This prevents an upsert such as the section
 `Recomendados` from succeeding initially and then being rolled back by a
 second, equivalent insert attempted at the end of the same catalog import.
+
+## Migration 020 — native recipe section resolution
+
+Apply `supabase/020_native_recipe_section_resolution.sql` after migration 019.
+The recipe import now maps each stable spreadsheet tag (for example,
+`recomendado`) to the persisted section display name (`Recomendados`) during
+both server-side validation and relationship insertion. This completes the
+migration 019 fix: the restoration helper no longer collides with the existing
+row, and the recipe importer can actually find that row.

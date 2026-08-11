@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260811-1';
-import { CustomSelect } from './custom-select.js?v=20260811-1';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260811-2';
+import { CustomSelect } from './custom-select.js?v=20260811-2';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260811-1';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260811-1';
-import { supabase } from './supabase-client.js?v=20260811-1';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260811-1';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260811-1';
-import { normalizeDisplayName } from './display-name.js?v=20260811-1';
-import * as catalog from './catalog.js?v=20260811-1';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260811-1';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260811-1';
-import { createLoadGuard } from './load-guard.js?v=20260811-1';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260811-1';
+} from './data.js?v=20260811-2';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260811-2';
+import { supabase } from './supabase-client.js?v=20260811-2';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260811-2';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260811-2';
+import { normalizeDisplayName } from './display-name.js?v=20260811-2';
+import * as catalog from './catalog.js?v=20260811-2';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260811-2';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260811-2';
+import { createLoadGuard } from './load-guard.js?v=20260811-2';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260811-2';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260811-1';
+const FRONTEND_VERSION = '20260811-2';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -3104,9 +3104,18 @@ class App extends Component {
         ? `Conflito na aba Categorias: ${imported} coincide com outra ${typeLabel} pelo nome simplificado${slug ? ` "${slug}"` : ''}. Procure esse nome na planilha, mantenha apenas uma versão e envie o arquivo novamente. Nenhuma alteração foi aplicada.`
         : `Conflito na aba Categorias: já existe outra ${typeLabel} com o mesmo nome simplificado${slug ? ` ("${slug}")` : ''}. Remova ou renomeie a categoria equivalente na planilha e tente novamente. Nenhuma alteração foi aplicada.`;
     }
-    const knownFailure = message.match(/(?:category_not_found|active_category_not_found):\s*(.+)/i);
-    if (knownFailure) return `Categoria de produto não encontrada: "${knownFailure[1]}". Cadastre-a na aba Categorias com o tipo "proteina" ou corrija o nome usado na aba Produtos. Nenhuma alteração foi aplicada.`;
-    return 'Não foi possível concluir a importação. Revise os dados da planilha e tente novamente. Nenhuma alteração foi aplicada.';
+    const categoryFailure = message.match(/(?:category_not_found|active_category_not_found):\s*(.+)/i);
+    if (categoryFailure) return `Categoria não encontrada: "${categoryFailure[1]}". Confira se ela foi cadastrada na aba Categorias com o tipo correspondente e se o nome usado na planilha é o mesmo. Nenhuma alteração foi aplicada.`;
+    const productFailure = message.match(/product_not_found:\s*(.+)/i);
+    if (productFailure) return `Produto usado como ingrediente não encontrado: "${productFailure[1]}". Cadastre-o na aba Produtos ou corrija o nome no campo ingredientes. Nenhuma alteração foi aplicada.`;
+    const sectionFailure = message.match(/section_not_found:\s*(.+)/i);
+    if (sectionFailure) return `Seção de receita não encontrada: "${sectionFailure[1]}". Cadastre-a na aba Categorias com o tipo "secao" ou corrija a tag da receita. Nenhuma alteração foi aplicada.`;
+    const invalidFailure = message.match(/(invalid_[a-z_]+|ingredients_required|duplicate_recipe_name_in_payload)(?::| at item)?\s*(.*)/i);
+    if (invalidFailure) return `A validação do servidor rejeitou os dados${invalidFailure[2] ? ` relacionados a "${invalidFailure[2]}"` : ''} (${invalidFailure[1]}). Revise essa linha da planilha e tente novamente. Nenhuma alteração foi aplicada.`;
+    const diagnostic = [message, details].filter(Boolean).join(' — ').slice(0, 240);
+    return diagnostic
+      ? `Não foi possível concluir a importação. Detalhe técnico: ${diagnostic}. Nenhuma alteração foi aplicada.`
+      : 'Não foi possível concluir a importação. O servidor não informou o motivo. Tente novamente e, se persistir, contate o suporte. Nenhuma alteração foi aplicada.';
   };
 
   onConfirmImport = async () => {
@@ -4199,7 +4208,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260811-1';
+import { renderApp } from './template.js?v=20260811-2';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
