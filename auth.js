@@ -1,7 +1,7 @@
 // Centralized Supabase Auth flows for the credential system. Never log
 // credentials, passwords, sessions or captcha tokens from this module.
-import { supabase } from './supabase-client.js?v=20260810-1';
-import { normalizeCredential, credentialToInternalEmail } from './credential.js?v=20260810-1';
+import { supabase } from './supabase-client.js?v=20260811-1';
+import { normalizeCredential, credentialToInternalEmail } from './credential.js?v=20260811-1';
 
 export const MAX_SIGNUP_ATTEMPTS = 5;
 export const AUTH_GENERIC_ERROR = 'Credencial ou senha incorreta.';

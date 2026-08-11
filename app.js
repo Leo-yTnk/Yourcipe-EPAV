@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260810-1';
-import { CustomSelect } from './custom-select.js?v=20260810-1';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260811-1';
+import { CustomSelect } from './custom-select.js?v=20260811-1';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260810-1';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260810-1';
-import { supabase } from './supabase-client.js?v=20260810-1';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260810-1';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260810-1';
-import { normalizeDisplayName } from './display-name.js?v=20260810-1';
-import * as catalog from './catalog.js?v=20260810-1';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260810-1';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260810-1';
-import { createLoadGuard } from './load-guard.js?v=20260810-1';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260810-1';
+} from './data.js?v=20260811-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260811-1';
+import { supabase } from './supabase-client.js?v=20260811-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260811-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260811-1';
+import { normalizeDisplayName } from './display-name.js?v=20260811-1';
+import * as catalog from './catalog.js?v=20260811-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260811-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260811-1';
+import { createLoadGuard } from './load-guard.js?v=20260811-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260811-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260810-1';
+const FRONTEND_VERSION = '20260811-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -3006,7 +3006,7 @@ class App extends Component {
       else if (seenCategories.has(key)) {
         const first = seenCategories.get(key);
         const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : 'seção da home';
-        errors.push(`Categorias, linhas ${first.line} ("${first.name}") e ${i + 2} ("${name}"): são equivalentes como ${typeLabel} (nome simplificado: "${this.normalizeImportSlug(name)}"). Mantenha apenas uma delas.`);
+        warnings.push(`Categorias, linhas ${first.line} ("${first.name}") e ${i + 2} ("${name}"): são equivalentes como ${typeLabel}; a primeira ocorrência será usada e a duplicada não impedirá a importação.`);
       } else {
         seenCategories.set(key, { line: i + 2, name });
         categoryKeys.add(key);
@@ -4199,7 +4199,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260810-1';
+import { renderApp } from './template.js?v=20260811-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
