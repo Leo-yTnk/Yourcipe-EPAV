@@ -16,6 +16,8 @@ describe('admin spreadsheet import wiring', () => {
 
   it('imports categories, products and recipes with independent modes', () => {
     expect(app).toContain('catalog.adminImportPublicCatalog');
+    expect(app).toContain('onConfirmImport: this.onConfirmImport');
+    expect(template).toContain('onClick=${v.onConfirmImport}');
     expect(app).toContain("importModes: { recipes: 'add', products: 'add', categories: 'add' }");
     expect(template).toContain("['categories', 'Categorias'");
     expect(template).toContain("['products', 'Produtos'");
@@ -23,6 +25,7 @@ describe('admin spreadsheet import wiring', () => {
     expect(template).toContain('Substituir equivalentes');
     expect(template).toContain('Substituir tudo');
     expect(app).toContain('Receitas pessoais não serão alteradas');
+    expect(template).toContain('role="alert"');
   });
 
   it('starts a clean new import and uses CustomSelect for each conflict mode', () => {

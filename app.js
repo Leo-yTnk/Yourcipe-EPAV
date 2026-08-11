@@ -4142,7 +4142,7 @@ class App extends Component {
       onCancelProductForm: this.onCancelProductForm, onSaveProductForm: this.onSaveProductForm,
       showImportModal: s.showImportModal, onOpenImportModal: this.onOpenImportModal, onCloseImportModal: this.onCloseImportModal, onBackToInstructions: this.onBackToInstructions, onNewImport: this.onNewImport,
       importStepInstructions: s.importStep === 'instructions', importStepResult: s.importStep === 'result',
-      onDownloadTemplate: this.onDownloadTemplate, onImportFileChange: this.onImportFileChange, importSummary: s.importSummary, importBusy: s.importBusy, importResult: s.importResult, importFileInputKey: s.importFileInputKey,
+      onDownloadTemplate: this.onDownloadTemplate, onImportFileChange: this.onImportFileChange, onConfirmImport: this.onConfirmImport, importSummary: s.importSummary, importBusy: s.importBusy, importResult: s.importResult, importFileInputKey: s.importFileInputKey,
       importParseError: s.importParseError, hasImportParseError: !!s.importParseError,
       importFileName: s.importFileName, importCategoriesCount: s.importParsedCategories.length, importProductsCount: s.importParsedProducts.length, importRecipesCount: s.importParsedRecipes.length,
       importErrors: s.importErrors, hasImportErrors: s.importErrors.length > 0,

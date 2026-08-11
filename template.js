@@ -2419,6 +2419,7 @@ function renderImportModal(app, v) {
             </div>
           `}
           ${v.importResult && html`<div style="background:rgba(52,178,62,0.1);border:1px solid var(--green-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--green-600);font-weight:700">${v.importResult}</div>`}
+          ${v.hasImportParseError && html`<div role="alert" style="background:rgba(195,61,34,0.08);border:1px solid var(--red-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--red-600);font-weight:600">${v.importParseError}</div>`}
           ${v.hasImportNewCategories && html`
             <div style="background:rgba(52,178,62,0.1);border:1px solid var(--green-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--neutral-800)">
               Novas categorias/seções a adicionar: ${v.importNewProductCategoriesList}
