@@ -7,6 +7,7 @@ describe('admin spreadsheet import wiring', () => {
   const sql = fs.readFileSync('supabase/012_admin_import_and_home_order.sql', 'utf8');
   const catalogSql = fs.readFileSync('supabase/016_full_catalog_import.sql', 'utf8');
   const nativeSectionsSql = fs.readFileSync('supabase/017_native_import_sections.sql', 'utf8');
+  const collisionSafeSql = fs.readFileSync('supabase/018_collision_safe_import.sql', 'utf8');
 
   it('shows Importar Planilha only through admin site catalog UI and guards the opener', () => {
     expect(template).toContain('v.isAdminRole && v.isAdminRecipesTab && renderSiteRecipesTab');
@@ -48,13 +49,21 @@ describe('admin spreadsheet import wiring', () => {
     expect(nativeSectionsSql).toContain('perform public.ensure_native_recipe_sections()');
   });
 
-  it('requires and persists an image URL for every imported product', () => {
+  it('requires images for new products while supporting price-only updates', () => {
     expect(app).toContain("get(row, ['imagem', 'image_url', 'url da imagem'])");
     expect(app).toContain('URL de imagem ausente ou inválida');
     expect(app).toContain('image_url: imageUrl');
-    expect(template).toContain('<strong>imagem</strong> — obrigatório, URL completa da foto');
+    expect(template).toContain('<strong>imagem</strong> — obrigatória para produtos novos');
+    expect(template).toContain('informe apenas <strong>nome</strong> e <strong>preco</strong>');
+    expect(app).toContain("products: 'upsert'");
     expect(catalogSql).toContain("image_url = btrim(v_item->>'image_url')");
     expect(catalogSql).toContain('unit, price, image_url, active');
+  });
+
+  it('matches category identity by the unique slug before inserting', () => {
+    expect(app).toContain('normalizeImportSlug');
+    expect(collisionSafeSql).toContain("slug = public.slugify(v_item->>'name')");
+    expect(collisionSafeSql).toContain("order by (slug = public.slugify(v_item->>'name')) desc");
   });
 
   it('installs server-side authorization and scope protections', () => {

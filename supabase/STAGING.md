@@ -974,3 +974,13 @@ ideal (mixes environments), but not a credential leak.
 ## PR: Product images in full catalog imports
 
 - Reapply `supabase/016_full_catalog_import.sql` in the Supabase SQL Editor after `supabase/014_product_images.sql`. The import RPC now requires an HTTP(S) `image_url` for every product and stores it on both inserted and replaced public products.
+
+## Migration 018 — collision-safe imports and faster price updates
+
+Apply `supabase/018_collision_safe_import.sql` after migration 017. The catalog
+import now resolves public categories by the same `(type, slug)` identity used
+by `categories_site_slug_uk`, preventing punctuation/spelling variants from
+attempting a duplicate insert. In the admin UI, an existing product can be
+updated from a compact `Produtos` sheet containing only `nome` and `preco`;
+its category, unit, and image are retained and the product mode automatically
+switches to **Substituir equivalentes**.
