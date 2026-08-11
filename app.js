@@ -35,6 +35,11 @@ const MULTI_SELECT_LONG_PRESS_MS = 480;
 // "has a session"/"creationMode is open"/etc — see applySessionProfile and
 // renderAdmin's tab dispatch in template.js, both of which gate on this.
 const ADMIN_ONLY_TABS = ['recipes', 'products', 'categories', 'requestsInbox'];
+// Tags documented by the spreadsheet format are part of the application
+// vocabulary, not user-created category rows. Keep this list independent of
+// the catalog response: an inactive/missing seed row must not make a native
+// tag look invalid while the import RPC restores its backing section.
+const NATIVE_RECIPE_TAGS = new Set(['destaque', ...SECTION_DEFS.map(section => section.key)]);
 
 function ref() { return { current: null }; }
 
@@ -2939,7 +2944,7 @@ class App extends Component {
   };
   onCloseImportModal = () => this.setState({ showImportModal: false });
   onBackToInstructions = () => this.setState({ importStep: 'instructions', importParseError: '' });
-  onNewImport = () => this.setState({ showImportModal: false, ...this.freshImportState() });
+  onNewImport = () => this.setState({ showImportModal: true, ...this.freshImportState() });
   onSetImportMode = (entity, mode) => this.setState({ importModes: { ...this.state.importModes, [entity]: mode } }, () => this.recomputeImportSummary());
 
   onDownloadTemplate = () => {
@@ -3022,7 +3027,10 @@ class App extends Component {
     });
 
     const recipeCategoryNames = new Set([...categoryKeys].filter(k => k.startsWith('receita:')).map(k => k.slice(8)));
-    const sectionKeys = new Set([...categoryKeys].filter(k => k.startsWith('secao:')).map(k => k.slice(6)));
+    const sectionKeys = new Set([
+      ...SECTION_DEFS.map(section => section.key),
+      ...[...categoryKeys].filter(k => k.startsWith('secao:')).map(k => k.slice(6)),
+    ]);
     const seenRecipes = new Set();
     recipeRows.forEach((row, i) => {
       const line = i + 2, name = String(get(row, ['nome', 'name', 'receita']) || '').trim();
@@ -3043,8 +3051,9 @@ class App extends Component {
       this.splitImportList(ingredientsRaw).forEach(part => { const sep = part.lastIndexOf(':'); const product = sep < 0 ? part : part.slice(0, sep).trim(); const quantity = sep < 0 ? NaN : parseFloat(part.slice(sep + 1).replace(',', '.')); if (!productNames.has(this.normalizeImportText(product))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): produto não cadastrado nem declarado na aba Produtos: "${product}".`); if (!Number.isFinite(quantity) || quantity <= 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): quantidade inválida para "${product}".`); ingredients.push({ product, quantity }); });
       if (!ingredients.length) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): ingredientes ausentes.`);
       if (!instructionsRaw) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): modo de preparo ausente.`);
-      const sections = tagsRaw.split(',').map(x => x.trim()).filter(x => x && this.normalizeImportText(x) !== 'destaque').filter(x => { const ok = sectionKeys.has(this.normalizeImportText(x)); if (!ok) warnings.push(`Receitas, linha ${line}: seção "${x}" não cadastrada; será ignorada.`); return ok; });
-      parsedRecipes.push({ name, category, prep_time: prepTime || 0, servings: servings || 0, difficulty, image_url: String(get(row, ['imagem', 'image_url']) || '').trim(), featured: tagsRaw.split(',').some(x => this.normalizeImportText(x) === 'destaque'), ingredients, sections, extras: this.splitImportList(get(row, ['extras', 'descricao', 'descrição'])), instructions: this.splitImportList(instructionsRaw), tips: this.splitImportList(get(row, ['dicas', 'tips'])) });
+      const normalizedTags = tagsRaw.split(',').map(x => ({ raw: x.trim(), key: this.normalizeImportText(x) })).filter(x => x.raw);
+      const sections = normalizedTags.filter(x => x.key !== 'destaque').filter(x => { const ok = NATIVE_RECIPE_TAGS.has(x.key) || sectionKeys.has(x.key); if (!ok) warnings.push(`Receitas, linha ${line}: seção "${x.raw}" não cadastrada; será ignorada.`); return ok; }).map(x => x.key);
+      parsedRecipes.push({ name, category, prep_time: prepTime || 0, servings: servings || 0, difficulty, image_url: String(get(row, ['imagem', 'image_url']) || '').trim(), featured: normalizedTags.some(x => x.key === 'destaque'), ingredients, sections, extras: this.splitImportList(get(row, ['extras', 'descricao', 'descrição'])), instructions: this.splitImportList(instructionsRaw), tips: this.splitImportList(get(row, ['dicas', 'tips'])) });
     });
     if (!categoryRows.length && !productRows.length && !recipeRows.length) errors.push('Arquivo sem dados nas abas Categorias, Produtos ou Receitas.');
     this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedCategories: parsedCategories, importParsedProducts: parsedProducts, importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importResult: null }, () => this.recomputeImportSummary());

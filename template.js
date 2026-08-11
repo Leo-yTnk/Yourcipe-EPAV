@@ -2434,7 +2434,7 @@ function renderImportModal(app, v) {
 
           ${v.hasImportWarnings && html`
             <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;max-height:180px;overflow-y:auto">
-              <div style="font-weight:700;font-size:14px;color:var(--yellow-600);margin-bottom:6px">Avisos — produtos não cadastrados usados em receitas</div>
+              <div style="font-weight:700;font-size:14px;color:var(--yellow-600);margin-bottom:6px">Avisos — seções não cadastradas usadas em receitas</div>
               ${v.importWarnings.map((warn, i) => html`<div key=${i} style="font-size:13px;color:var(--neutral-800);margin-bottom:4px">• ${warn}</div>`)}
             </div>
           `}
