@@ -1,5 +1,5 @@
--- Import all public catalog entities with an independent conflict mode per group.
--- Depends on 012_admin_import_and_home_order.sql.
+-- Yourcipe — make native recipe tags self-sufficient during spreadsheet import.
+-- Idempotent follow-up for environments where migration 016 was already applied.
 create or replace function public.ensure_native_recipe_sections()
 returns void
 language plpgsql
