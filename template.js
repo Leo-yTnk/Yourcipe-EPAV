@@ -2372,10 +2372,11 @@ function renderImportModal(app, v) {
             <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Produtos"</div>
             <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
               <strong>nome</strong> — obrigatório<br/>
-              <strong>categoria</strong> — obrigatório, uma de: ${v.categoriasProdutoList}<br/>
-              <strong>unidade</strong> — obrigatório: kg, un, pacote, caixa, pote<br/>
+              Para atualizar somente preços de produtos já cadastrados, informe apenas <strong>nome</strong> e <strong>preco</strong>; categoria, unidade e imagem atuais serão preservadas.<br/>
+              <strong>categoria</strong> — obrigatória para produtos novos, uma de: ${v.categoriasProdutoList}<br/>
+              <strong>unidade</strong> — obrigatória para produtos novos: kg, un, pacote, caixa, pote<br/>
               <strong>preco</strong> — obrigatório, número (ex: 34.90)<br/>
-              <strong>imagem</strong> — obrigatório, URL completa da foto (http ou https)
+              <strong>imagem</strong> — obrigatória para produtos novos, URL completa da foto (http ou https)
             </div>
           </div>
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">

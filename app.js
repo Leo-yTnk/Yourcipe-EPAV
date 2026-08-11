@@ -2984,6 +2984,7 @@ class App extends Component {
   };
 
   normalizeImportText = (value) => String(value || '').trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  normalizeImportSlug = (value) => this.normalizeImportText(value).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   splitImportList = (value) => String(value || '').split(';').map(x => x.trim()).filter(Boolean);
 
   processImportWorkbook = (wb, fileName) => {
@@ -2993,13 +2994,13 @@ class App extends Component {
     const rows = (sheet) => { const name = wb.SheetNames.find(n => this.normalizeImportText(n) === sheet); return name ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' }) : []; };
     const categoryRows = rows('categorias'), productRows = rows('produtos'), recipeRows = rows('receitas');
     const errors = [], warnings = [], parsedCategories = [], parsedProducts = [], parsedRecipes = [];
-    const categoryKeys = new Set((this.state.siteCategories || []).filter(c => c.active !== false).map(c => `${c.type}:${this.normalizeImportText(c.name)}`));
+    const categoryKeys = new Set((this.state.siteCategories || []).filter(c => c.active !== false).map(c => `${c.type}:${this.normalizeImportSlug(c.name)}`));
     const seenCategories = new Set();
     categoryRows.forEach((row, i) => {
       const typeRaw = this.normalizeImportText(get(row, ['tipo', 'type']));
       const type = typeRaw === 'secao_produto' ? 'secao' : typeRaw;
       const name = String(get(row, ['nome', 'name', 'categoria']) || '').trim();
-      const key = `${type}:${this.normalizeImportText(name)}`;
+      const key = `${type}:${this.normalizeImportSlug(name)}`;
       if (!['proteina', 'receita', 'secao'].includes(type)) errors.push(`Categorias, linha ${i + 2}: tipo inválido "${typeRaw}".`);
       if (!name) errors.push(`Categorias, linha ${i + 2}: campo nome ausente.`);
       else if (seenCategories.has(key)) errors.push(`Categorias, linha ${i + 2} ("${name}"): categoria duplicada.`);
@@ -3010,15 +3011,17 @@ class App extends Component {
     const seenProducts = new Set();
     productRows.forEach((row, i) => {
       const name = String(get(row, ['nome', 'name', 'produto']) || '').trim();
-      const category = String(get(row, ['categoria', 'category']) || '').trim();
-      const unit = this.normalizeImportText(get(row, ['unidade', 'unit']));
-      const price = Number(String(get(row, ['preco', 'preço', 'price'])).replace(',', '.'));
-      const imageUrl = String(get(row, ['imagem', 'image_url', 'url da imagem']) || '').trim();
       const key = this.normalizeImportText(name);
+      const existingProduct = (this.state.siteProducts || []).find(p => this.normalizeImportText(p.name) === key);
+      const category = String(get(row, ['categoria', 'category']) || (existingProduct && existingProduct.category && existingProduct.category.name) || '').trim();
+      const unit = this.normalizeImportText(get(row, ['unidade', 'unit']) || (existingProduct && existingProduct.unit));
+      const rawPrice = String(get(row, ['preco', 'preço', 'price'])).trim();
+      const price = rawPrice === '' ? NaN : Number(rawPrice.replace(',', '.'));
+      const imageUrl = String(get(row, ['imagem', 'image_url', 'url da imagem']) || (existingProduct && existingProduct.image_url) || '').trim();
       if (!name) errors.push(`Produtos, linha ${i + 2}: campo nome ausente.`);
       else if (seenProducts.has(key)) errors.push(`Produtos, linha ${i + 2} ("${name}"): produto duplicado.`);
       else seenProducts.add(key);
-      if (!categoryKeys.has(`proteina:${this.normalizeImportText(category)}`)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
+      if (!categoryKeys.has(`proteina:${this.normalizeImportSlug(category)}`)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
       if (!['kg', 'un', 'pacote', 'caixa', 'pote'].includes(unit)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): unidade inválida.`);
       if (!Number.isFinite(price) || price < 0) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): preço inválido.`);
       if (!/^https?:\/\/\S+$/i.test(imageUrl)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): URL de imagem ausente ou inválida.`);
@@ -3043,7 +3046,7 @@ class App extends Component {
       const tagsRaw = String(get(row, ['tags', 'secoes', 'seções']) || '').trim();
       const key = this.normalizeImportText(name);
       if (!name) errors.push(`Receitas, linha ${line}: campo nome ausente.`); else if (seenRecipes.has(key)) errors.push(`Receitas, linha ${line} ("${name}"): receita duplicada.`); else seenRecipes.add(key);
-      if (!recipeCategoryNames.has(this.normalizeImportText(category))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
+      if (!recipeCategoryNames.has(this.normalizeImportSlug(category))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
       if (!Number.isFinite(prepTime) || prepTime < 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): tempo inválido.`);
       if (!Number.isFinite(servings) || servings < 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): porções inválidas.`);
       if (!DIFICULDADES.includes(difficulty)) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): dificuldade inválida.`);
@@ -3051,12 +3054,19 @@ class App extends Component {
       this.splitImportList(ingredientsRaw).forEach(part => { const sep = part.lastIndexOf(':'); const product = sep < 0 ? part : part.slice(0, sep).trim(); const quantity = sep < 0 ? NaN : parseFloat(part.slice(sep + 1).replace(',', '.')); if (!productNames.has(this.normalizeImportText(product))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): produto não cadastrado nem declarado na aba Produtos: "${product}".`); if (!Number.isFinite(quantity) || quantity <= 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): quantidade inválida para "${product}".`); ingredients.push({ product, quantity }); });
       if (!ingredients.length) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): ingredientes ausentes.`);
       if (!instructionsRaw) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): modo de preparo ausente.`);
-      const normalizedTags = tagsRaw.split(',').map(x => ({ raw: x.trim(), key: this.normalizeImportText(x) })).filter(x => x.raw);
+      const normalizedTags = tagsRaw.split(',').map(x => ({ raw: x.trim(), key: this.normalizeImportSlug(x) })).filter(x => x.raw);
       const sections = normalizedTags.filter(x => x.key !== 'destaque').filter(x => { const ok = NATIVE_RECIPE_TAGS.has(x.key) || sectionKeys.has(x.key); if (!ok) warnings.push(`Receitas, linha ${line}: seção "${x.raw}" não cadastrada; será ignorada.`); return ok; }).map(x => x.key);
       parsedRecipes.push({ name, category, prep_time: prepTime || 0, servings: servings || 0, difficulty, image_url: String(get(row, ['imagem', 'image_url']) || '').trim(), featured: normalizedTags.some(x => x.key === 'destaque'), ingredients, sections, extras: this.splitImportList(get(row, ['extras', 'descricao', 'descrição'])), instructions: this.splitImportList(instructionsRaw), tips: this.splitImportList(get(row, ['dicas', 'tips'])) });
     });
     if (!categoryRows.length && !productRows.length && !recipeRows.length) errors.push('Arquivo sem dados nas abas Categorias, Produtos ou Receitas.');
-    this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedCategories: parsedCategories, importParsedProducts: parsedProducts, importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importResult: null }, () => this.recomputeImportSummary());
+    const isPriceOnlyUpdate = productRows.length > 0 && !categoryRows.length && !recipeRows.length && productRows.every(row => {
+      const category = get(row, ['categoria', 'category']);
+      const unit = get(row, ['unidade', 'unit']);
+      const image = get(row, ['imagem', 'image_url', 'url da imagem']);
+      return !category && !unit && !image;
+    });
+    const importModes = isPriceOnlyUpdate ? { ...this.state.importModes, products: 'upsert' } : this.state.importModes;
+    this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedCategories: parsedCategories, importParsedProducts: parsedProducts, importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importResult: null, importModes }, () => this.recomputeImportSummary());
   };
 
   recomputeImportSummary = () => {
@@ -3078,7 +3088,7 @@ class App extends Component {
     this.setState({ importBusy: true, importParseError: '', importResult: null });
     const { data, error } = await catalog.adminImportPublicCatalog(s.importModes, s.importParsedCategories, s.importParsedProducts, s.importParsedRecipes);
     this.setState({ importBusy: false });
-    if (error) { this.setState({ importParseError: error.message || 'Falha ao importar. Nenhuma alteração foi aplicada.' }); return; }
+    if (error) { const duplicateCategory = String(error.message || '').includes('categories_site_slug_uk'); this.setState({ importParseError: duplicateCategory ? 'Há duas categorias equivalentes (mesmo tipo e nome simplificado). Remova a duplicata da planilha e tente novamente.' : (error.message || 'Falha ao importar. Nenhuma alteração foi aplicada.') }); return; }
     this.refreshAdminCatalog();
     const total = ['categories', 'products', 'recipes'].reduce((acc, kind) => { const item = data[kind] || {}; acc.added += item.added || 0; acc.replaced += item.replaced || 0; acc.ignored += item.ignored || 0; acc.removed += item.removed || 0; return acc; }, { added: 0, replaced: 0, ignored: 0, removed: 0 });
     const msg = `Importação concluída: ${total.added} adicionada(s), ${total.replaced} substituída(s), ${total.ignored} ignorada(s), ${total.removed} desativada(s).`;
