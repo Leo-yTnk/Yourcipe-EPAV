@@ -6,6 +6,7 @@ describe('admin spreadsheet import wiring', () => {
   const template = fs.readFileSync('template.js', 'utf8');
   const sql = fs.readFileSync('supabase/012_admin_import_and_home_order.sql', 'utf8');
   const catalogSql = fs.readFileSync('supabase/016_full_catalog_import.sql', 'utf8');
+  const nativeSectionsSql = fs.readFileSync('supabase/017_native_import_sections.sql', 'utf8');
 
   it('shows Importar Planilha only through admin site catalog UI and guards the opener', () => {
     expect(template).toContain('v.isAdminRole && v.isAdminRecipesTab && renderSiteRecipesTab');
@@ -15,6 +16,8 @@ describe('admin spreadsheet import wiring', () => {
 
   it('imports categories, products and recipes with independent modes', () => {
     expect(app).toContain('catalog.adminImportPublicCatalog');
+    expect(app).toContain('onConfirmImport: this.onConfirmImport');
+    expect(template).toContain('onClick=${v.onConfirmImport}');
     expect(app).toContain("importModes: { recipes: 'add', products: 'add', categories: 'add' }");
     expect(template).toContain("['categories', 'Categorias'");
     expect(template).toContain("['products', 'Produtos'");
@@ -22,15 +25,27 @@ describe('admin spreadsheet import wiring', () => {
     expect(template).toContain('Substituir equivalentes');
     expect(template).toContain('Substituir tudo');
     expect(app).toContain('Receitas pessoais não serão alteradas');
+    expect(template).toContain('role="alert"');
   });
 
   it('starts a clean new import and uses CustomSelect for each conflict mode', () => {
-    expect(app).toContain("onNewImport = () => this.setState({ showImportModal: false, ...this.freshImportState() })");
+    expect(app).toContain("onNewImport = () => this.setState({ showImportModal: true, ...this.freshImportState() })");
     expect(app).toContain('onNewImport: this.onNewImport');
     expect(template).toContain("v.importResult ? 'Nova Importação' : 'Voltar'");
     expect(template).toContain('ariaLabel=${`Modo de importação de ${label}`}');
     expect(template).toContain('onChange=${mode => v.onSetImportMode(key, mode)}');
     expect(template).not.toContain('<select aria-label=${`Modo de importação de ${label}`}');
+  });
+
+  it('accepts every native recipe tag without requiring spreadsheet categories', () => {
+    expect(app).toContain("const NATIVE_RECIPE_TAGS = new Set(['destaque', ...SECTION_DEFS.map(section => section.key)])");
+    for (const tag of ['recomendado', 'pratico', 'ocasiao', 'rapido', 'churrasco', 'petisco']) {
+      expect(fs.readFileSync('data.js', 'utf8')).toContain(`key: '${tag}'`);
+    }
+    expect(template).toContain('Avisos — seções não cadastradas usadas em receitas');
+    expect(template).not.toContain('Avisos — produtos não cadastrados usados em receitas');
+    expect(nativeSectionsSql).toContain('ensure_native_recipe_sections');
+    expect(nativeSectionsSql).toContain('perform public.ensure_native_recipe_sections()');
   });
 
   it('requires and persists an image URL for every imported product', () => {
