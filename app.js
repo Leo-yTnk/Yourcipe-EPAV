@@ -2995,7 +2995,7 @@ class App extends Component {
     const categoryRows = rows('categorias'), productRows = rows('produtos'), recipeRows = rows('receitas');
     const errors = [], warnings = [], parsedCategories = [], parsedProducts = [], parsedRecipes = [];
     const categoryKeys = new Set((this.state.siteCategories || []).filter(c => c.active !== false).map(c => `${c.type}:${this.normalizeImportSlug(c.name)}`));
-    const seenCategories = new Set();
+    const seenCategories = new Map();
     categoryRows.forEach((row, i) => {
       const typeRaw = this.normalizeImportText(get(row, ['tipo', 'type']));
       const type = typeRaw === 'secao_produto' ? 'secao' : typeRaw;
@@ -3003,8 +3003,15 @@ class App extends Component {
       const key = `${type}:${this.normalizeImportSlug(name)}`;
       if (!['proteina', 'receita', 'secao'].includes(type)) errors.push(`Categorias, linha ${i + 2}: tipo inválido "${typeRaw}".`);
       if (!name) errors.push(`Categorias, linha ${i + 2}: campo nome ausente.`);
-      else if (seenCategories.has(key)) errors.push(`Categorias, linha ${i + 2} ("${name}"): categoria duplicada.`);
-      else { seenCategories.add(key); categoryKeys.add(key); parsedCategories.push({ type, name }); }
+      else if (seenCategories.has(key)) {
+        const first = seenCategories.get(key);
+        const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : 'seção da home';
+        errors.push(`Categorias, linhas ${first.line} ("${first.name}") e ${i + 2} ("${name}"): são equivalentes como ${typeLabel} (nome simplificado: "${this.normalizeImportSlug(name)}"). Mantenha apenas uma delas.`);
+      } else {
+        seenCategories.set(key, { line: i + 2, name });
+        categoryKeys.add(key);
+        parsedCategories.push({ type, name, source_line: i + 2 });
+      }
     });
 
     const productNames = new Set((this.state.siteProducts || []).filter(p => p.active !== false).map(p => this.normalizeImportText(p.name)));
@@ -3081,6 +3088,27 @@ class App extends Component {
     this.setState({ importSummary: { details, totalRows: entities.reduce((n, x) => n + x[1].length, 0), invalid: this.state.importErrors.length } });
   };
 
+  formatImportFailure = (error) => {
+    const message = String((error && error.message) || '');
+    const details = String((error && error.details) || '');
+    if (message.includes('categories_site_slug_uk')) {
+      const collision = details.match(/\((proteina|receita|secao),\s*([^\)]+)\)/i);
+      const type = collision && collision[1].toLowerCase();
+      const slug = collision && collision[2].trim();
+      const matches = (this.state.importParsedCategories || []).filter(category =>
+        (!type || category.type === type) && (!slug || this.normalizeImportSlug(category.name) === slug)
+      );
+      const imported = matches.map(category => `linha ${category.source_line || '?'} ("${category.name}")`).join(' e ');
+      const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : type === 'secao' ? 'seção da home' : 'categoria';
+      return imported
+        ? `Conflito na aba Categorias: ${imported} coincide com outra ${typeLabel} pelo nome simplificado${slug ? ` "${slug}"` : ''}. Procure esse nome na planilha, mantenha apenas uma versão e envie o arquivo novamente. Nenhuma alteração foi aplicada.`
+        : `Conflito na aba Categorias: já existe outra ${typeLabel} com o mesmo nome simplificado${slug ? ` ("${slug}")` : ''}. Remova ou renomeie a categoria equivalente na planilha e tente novamente. Nenhuma alteração foi aplicada.`;
+    }
+    const knownFailure = message.match(/(?:category_not_found|active_category_not_found):\s*(.+)/i);
+    if (knownFailure) return `Categoria de produto não encontrada: "${knownFailure[1]}". Cadastre-a na aba Categorias com o tipo "proteina" ou corrija o nome usado na aba Produtos. Nenhuma alteração foi aplicada.`;
+    return 'Não foi possível concluir a importação. Revise os dados da planilha e tente novamente. Nenhuma alteração foi aplicada.';
+  };
+
   onConfirmImport = async () => {
     const s = this.state;
     if (s.authRole !== 'admin' || s.importBusy || s.importErrors.length) return;
@@ -3088,7 +3116,7 @@ class App extends Component {
     this.setState({ importBusy: true, importParseError: '', importResult: null });
     const { data, error } = await catalog.adminImportPublicCatalog(s.importModes, s.importParsedCategories, s.importParsedProducts, s.importParsedRecipes);
     this.setState({ importBusy: false });
-    if (error) { const duplicateCategory = String(error.message || '').includes('categories_site_slug_uk'); this.setState({ importParseError: duplicateCategory ? 'Há duas categorias equivalentes (mesmo tipo e nome simplificado). Remova a duplicata da planilha e tente novamente.' : (error.message || 'Falha ao importar. Nenhuma alteração foi aplicada.') }); return; }
+    if (error) { this.setState({ importParseError: this.formatImportFailure(error) }); return; }
     this.refreshAdminCatalog();
     const total = ['categories', 'products', 'recipes'].reduce((acc, kind) => { const item = data[kind] || {}; acc.added += item.added || 0; acc.replaced += item.replaced || 0; acc.ignored += item.ignored || 0; acc.removed += item.removed || 0; return acc; }, { added: 0, replaced: 0, ignored: 0, removed: 0 });
     const msg = `Importação concluída: ${total.added} adicionada(s), ${total.replaced} substituída(s), ${total.ignored} ignorada(s), ${total.removed} desativada(s).`;

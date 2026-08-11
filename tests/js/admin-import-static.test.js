@@ -66,6 +66,17 @@ describe('admin spreadsheet import wiring', () => {
     expect(collisionSafeSql).toContain("order by (slug = public.slugify(v_item->>'name')) desc");
   });
 
+  it('identifies equivalent spreadsheet categories with actionable details', () => {
+    expect(app).toContain('const seenCategories = new Map()');
+    expect(app).toContain('Categorias, linhas ${first.line}');
+    expect(app).toContain('nome simplificado: "${this.normalizeImportSlug(name)}"');
+    expect(app).toContain('source_line: i + 2');
+    expect(app).toContain('formatImportFailure = (error) =>');
+    expect(app).toContain('Conflito na aba Categorias:');
+    expect(app).toContain('Nenhuma alteração foi aplicada.');
+    expect(app).not.toContain('Há duas categorias equivalentes (mesmo tipo e nome simplificado).');
+  });
+
   it('installs server-side authorization and scope protections', () => {
     expect(sql).toContain('not public.is_admin()');
     expect(sql).toContain("scope = 'site'");
