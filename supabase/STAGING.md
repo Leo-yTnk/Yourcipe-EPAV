@@ -984,3 +984,11 @@ attempting a duplicate insert. In the admin UI, an existing product can be
 updated from a compact `Produtos` sheet containing only `nome` and `preco`;
 its category, unit, and image are retained and the product mode automatically
 switches to **Substituir equivalentes**.
+
+## Migration 019 — native section display-name equivalence
+
+Apply `supabase/019_native_section_name_equivalence.sql` after migration 018.
+Native-section restoration now recognizes either the internal vocabulary key
+or the simplified display name. This prevents an upsert such as the section
+`Recomendados` from succeeding initially and then being rolled back by a
+second, equivalent insert attempted at the end of the same catalog import.
