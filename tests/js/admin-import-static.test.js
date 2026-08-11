@@ -8,6 +8,7 @@ describe('admin spreadsheet import wiring', () => {
   const catalogSql = fs.readFileSync('supabase/016_full_catalog_import.sql', 'utf8');
   const nativeSectionsSql = fs.readFileSync('supabase/017_native_import_sections.sql', 'utf8');
   const collisionSafeSql = fs.readFileSync('supabase/018_collision_safe_import.sql', 'utf8');
+  const nativeNameEquivalenceSql = fs.readFileSync('supabase/019_native_section_name_equivalence.sql', 'utf8');
 
   it('shows Importar Planilha only through admin site catalog UI and guards the opener', () => {
     expect(template).toContain('v.isAdminRole && v.isAdminRecipesTab && renderSiteRecipesTab');
@@ -77,6 +78,11 @@ describe('admin spreadsheet import wiring', () => {
     expect(app).toContain('Conflito na aba Categorias:');
     expect(app).toContain('Nenhuma alteração foi aplicada.');
     expect(app).not.toContain('Há duas categorias equivalentes (mesmo tipo e nome simplificado).');
+    expect(nativeNameEquivalenceSql).toContain('public.normalize_catalog_name(name) = public.normalize_catalog_name(v_section.name)');
+  });
+
+  it('shows the release version at the end of the profile page', () => {
+    expect(template).toContain('>V0.38</div>');
   });
 
   it('installs server-side authorization and scope protections', () => {

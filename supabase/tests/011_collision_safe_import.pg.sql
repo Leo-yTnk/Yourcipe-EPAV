@@ -5,8 +5,9 @@
 \i supabase/012_admin_import_and_home_order.sql
 \i supabase/014_product_images.sql
 \i supabase/018_collision_safe_import.sql
+\i supabase/019_native_section_name_equivalence.sql
 
-select plan(3);
+select plan(5);
 
 insert into auth.users (id) values ('92000000-0000-0000-0000-000000000001');
 update public.profiles set role = 'admin' where id = '92000000-0000-0000-0000-000000000001';
@@ -37,6 +38,21 @@ select is(
   )->'categories'->>'ignored'),
   '1',
   'the import summary reports the slug-equivalent category as ignored'
+);
+
+select lives_ok(
+  $$ select public.admin_import_public_catalog(
+    '{"categories":"upsert","products":"add","recipes":"add"}'::jsonb,
+    '[{"type":"secao","name":"Recomendados"}]'::jsonb,
+    '[]'::jsonb,
+    '[]'::jsonb
+  ) $$,
+  'upserting a native display name does not collide while restoring native sections'
+);
+select is(
+  (select count(*)::int from public.categories where scope = 'site' and type = 'secao' and slug = 'recomendados'),
+  1,
+  'the equivalent native display name remains a single category'
 );
 
 select * from finish();

@@ -858,6 +858,7 @@ function renderProfile(app, v) {
           </div>
         `}
       `}
+      <div style="text-align:center;color:var(--neutral-400);font-size:12px;margin-top:32px;padding-bottom:4px">V0.38</div>
     </div>
   `;
 }
