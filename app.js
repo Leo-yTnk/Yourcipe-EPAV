@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260811-2';
-import { CustomSelect } from './custom-select.js?v=20260811-2';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260812-1';
+import { CustomSelect } from './custom-select.js?v=20260812-1';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260811-2';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260811-2';
-import { supabase } from './supabase-client.js?v=20260811-2';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260811-2';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260811-2';
-import { normalizeDisplayName } from './display-name.js?v=20260811-2';
-import * as catalog from './catalog.js?v=20260811-2';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260811-2';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260811-2';
-import { createLoadGuard } from './load-guard.js?v=20260811-2';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260811-2';
+} from './data.js?v=20260812-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260812-1';
+import { supabase } from './supabase-client.js?v=20260812-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260812-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260812-1';
+import { normalizeDisplayName } from './display-name.js?v=20260812-1';
+import * as catalog from './catalog.js?v=20260812-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260812-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260812-1';
+import { createLoadGuard } from './load-guard.js?v=20260812-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260812-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260811-2';
+const FRONTEND_VERSION = '20260812-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -102,6 +102,8 @@ class App extends Component {
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
       darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize,
       productSectionPickerKey: null, productSectionPickerQuery: '', adminSearchQuery: '',
+      ingredientProductPicker: null, ingredientProductPickerQuery: '',
+      inlinePriceDrafts: {}, inlinePriceBusy: {},
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
       productSelectionMode: false, selectedProductIds: [], productSelectionScope: '',
@@ -143,7 +145,7 @@ class App extends Component {
       },
       indicatorsUpdatedAt: Date.now(),
       showProfileSetup: false,
-      profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' },
+      profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '', productLayout: 'carousel' },
       searchQuery: '',
       activeFilter: 'Todas',
       productsCategoryFilter: 'Todas',
@@ -401,6 +403,7 @@ class App extends Component {
       // (multiline: false) with no single "primary" submit action (every row
       // toggles its own checkbox), so onSubmit is null like productDetail.
       { key: 'productSectionPicker', open: !!st.productSectionPickerKey, zIndex: 21, onClose: this.closeProductSectionPicker, onSubmit: null, busy: false, dirty: false, multiline: false },
+      { key: 'ingredientProductPicker', open: !!st.ingredientProductPicker, zIndex: 24, onClose: this.closeIngredientProductPicker, onSubmit: null, busy: false, dirty: false, multiline: false },
       // Confirm-delete — a "simple modal/dialog" whose Enter key confirms
       // the destructive action, same as clicking its own "Excluir" button;
       // never while a delete is already mid-flight.
@@ -814,7 +817,7 @@ class App extends Component {
   onSplashContinue = () => {
     this.setState({ showSplash: false });
     markWelcomeSeen(localStorage, LS_KEYS.welcomeSeen);
-    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' } });
+    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '', productLayout: 'carousel' } });
   };
   goInicio = () => { this.animateTo('inicio'); this.setState({ screen: 'inicio' }); };
   goHome = () => { this.animateTo('home'); this.setState({ screen: 'home' }); };
@@ -832,7 +835,7 @@ class App extends Component {
   goProfile = () => {
     this.animateTo('profile');
     this.setState({ screen: 'profile' });
-    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '' } });
+    if (!this.state.profile) this.setState({ showProfileSetup: true, profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '', productLayout: 'carousel' } });
     // Profile shows "Biblioteca Compartilhada Comigo" inline — refetch it
     // every time this screen is opened (cheap, guarded by loadSharedLibrary's
     // own in-flight check), same reasoning as setAdminTabSharedRecipes.
@@ -859,7 +862,7 @@ class App extends Component {
 
   onProfileIdadeChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, idade: e.target.value } }));
   onProfileCargoChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, cargo: e.target.value } }));
-  onEditProfile = () => this.setState({ showProfileSetup: true, profileForm: { ...this.state.profile } });
+  onEditProfile = () => this.setState({ showProfileSetup: true, profileForm: { productLayout: 'carousel', ...this.state.profile } });
   onSaveProfile = () => {
     const profile = { ...this.state.profileForm };
     this.setState({ profile, showProfileSetup: false });
@@ -1383,6 +1386,19 @@ class App extends Component {
     this.setState({ showMyProductForm: false, myProductForm: null });
     this.refreshAfterMyCreationMutation(uid, 'Produto salvo com sucesso.');
   };
+  onInlinePriceChange = (scope, id) => (e) => this.setState(s => ({ inlinePriceDrafts: { ...s.inlinePriceDrafts, [`${scope}:${id}`]: e.target.value } }));
+  onInlinePriceKeyDown = (scope, product) => (e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } };
+  saveInlinePrice = async (scope, product) => {
+    const key = `${scope}:${product.id}`;
+    if (this.state.inlinePriceBusy[key] || this.state.inlinePriceDrafts[key] === undefined) return;
+    const price = parseFloat(String(this.state.inlinePriceDrafts[key]).replace(',', '.'));
+    if (!Number.isFinite(price) || price < 0) { this.flashAdmin('Informe um preço válido.'); return; }
+    this.setState(s => ({ inlinePriceBusy: { ...s.inlinePriceBusy, [key]: true } }));
+    const res = scope === 'site' ? await catalog.updateSiteProduct(product.id, { price }) : await catalog.updateProduct(product.id, { price });
+    this.setState(s => { const drafts = { ...s.inlinePriceDrafts }; delete drafts[key]; const busy = { ...s.inlinePriceBusy }; delete busy[key]; return { inlinePriceDrafts: drafts, inlinePriceBusy: busy }; });
+    if (res.error) { this.flashAdmin('Não foi possível atualizar o preço.'); return; }
+    if (scope === 'site') this.loadSiteCatalogData(); else this.loadMyCreationData(this.state.session.user.id);
+  };
   // askDeleteMyProduct: see the reference-checked version defined below,
   // alongside askDeleteRecipeChecked (openProductDeleteImpact).
 
@@ -1424,6 +1440,15 @@ class App extends Component {
   onCancelMyRecipeForm = () => this.setState({ showMyRecipeForm: false, myRecipeForm: null, myFormError: '', ingredientRemoveConfirm: null });
   myRecipeFormField = (field) => (e) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, [field]: e.target.value } }));
   onMyRecipeIngredientChange = (idx, field, value) => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: s.myRecipeForm.ingredients.map((row, i) => i === idx ? { ...row, [field]: value } : row) } }));
+  openIngredientProductPicker = (formKey, idx) => this.setState({ ingredientProductPicker: { formKey, idx }, ingredientProductPickerQuery: '' });
+  closeIngredientProductPicker = () => this.setState({ ingredientProductPicker: null, ingredientProductPickerQuery: '' });
+  onIngredientProductPickerQuery = (e) => this.setState({ ingredientProductPickerQuery: e.target.value });
+  chooseIngredientProduct = (productId) => {
+    const picker = this.state.ingredientProductPicker;
+    if (!picker || !this.state[picker.formKey]) return;
+    const ingredients = this.state[picker.formKey].ingredients.map((row, i) => i === picker.idx ? { ...row, productId } : row);
+    this.setState({ [picker.formKey]: { ...this.state[picker.formKey], ingredients }, ingredientProductPicker: null, ingredientProductPickerQuery: '' });
+  };
   addMyRecipeIngredient = () => this.setState(s => ({ myRecipeForm: { ...s.myRecipeForm, ingredients: [...s.myRecipeForm.ingredients, { productId: this.pickerProducts()[0] ? this.pickerProducts()[0].id : '', quantity: 1 }] } }));
   removeMyRecipeIngredient = (idx) => this.removeIngredientAt('myRecipeForm', idx);
   // Confirm-before-remove for a single ingredient row (shared by
@@ -2451,6 +2476,7 @@ class App extends Component {
   setNavRailLeft = () => { this.setState({ navRailSide: 'left' }); this.persist(LS_KEYS.navRailSide, 'left'); };
   setNavRailRight = () => { this.setState({ navRailSide: 'right' }); this.persist(LS_KEYS.navRailSide, 'right'); };
   onSetFontSize = (fontSize) => { this.setState({ fontSize }); this.persist(LS_KEYS.fontSize, fontSize); };
+  onProfileProductLayoutSet = (productLayout) => this.setState(s => ({ profileForm: { ...s.profileForm, productLayout } }));
   toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       const el = document.documentElement;
@@ -3592,11 +3618,12 @@ class App extends Component {
       onOpen: () => this.onOpenMyRecipeDetail(r.id), onEdit: () => this.onEditMyRecipe(r), onDelete: () => this.askDeleteRecipeChecked(r.id),
     }); }).filter(row => matchesSearch(row.name));
     const myProductRows = s.myProducts.map(p => { const selected = s.productSelectionScope === 'my' && s.selectedProductIds.includes(p.id); return ({
-      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), imagem: p.image_url || FALLBACK_IMG,
+      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), priceValue: s.inlinePriceDrafts[`my:${p.id}`] ?? p.price, imagem: p.image_url || FALLBACK_IMG,
       active: p.active, activeLabel: p.active ? 'Ativo' : 'Inativo', toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'my', showActions: !(s.productSelectionMode && s.productSelectionScope === 'my'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'my' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'my'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'my') this.toggleProductSelected(p.id); },
       onEdit: () => this.onEditMyProduct(p), onToggleActive: () => this.onToggleMyProductActive(p), onDelete: () => this.askDeleteMyProduct(p.id),
       onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
+      onPriceChange: this.onInlinePriceChange('my', p.id), onPriceBlur: () => this.saveInlinePrice('my', p), onPriceKeyDown: this.onInlinePriceKeyDown('my', p),
     }); }).filter(row => matchesSearch(row.name));
     const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : t === 'secao_produto' ? 'Seção de Produto' : 'Proteína/Produto';
     const myCategoryRows = s.myCategories.map(c => ({
@@ -3630,7 +3657,7 @@ class App extends Component {
       const confirming = rc && rc.formKey === 'myRecipeForm' && rc.idx === idx && rc.productId === row.productId ? rc : null;
       return {
         idx, productId: row.productId, quantity: row.quantity,
-        onProductSet: (v) => this.onMyRecipeIngredientChange(idx, 'productId', v),
+        onOpenProductPicker: () => this.openIngredientProductPicker('myRecipeForm', idx),
         onQuantityChange: (e) => this.onMyRecipeIngredientChange(idx, 'quantity', e.target.value),
         onRemove: () => this.askRemoveIngredient('myRecipeForm', idx),
         confirming: !!confirming,
@@ -3708,7 +3735,7 @@ class App extends Component {
       };
     }).filter(row => matchesSearch(row.name));
     const siteProductRows = s.siteProducts.map(p => { const selected = s.productSelectionScope === 'site' && s.selectedProductIds.includes(p.id); return ({
-      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), imagem: p.image_url || FALLBACK_IMG,
+      id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), priceValue: s.inlinePriceDrafts[`site:${p.id}`] ?? p.price, imagem: p.image_url || FALLBACK_IMG,
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
@@ -3716,6 +3743,7 @@ class App extends Component {
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'site'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
       onDelete: () => this.askDeleteSiteProduct(p.id),
+      onPriceChange: this.onInlinePriceChange('site', p.id), onPriceBlur: () => this.saveInlinePrice('site', p), onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
     }); }).filter(row => matchesSearch(row.name));
     const siteCategoryRows = s.siteCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
@@ -3744,7 +3772,7 @@ class App extends Component {
       const confirming = rc && rc.formKey === 'siteRecipeForm' && rc.idx === idx && rc.productId === row.productId ? rc : null;
       return {
         idx, productId: row.productId, quantity: row.quantity,
-        onProductSet: (val) => this.onSiteRecipeIngredientChange(idx, 'productId', val),
+        onOpenProductPicker: () => this.openIngredientProductPicker('siteRecipeForm', idx),
         onQuantityChange: (e) => this.onSiteRecipeIngredientChange(idx, 'quantity', e.target.value),
         onRemove: () => this.askRemoveIngredient('siteRecipeForm', idx),
         confirming: !!confirming,
@@ -3761,6 +3789,13 @@ class App extends Component {
       const q = parseFloat(String(row.quantity).replace(',', '.')) || 0;
       return sum + (p ? p.price * q : 0);
     }, 0));
+    const pickerSource = s.ingredientProductPicker && s.ingredientProductPicker.formKey === 'siteRecipeForm' ? s.siteProducts : this.pickerProducts();
+    const ingredientPickerNeedle = s.ingredientProductPickerQuery.trim().toLowerCase();
+    const ingredientProductPickerRows = pickerSource.filter(p => !ingredientPickerNeedle || p.name.toLowerCase().includes(ingredientPickerNeedle)).map(p => ({
+      id: p.id, name: p.name, imageUrl: p.image_url || FALLBACK_IMG,
+      detail: `${(p.category && p.category.name) || ''} · ${this.formatBRL(p.price)}/${p.unit}`,
+      onChoose: () => this.chooseIngredientProduct(p.id),
+    }));
 
     // ---- Solicitações (change_requests) ----
     const requestStatusLabel = (st) => ({
@@ -3894,6 +3929,7 @@ class App extends Component {
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       // Produtos page + Início aggregator
       productHomeSectionBlocks, productCategoryChips, productPageBlocks, inicioProductBlock,
+      productLayout: (s.profile && s.profile.productLayout) || 'carousel',
       productsEmpty: s.products.length === 0,
       showProductDetailModal: !!s.selectedProductId && !!selectedProduct, productDetailData: selectedProduct || { nome: '', categoria: '', unidade: '', precoLabel: '', imagem: FALLBACK_IMG, relatedRecipes: [] },
       onOpenProductDetail: (id) => this.openProductDetail(id), onCloseProductDetail: this.closeProductDetail,
@@ -3936,7 +3972,7 @@ class App extends Component {
       signupResult: s.signupResult, credentialCopied: s.credentialCopied, onCopyCredential: this.onCopyCredential, onFinishSignup: this.onFinishSignup,
       showProfileSetup: s.showProfileSetup, profileForm: s.profileForm,
       onProfileIdadeChange: this.onProfileIdadeChange, onProfileCargoChange: this.onProfileCargoChange,
-      onSaveProfile: this.onSaveProfile, generoOptions: ['Feminino', 'Masculino', 'Outro', 'Prefiro não informar'], onProfileGeneroSet: this.setFormField('profileForm', 'genero'),
+      onSaveProfile: this.onSaveProfile, generoOptions: ['Feminino', 'Masculino', 'Outro', 'Prefiro não informar'], onProfileGeneroSet: this.setFormField('profileForm', 'genero'), onProfileProductLayoutSet: this.onProfileProductLayoutSet,
       selectedRecipe: selectedRecipe || { imagem: FALLBACK_IMG, nome: '', tempoLabel: '', porcoesLabel: '', dificuldade: '', heartFill: 'none', onToggleFavorite: () => {}, onBack: this.backFromDetail, canEdit: false, onEdit: () => {} },
       ingredientRows, extrasList, hasExtras, modoPreparoList, dicasList, totalABuyLabel, totalAllLabel,
       altModalOpen, altModalIngredientNome, altOptions, altOptionsEmpty, onCloseAltModal: this.closeAltModal,
@@ -4020,6 +4056,8 @@ class App extends Component {
       myRecipeFormOnServings: this.myRecipeFormField('servings'), myRecipeFormOnImageUrl: this.myRecipeFormField('imageUrl'),
       myRecipeFormOnExtras: this.myRecipeFormField('extrasText'), myRecipeFormOnInstructions: this.myRecipeFormField('instructionsText'), myRecipeFormOnTips: this.myRecipeFormField('tipsText'),
       myRecipeCategoryOptions, myRecipeSectionRows, myRecipeIngredientRows, myProductOptionsForIngredients, myIngredientTotalCostLabel,
+      showIngredientProductPicker: !!s.ingredientProductPicker, ingredientProductPickerQuery: s.ingredientProductPickerQuery,
+      ingredientProductPickerRows, onIngredientProductPickerQuery: this.onIngredientProductPickerQuery, onCloseIngredientProductPicker: this.closeIngredientProductPicker,
       onAddMyRecipeIngredient: this.addMyRecipeIngredient, onCancelMyRecipeForm: this.onCancelMyRecipeForm, onSaveMyRecipeForm: this.onSaveMyRecipeForm,
       dificuldadeOptionsMy: this.dificuldades,
       // Meu produto: form modal
@@ -4238,7 +4276,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260811-2';
+import { renderApp } from './template.js?v=20260812-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
