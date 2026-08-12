@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260811-2';
-import { CustomSelect } from './custom-select.js?v=20260811-2';
+import { html } from './vendor/htm-preact-standalone.js?v=20260812-1';
+import { CustomSelect } from './custom-select.js?v=20260812-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -51,6 +51,7 @@ export function renderApp(app) {
         ${v.isDetail && renderDetailButtons(app, v)}
         ${v.showProductDetailModal && renderProductDetailModal(app, v)}
         ${v.showProductSectionPicker && renderProductSectionPickerModal(app, v)}
+        ${v.showIngredientProductPicker && renderIngredientProductPickerModal(app, v)}
         ${v.showBottomTabBar && renderBottomTabBar(app, v)}
         ${v.showSideNavRail && renderSideNavRail(app, v)}
         ${v.showProfileSetup && renderProfileSetupModal(app, v)}
@@ -321,6 +322,11 @@ function productCarouselSection(icon, title, list) {
   `;
 }
 
+function productGridSection(icon, title, list) {
+  if (!list.length) return null;
+  return html`<div style="padding:18px 40px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div className="yc-product-grid">${list.map(productCard)}</div></div>`;
+}
+
 function renderProducts(app, v) {
   return html`
     <div style="padding:40px 40px 8px">
@@ -339,7 +345,7 @@ function renderProducts(app, v) {
       </div>
     </div>
 
-    ${v.productPageBlocks.map((sec) => productCarouselSection(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
+    ${v.productPageBlocks.map((sec) => (v.productLayout === 'grid' ? productGridSection : productCarouselSection)(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
     ${v.productsEmpty && html`<div style="padding:60px 40px;text-align:center;color:var(--neutral-600);font-size:15px">Nenhum produto cadastrado ainda.</div>`}
   `;
 }
@@ -1001,11 +1007,28 @@ function renderProfileSetupModal(app, v) {
           <input type="number" placeholder="Idade" value=${f.idade} onInput=${v.onProfileIdadeChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
           <${CustomSelect} options=${v.generoOptions} value=${f.genero} onChange=${v.onProfileGeneroSet} />
           <input type="text" placeholder="Cargo (ex: Dono de Açougue, Chef, Comprador)" value=${f.cargo} onInput=${v.onProfileCargoChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--neutral-600);margin-bottom:7px">Exibição dos produtos</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              ${[['carousel', 'Linhas (carrosséis)'], ['grid', 'Grid (colunas)']].map(([value, label]) => html`<button type="button" onClick=${() => v.onProfileProductLayoutSet(value)} style=${`padding:11px;border-radius:var(--radius-md);border:1.5px solid ${f.productLayout === value ? 'var(--brand-700)' : 'var(--neutral-200)'};background:${f.productLayout === value ? 'rgba(178,64,25,.08)' : 'var(--neutral-0)'};color:var(--neutral-900);font:600 13px var(--font-sans);cursor:pointer`}>${label}</button>`)}
+            </div>
+          </div>
         </div>
         <div onClick=${v.onSaveProfile} style="margin-top:24px;background:var(--brand-700);color:#F4F2F1;text-align:center;padding:16px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer">Salvar</div>
       </div>
     </div>
   `;
+}
+
+function renderIngredientProductPickerModal(app, v) {
+  return html`<div style="position:absolute;inset:0;background:rgba(14,12,11,.62);display:flex;align-items:center;justify-content:center;z-index:24;padding:20px;box-sizing:border-box">
+    <div className="yc-scroll" style="width:680px;max-width:100%;max-height:86%;overflow:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:26px;box-sizing:border-box;box-shadow:var(--shadow-lg)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px"><div><div style="font-size:21px;font-weight:700">Selecionar produto</div><div style="font-size:13px;color:var(--neutral-600)">Pesquise e escolha um produto pela foto.</div></div><button type="button" onClick=${v.onCloseIngredientProductPicker} aria-label="Fechar" style="border:0;background:var(--neutral-50);border-radius:50%;width:38px;height:38px;cursor:pointer;font-size:20px;color:var(--neutral-900)">×</button></div>
+      <input autofocus type="search" placeholder="Buscar produto..." value=${v.ingredientProductPickerQuery} onInput=${v.onIngredientProductPickerQuery} style=${FORM_INPUT_STYLE}/>
+      <div className="yc-product-picker-grid" style="margin-top:16px">${v.ingredientProductPickerRows.map(row => html`<button key=${row.id} type="button" onClick=${row.onChoose} style="border:1px solid var(--neutral-100);background:var(--neutral-0);border-radius:var(--radius-lg);padding:0;overflow:hidden;text-align:left;cursor:pointer;color:var(--neutral-900)"><img src=${row.imageUrl} alt="" style="width:100%;height:110px;object-fit:cover"/><div style="padding:11px"><div style="font-size:14px;font-weight:700">${row.name}</div><div style="font-size:12px;color:var(--neutral-600);margin-top:3px">${row.detail}</div></div></button>`)}</div>
+      ${v.ingredientProductPickerRows.length === 0 && html`<div style="padding:30px;text-align:center;color:var(--neutral-600)">Nenhum produto encontrado.</div>`}
+    </div>
+  </div>`;
 }
 
 const AUTH_INPUT_STYLE = "background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans);box-sizing:border-box";
@@ -1522,7 +1545,7 @@ function renderSiteProductsTab(app, v) {
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
-          <div style="font-size:15px;font-weight:700;color:var(--brand-700)">${row.priceLabel}</div>
+          <label style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
           <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
@@ -1668,7 +1691,7 @@ function renderMyProductsTab(app, v) {
             <div style="font-size:15px;font-weight:600">${row.name}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
           </div>
-          <div style="font-size:15px;font-weight:700;color:var(--brand-700)">${row.priceLabel}</div>
+          <label style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
           <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${row.active ? '#34B23E22' : '#8A858022'};color:${row.active ? '#34B23E' : '#8A8580'};white-space:nowrap">${row.activeLabel}</span>
           <div onClick=${row.onToggleActive} title=${row.toggleActiveLabel} style="font-size:12px;font-weight:700;color:var(--neutral-800);cursor:pointer;border:1.5px solid var(--neutral-200);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div onClick=${row.onRequestPublish} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">Solicitar publicação</div>
@@ -1827,7 +1850,7 @@ function renderMyRecipeFormModal(app, v) {
         ${v.myRecipeIngredientRows.map((row) => html`
           <div key=${row.idx}>
             <div style="display:flex;gap:10px;margin-bottom:${row.confirming ? '4px' : '10px'};align-items:center;flex-wrap:wrap">
-              <div style="flex:1;min-width:160px"><${CustomSelect} options=${v.myProductOptionsForIngredients} value=${row.productId} onChange=${row.onProductSet} /></div>
+              <button type="button" onClick=${row.onOpenProductPicker} style="flex:1;min-width:160px;text-align:left;background:var(--neutral-0);color:var(--neutral-900);padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px;cursor:pointer">${(v.myProductOptionsForIngredients.find(o => o.value === row.productId) || {}).label || 'Selecionar produto...'}</button>
               <input type="number" step="0.1" value=${row.quantity} onInput=${row.onQuantityChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
               <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
@@ -2277,7 +2300,7 @@ function renderSiteRecipeFormModal(app, v) {
         ${v.siteRecipeIngredientRows.map((row) => html`
           <div key=${row.idx}>
             <div style="display:flex;gap:10px;margin-bottom:${row.confirming ? '4px' : '10px'};align-items:center;flex-wrap:wrap">
-              <div style="flex:1;min-width:160px"><${CustomSelect} options=${v.siteProductOptionsForIngredients} value=${row.productId} onChange=${row.onProductSet} /></div>
+              <button type="button" onClick=${row.onOpenProductPicker} style="flex:1;min-width:160px;text-align:left;background:var(--neutral-0);color:var(--neutral-900);padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px;cursor:pointer">${(v.siteProductOptionsForIngredients.find(o => o.value === row.productId) || {}).label || 'Selecionar produto...'}</button>
               <input type="number" step="0.1" value=${row.quantity} onInput=${row.onQuantityChange} style="background:var(--neutral-0);color:var(--neutral-900);width:90px;padding:10px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:13px"/>
               <div onClick=${row.onRemove} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>

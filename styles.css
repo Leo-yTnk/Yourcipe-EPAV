@@ -53,6 +53,9 @@ body { margin: 0; font-family: var(--font-sans); }
    recipe forms): 2 columns down to 520px, 1 column below that so inputs
    never get squeezed narrower than they can usefully render. */
 .yc-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.yc-product-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:18px; }
+.yc-product-grid > div { width:auto !important;min-width:0 !important; }
+.yc-product-picker-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px; }
 @media (max-width: 520px) {
   .yc-form-grid { grid-template-columns: 1fr; }
 }
