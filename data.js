@@ -15,6 +15,8 @@ export const LS_KEYS = {
   proteins: 'yourcipe_proteins_v1',
   navRailSide: 'yourcipe_nav_rail_side_v1',
   fontSize: 'yourcipe_font_size_v1',
+  // Local presentation preference, shared by guests and signed-in users.
+  productLayout: 'yourcipe_product_layout_v1',
   // First-visit-only welcome message (see app.js state init/onSplashContinue).
   // A pure UI preference, never account-linked and never stored server-side.
   welcomeSeen: 'yourcipe_welcome_seen_v1',
