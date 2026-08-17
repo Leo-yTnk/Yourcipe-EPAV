@@ -1,6 +1,6 @@
 // Reusable pill-style dropdown used throughout the admin forms and profile setup.
 // Ported 1:1 from the design's CustomSelect.dc.html component.
-import { Component, html } from './vendor/htm-preact-standalone.js?v=20260817-4';
+import { Component, html } from './vendor/htm-preact-standalone.js?v=20260817-5';
 
 let selectId = 0;
 
