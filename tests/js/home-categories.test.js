@@ -32,10 +32,12 @@ describe('Home loads its category vocabulary from Supabase, not from static cons
     });
   });
 
-  it('defines three separate type-scoped getters (receita/proteina/secao) that never merge types', () => {
+  it('defines page-specific category and section getters that never merge editor pages', () => {
     expect(appJs).toMatch(/publicRecipeCategories\s*=\s*\(\)\s*=>\s*\(this\.state\.publicCategories \|\| \[\]\)\.filter\(c => c\.type === 'receita'\)/);
     expect(appJs).toMatch(/publicProteinCategories\s*=\s*\(\)\s*=>\s*\(this\.state\.publicCategories \|\| \[\]\)\.filter\(c => c\.type === 'proteina'\)/);
-    expect(appJs).toMatch(/publicSectionCategories\s*=\s*\(\)\s*=>\s*\(this\.state\.publicCategories \|\| \[\]\)\.filter\(c => c\.type === 'secao'\)/);
+    expect(appJs).toMatch(/publicHomeSectionCategories\s*=\s*\(\)\s*=>[\s\S]{0,100}c\.type === 'secao_home'/);
+    expect(appJs).toMatch(/publicSectionCategories\s*=\s*\(\)\s*=>\s*\(this\.state\.publicCategories \|\| \[\]\)\.filter\(c => c\.type === 'secao_receita'\)/);
+    expect(appJs).toMatch(/publicProductSectionCategories\s*=\s*\(\)\s*=>\s*\(this\.state\.publicCategories \|\| \[\]\)\.filter\(c => c\.type === 'secao_produto'\)/);
   });
 
   it('the Home category chips are built from the live receita-type getter, not the static CATEGORIAS_RECEITA import', () => {
@@ -48,8 +50,8 @@ describe('Home loads its category vocabulary from Supabase, not from static cons
 });
 
 describe('Home sections use the public ordering from Supabase', () => {
-  it('builds a single ordered Home section block list from public secao categories', () => {
-    expect(appJs).toMatch(/const publicHomeSections = this\.publicSectionCategories\(\)/);
+  it('builds a single ordered Home section block list only from Home sections', () => {
+    expect(appJs).toMatch(/const publicHomeSections = this\.publicHomeSectionCategories\(\)/);
     expect(appJs).toMatch(/publicHomeSections\.map\(c => \({ key: c\.slug, label: c\.name }\)\)/);
     expect(appJs).toMatch(/const homeSectionBlocks = homeSectionSource[\s\S]*?\.map\(sec => \({ key: sec\.key, label: sec\.label, items: byTag\(sec\.key\) }\)\)/);
   });

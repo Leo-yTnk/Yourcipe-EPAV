@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260817-6';
-import { CustomSelect } from './custom-select.js?v=20260817-6';
+import { html } from './vendor/htm-preact-standalone.js?v=20260817-7';
+import { CustomSelect } from './custom-select.js?v=20260817-7';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -1568,7 +1568,9 @@ function renderSiteCategoriesTab(app, v) {
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
-      ${v.siteCategoryRows.map((row) => html`
+      ${v.siteCategoryGroups.map(group => html`<section className="yc-category-group" key=${group.type}>
+        <h3 style="font-size:14px;color:var(--brand-700);margin:22px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--neutral-100)">${group.label} <span style="color:var(--neutral-500);font-weight:500">(${group.rows.length})</span></h3>
+        ${group.rows.map((row) => html`
         <div key=${row.id} style=${`display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;opacity:1`}>
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
@@ -1582,7 +1584,8 @@ function renderSiteCategoriesTab(app, v) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
-      `)}
+        `)}
+      </section>`)}
       ${v.hasSiteCategoryError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-top:8px">${v.siteCategoryError}</div>`}
       ${renderLocalHomeCustomization(app, v)}
     </div>

@@ -13,7 +13,7 @@
 // ownerId argument) always receives it from the caller's own
 // session.user.id, never from anywhere else; the server independently
 // re-validates it via RLS/RPC regardless.
-import { supabase } from './supabase-client.js?v=20260817-6';
+import { supabase } from './supabase-client.js?v=20260817-7';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, image_url, version, created_at, updated_at';
@@ -616,6 +616,9 @@ export async function adminImportPublicCatalog(modes, categories, products, reci
 
 export async function adminReorderHomeSections(sections) {
   return unwrap(await supabase.rpc('admin_reorder_home_sections', { p_sections: sections }), 'adminReorderHomeSections');
+}
+export async function adminReorderRecipeSections(sections) {
+  return unwrap(await supabase.rpc('admin_reorder_recipe_sections', { p_sections: sections }), 'adminReorderRecipeSections');
 }
 // Product-sections mirror of adminReorderHomeSections above.
 export async function adminReorderProductSections(sections) {
