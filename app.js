@@ -3057,8 +3057,8 @@ class App extends Component {
   onDownloadTemplate = () => {
     if (!window.XLSX) return;
     const produtosSheet = XLSX.utils.json_to_sheet([
-      { nome: 'Picanha', categoria: 'Bovinos', unidade: 'kg', preco: 89.90, imagem: 'https://picsum.photos/seed/picanha/900/650' },
-      { nome: 'Sal Grosso', categoria: 'Mercearia', unidade: 'pacote', preco: 6.90, imagem: 'https://picsum.photos/seed/sal-grosso/900/650' },
+      { nome: 'Picanha', categoria: 'Bovinos', unidade: 'kg', imagem: 'https://picsum.photos/seed/picanha/900/650', swift_url: 'https://www.swift.com.br/picanha-exemplo', swift_sku: 'SWIFT-EXEMPLO-001' },
+      { nome: 'Sal Grosso', categoria: 'Mercearia', unidade: 'pacote', imagem: 'https://picsum.photos/seed/sal-grosso/900/650', swift_url: 'https://www.swift.com.br/sal-grosso-exemplo', swift_sku: 'SWIFT-EXEMPLO-002' },
     ]);
     const receitasSheet = XLSX.utils.json_to_sheet([
       { nome: 'Picanha na Brasa', categoria: 'Bovina', tempo: 50, porcoes: 6, dificuldade: 'Fácil', imagem: 'https://picsum.photos/seed/exemplo/900/650', tags: 'destaque,ocasiao', ingredientes: 'Picanha:1.5; Sal Grosso:0.2', extras: 'Carvão para churrasqueira; Pimenta a gosto', modoPreparo: 'Tempere a carne com sal grosso.; Grelhe na churrasqueira até o ponto desejado.; Deixe descansar antes de fatiar.', dicas: 'Não fure a carne ao virar.' },
@@ -3077,6 +3077,9 @@ class App extends Component {
   onImportFileChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    const extension = String(file.name || '').toLowerCase();
+    if (!/\.(xlsx|xls)$/.test(extension)) { this.setState({ importParseError: 'Formato inválido. Envie o modelo .xlsx ou um arquivo .xls.' }); return; }
+    if (file.size > 10 * 1024 * 1024) { this.setState({ importParseError: 'Arquivo maior que 10 MB. Divida a importação em lotes menores.' }); return; }
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -3099,8 +3102,10 @@ class App extends Component {
     const normKey = (txt) => this.normalizeImportText(txt).replace(/[^a-z0-9]+/g, '');
     const get = (row, names) => { const map = Object.fromEntries(Object.keys(row).map(k => [normKey(k), row[k]])); for (const name of names) if (Object.prototype.hasOwnProperty.call(map, normKey(name))) return map[normKey(name)]; return ''; };
     const rows = (sheet) => { const name = wb.SheetNames.find(n => this.normalizeImportText(n) === sheet); return name ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' }) : []; };
+    const requiredSheets = ['categorias', 'produtos', 'receitas'];
+    const missingSheets = requiredSheets.filter(sheet => !wb.SheetNames.some(name => this.normalizeImportText(name) === sheet));
     const categoryRows = rows('categorias'), productRows = rows('produtos'), recipeRows = rows('receitas');
-    const errors = [], warnings = [], parsedCategories = [], parsedProducts = [], parsedRecipes = [];
+    const errors = missingSheets.length ? [`Abas obrigatórias ausentes: ${missingSheets.join(', ')}.`] : [], warnings = [], parsedCategories = [], parsedProducts = [], parsedRecipes = [];
     const categoryKeys = new Set((this.state.siteCategories || []).filter(c => c.active !== false).map(c => `${c.type}:${this.normalizeImportSlug(c.name)}`));
     const seenCategories = new Map();
     categoryRows.forEach((row, i) => {
@@ -3121,8 +3126,12 @@ class App extends Component {
       }
     });
 
+    if (categoryRows.length + productRows.length + recipeRows.length > 5000) errors.push('A planilha excede o limite seguro de 5.000 linhas. Divida-a em lotes menores.');
+
     const productNames = new Set((this.state.siteProducts || []).filter(p => p.active !== false).map(p => this.normalizeImportText(p.name)));
     const seenProducts = new Set();
+    const seenSwiftUrls = new Map();
+    const seenSwiftSkus = new Map();
     productRows.forEach((row, i) => {
       const name = String(get(row, ['nome', 'name', 'produto']) || '').trim();
       const key = this.normalizeImportText(name);
@@ -3130,16 +3139,31 @@ class App extends Component {
       const category = String(get(row, ['categoria', 'category']) || (existingProduct && existingProduct.category && existingProduct.category.name) || '').trim();
       const unit = this.normalizeImportText(get(row, ['unidade', 'unit']) || (existingProduct && existingProduct.unit));
       const rawPrice = String(get(row, ['preco', 'preço', 'price'])).trim();
-      const price = rawPrice === '' ? NaN : Number(rawPrice.replace(',', '.'));
+      const price = rawPrice === '' ? null : Number(rawPrice.replace(',', '.'));
       const imageUrl = String(get(row, ['imagem', 'image_url', 'url da imagem']) || (existingProduct && existingProduct.image_url) || '').trim();
+      const swiftUrlRaw = String(get(row, ['swift_url', 'url swift', 'pagina swift', 'página swift']) || (existingProduct && existingProduct.swift_product_url) || '').trim();
+      const swiftSku = String(get(row, ['swift_sku', 'sku swift', 'sku']) || (existingProduct && existingProduct.swift_sku) || '').trim();
+      let swiftUrl = '';
+      if (swiftUrlRaw) {
+        try {
+          const parsed = new URL(swiftUrlRaw);
+          if (parsed.protocol !== 'https:' || !['swift.com.br', 'www.swift.com.br'].includes(parsed.hostname.toLowerCase()) || parsed.pathname === '/' || parsed.search || parsed.hash) throw new Error('invalid');
+          swiftUrl = `https://www.swift.com.br${parsed.pathname.replace(/\/+$/, '')}`;
+        } catch { errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): swift_url deve ser uma página de produto HTTPS da Swift, sem parâmetros.`); }
+      }
+      if (!existingProduct && !swiftUrl) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): swift_url é obrigatória para integrar o preço.`);
+      const swiftUrlKey = swiftUrl.toLowerCase(), swiftSkuKey = swiftSku.toLowerCase();
+      if (swiftUrlKey && seenSwiftUrls.has(swiftUrlKey)) errors.push(`Produtos, linhas ${seenSwiftUrls.get(swiftUrlKey)} e ${i + 2}: mesma página Swift usada por mais de um produto.`); else if (swiftUrlKey) seenSwiftUrls.set(swiftUrlKey, i + 2);
+      if (swiftSkuKey && seenSwiftSkus.has(swiftSkuKey)) errors.push(`Produtos, linhas ${seenSwiftSkus.get(swiftSkuKey)} e ${i + 2}: mesmo SKU Swift usado por mais de um produto.`); else if (swiftSkuKey) seenSwiftSkus.set(swiftSkuKey, i + 2);
       if (!name) errors.push(`Produtos, linha ${i + 2}: campo nome ausente.`);
       else if (seenProducts.has(key)) errors.push(`Produtos, linha ${i + 2} ("${name}"): produto duplicado.`);
       else seenProducts.add(key);
       if (!categoryKeys.has(`proteina:${this.normalizeImportSlug(category)}`)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
       if (!['kg', 'un', 'pacote', 'caixa', 'pote'].includes(unit)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): unidade inválida.`);
-      if (!Number.isFinite(price) || price < 0) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): preço inválido.`);
+      if (price !== null && (!Number.isFinite(price) || price < 0)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): preço legado inválido.`);
+      if (!swiftUrl && price === null) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): informe swift_url ou um preço legado.`);
       if (!/^https?:\/\/\S+$/i.test(imageUrl)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): URL de imagem ausente ou inválida.`);
-      parsedProducts.push({ name, category, unit, price: Number.isFinite(price) ? price : 0, image_url: imageUrl });
+      parsedProducts.push({ name, category, unit, price: Number.isFinite(price) ? price : null, image_url: imageUrl, swift_product_url: swiftUrl || null, swift_sku: swiftSku || null });
       productNames.add(key);
     });
 
@@ -3177,7 +3201,9 @@ class App extends Component {
       const category = get(row, ['categoria', 'category']);
       const unit = get(row, ['unidade', 'unit']);
       const image = get(row, ['imagem', 'image_url', 'url da imagem']);
-      return !category && !unit && !image;
+      const swiftUrl = get(row, ['swift_url', 'url swift', 'pagina swift', 'página swift']);
+      const swiftSku = get(row, ['swift_sku', 'sku swift', 'sku']);
+      return !category && !unit && !image && !swiftUrl && !swiftSku;
     });
     const importModes = isPriceOnlyUpdate ? { ...this.state.importModes, products: 'upsert' } : this.state.importModes;
     this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedCategories: parsedCategories, importParsedProducts: parsedProducts, importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importResult: null, importModes }, () => this.recomputeImportSummary());
@@ -3213,6 +3239,8 @@ class App extends Component {
     }
     const categoryFailure = message.match(/(?:category_not_found|active_category_not_found):\s*(.+)/i);
     if (categoryFailure) return `Categoria não encontrada: "${categoryFailure[1]}". Confira se ela foi cadastrada na aba Categorias com o tipo correspondente e se o nome usado na planilha é o mesmo. Nenhuma alteração foi aplicada.`;
+    const swiftFailure = message.match(/(swift_url_required|invalid_swift_product_url|swift_identity_conflict|duplicate_swift_(?:url|sku)_in_payload):?\s*(.*)/i);
+    if (swiftFailure) return `Origem Swift inválida ou duplicada${swiftFailure[2] ? ` para "${swiftFailure[2]}"` : ''} (${swiftFailure[1]}). Confira swift_url e swift_sku; nenhum preço foi confirmado e nenhuma alteração foi aplicada.`;
     const productFailure = message.match(/product_not_found:\s*(.+)/i);
     if (productFailure) return `Produto usado como ingrediente não encontrado: "${productFailure[1]}". Cadastre-o na aba Produtos ou corrija o nome no campo ingredientes. Nenhuma alteração foi aplicada.`;
     const sectionFailure = message.match(/section_not_found:\s*(.+)/i);
