@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260817-4';
-import { CustomSelect } from './custom-select.js?v=20260817-4';
+import { html } from './vendor/htm-preact-standalone.js?v=20260817-5';
+import { CustomSelect } from './custom-select.js?v=20260817-5';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -15,6 +15,18 @@ import { CustomSelect } from './custom-select.js?v=20260817-4';
 // grid cell can shrink to a single column on mobile without overflowing.
 const FORM_INPUT_STYLE = "background:var(--neutral-0);color:var(--neutral-900);width:100%;min-width:0;box-sizing:border-box;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px";
 const FORM_TEXTAREA_STYLE = FORM_INPUT_STYLE + ";resize:vertical";
+
+// One accessible checkbox for every form.  Its visual treatment is the same
+// 22px rounded control used by ingredient rows on the recipe-details page;
+// the native input remains in the accessibility tree but never leaks its
+// platform-specific Safari/Chrome appearance into the interface.
+function checkbox({ checked, onChange, label, disabled = false, key }) {
+  return html`<label key=${key} className=${`yc-checkbox${disabled ? ' is-disabled' : ''}`}>
+    <input type="checkbox" checked=${!!checked} disabled=${disabled} onChange=${onChange}/>
+    <span className="yc-checkbox-control" aria-hidden="true">${checked ? '✓' : ''}</span>
+    <span>${label}</span>
+  </label>`;
+}
 
 function field(label, control, { required = false, span = 1 } = {}) {
   return html`
@@ -564,7 +576,7 @@ function renderDados(app, v) {
 
     <div style="padding:20px 40px 8px">
       <div style="background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:24px;box-shadow:var(--shadow-sm)">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px">
+        <div className="yc-chart-header" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px">
           <div style="display:flex;flex-direction:column;gap:0">
             <div style="display:flex;align-items:center;gap:10px">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="2"><path d="M5 20V10M12 20V4M19 20v-7"></path></svg>
@@ -572,11 +584,11 @@ function renderDados(app, v) {
             </div>
             <div style="font-size:13px;color:var(--neutral-600)">Total faturado nas últimas oito semanas</div>
           </div>
-          <div style="width:170px;flex-shrink:0"><${CustomSelect} options=${v.weekdayOptions} value=${v.weekStartDayValue} onChange=${v.onWeekStartDaySet} /></div>
+          <div className="yc-chart-filter" style="width:170px;flex-shrink:0"><${CustomSelect} options=${v.weekdayOptions} value=${v.weekStartDayValue} onChange=${v.onWeekStartDaySet} /></div>
         </div>
         <div style="height:160px;display:flex;flex-direction:column">
-          <div className="yc-scroll" style="overflow-x:auto;flex:1;display:flex;flex-direction:column">
-            <div style="min-width:480px;position:relative;flex:1">
+          <div className="yc-weekly-chart" style="flex:1;display:flex;flex-direction:column">
+            <div className="yc-weekly-plot" style="position:relative;flex:1">
               <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;overflow:visible">
                 <defs>
                   <linearGradient id="ycWeeklyGradient" x1="0" y1="0" x2="0" y2="1">
@@ -590,7 +602,7 @@ function renderDados(app, v) {
               </svg>
               ${v.weeklySales.map((wk, i) => html`<div key=${i} title=${wk.totalLabel} style=${wk.dotStyle}></div>`)}
             </div>
-            <div style="min-width:480px;display:flex;gap:12px;margin-top:8px">
+            <div className="yc-weekly-labels" style="display:flex;gap:12px;margin-top:8px">
               ${v.weeklySales.map((wk, i) => html`<div key=${i} style="flex:1;text-align:center;font-size:11px;color:var(--neutral-600);font-weight:600">${wk.label}</div>`)}
             </div>
           </div>
@@ -752,13 +764,13 @@ function renderProfile(app, v) {
     <div style="padding:40px 40px 24px">
       <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;margin-bottom:24px">Perfil</div>
       ${v.hasProfile && html`
-        <div style="display:flex;align-items:center;gap:20px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:24px;box-shadow:var(--shadow-sm)">
-          <div style="width:72px;height:72px;border-radius:var(--radius-full);background:var(--brand-700);color:#F4F2F1;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex-shrink:0">${v.profileInitial}</div>
-          <div style="flex:1">
+        <div className="yc-profile-card" style="display:flex;align-items:center;gap:20px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:24px;box-shadow:var(--shadow-sm)">
+          <div className="yc-profile-avatar" style="width:72px;height:72px;border-radius:var(--radius-full);background:var(--brand-700);color:#F4F2F1;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;flex-shrink:0">${v.profileInitial}</div>
+          <div className="yc-profile-copy" style="flex:1;min-width:0">
             <div style="font-size:22px;font-weight:700">${v.authDisplayName || 'Visitante'}</div>
             <div style="font-size:14px;color:var(--neutral-600);margin-top:4px">${v.profile.cargo} · ${v.profile.idade} anos · ${v.profile.genero}</div>
           </div>
-          <div onClick=${v.onEditProfile} style="font-size:14px;font-weight:600;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-700);padding:10px 16px;border-radius:var(--radius-full);transition:transform 0.15s ease">Editar</div>
+          <div className="yc-profile-edit" onClick=${v.onEditProfile} style="font-size:14px;font-weight:600;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-700);padding:10px 16px;border-radius:var(--radius-full);transition:transform 0.15s ease">Editar perfil</div>
         </div>
       `}
 
@@ -1250,9 +1262,7 @@ function renderReferencesModal(app, v) {
             <div style="font-size:13px;color:var(--neutral-600);margin-bottom:8px">${row.consequence}</div>
             <div style="font-size:12px;color:var(--neutral-800);font-weight:600;margin-bottom:${row.onToggleResolve ? '8px' : '0'}">Ação necessária: ${row.action}</div>
             ${row.onToggleResolve && html`
-              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--neutral-900)">
-                <input type="checkbox" checked=${row.resolved} onChange=${row.onToggleResolve}/> Resolver esta referência antes de excluir
-              </label>
+              ${checkbox({ checked: row.resolved, onChange: row.onToggleResolve, label: 'Resolver esta referência antes de excluir' })}
             `}
           </div>
         `)}
@@ -1495,17 +1505,17 @@ function renderSiteRecipesTab(app, v) {
       ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection, bulkStatusActions(v.onBulkRecipesActivate, v.onBulkRecipesDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
       ${v.siteRecipeRows.map((row) => html`
-        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+        <div className="yc-admin-card yc-admin-recipe-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
-          <div style="flex:1">
+          <div className="yc-admin-card-info" style="flex:1;min-width:0">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span> <span style=${row.statusBadgeStyle}>${row.statusLabel}</span>${row.featured ? html` <span style="font-size:11px;font-weight:700;color:var(--brand-700)">★ Receita do Dia</span>` : ''}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
-          <div onClick=${row.onToggleStatus} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleStatusLabel}</div>
-          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <div className="yc-admin-primary-action" onClick=${row.onToggleStatus} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleStatusLabel}</div>
+          <div className="yc-admin-edit" onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
-          <div onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <div className="yc-admin-delete" onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
@@ -1526,19 +1536,19 @@ function renderSiteProductsTab(app, v) {
       ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
       ${v.siteProductRows.map((row) => html`
-        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+        <div className="yc-admin-card yc-admin-product-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
-          <img loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
-          <div style="flex:1">
+          <img className="yc-admin-product-image" loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
+          <div className="yc-admin-card-info" style="flex:1;min-width:0">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
           </div>
-          <label style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
-          <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
-          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <label className="yc-admin-price" style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
+          <div className="yc-admin-primary-action" onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
+          <div className="yc-admin-edit" onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
-          <div onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <div className="yc-admin-delete" onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
@@ -1587,19 +1597,23 @@ function renderAdmin(app, v) {
       <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em">Modo de Criação</div>
     </div>
 
-    <div style="padding:0 40px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <nav className="yc-creation-nav" aria-label="Seções do Modo de Criação" style="padding:0 40px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <div className="yc-creation-primary">
       <div onClick=${v.onSetAdminTabMyRecipes} style=${v.adminTabMyRecipesStyle}>Minhas Receitas</div>
       <div onClick=${v.onSetAdminTabMyProducts} style=${v.adminTabMyProductsStyle}>Meus Produtos</div>
       <div onClick=${v.onSetAdminTabMyCategories} style=${v.adminTabMyCategoriesStyle}>Minhas Categorias</div>
       <div onClick=${v.onSetAdminTabSharedRecipes} style=${v.adminTabSharedRecipesStyle}>Receitas Compartilhadas</div>
       <div onClick=${v.onSetAdminTabMyRequests} style=${v.adminTabMyRequestsStyle}>Meus Pedidos</div>
+      </div>
       ${v.isAdminRole && html`
+        <div className="yc-creation-admin" aria-label="Administração do catálogo">
         <div onClick=${v.onSetAdminTabRecipes} style=${v.adminTabRecipesStyle}>Catálogo: Receitas</div>
         <div onClick=${v.onSetAdminTabProducts} style=${v.adminTabProductsStyle}>Catálogo: Produtos</div>
         <div onClick=${v.onSetAdminTabCategories} style=${v.adminTabCategoriesStyle}>Catálogo: Categorias</div>
         <div onClick=${v.onSetAdminTabRequestsInbox} style=${v.adminTabRequestsInboxStyle}>Solicitações Recebidas${v.hasPendingRequestsBadge ? html` (${v.pendingRequestsCount})` : ''}</div>
+        </div>
       `}
-    </div>
+    </nav>
 
     ${v.hasAdminFlash && html`<div style="margin:0 40px 16px;background:rgba(52,178,62,0.12);border:1px solid var(--green-500);color:var(--green-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;animation:ycFadeIn 0.2s ease">${v.adminFlash}</div>`}
     ${v.hasMyCreationError && html`
@@ -1639,19 +1653,19 @@ function renderMyRecipesTab(app, v) {
       ${v.selectionMode && v.recipeSelectionScope === 'my' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection)}
       ${!v.myCreationLoading && !v.hasMyRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem receitas próprias.</div>`}
       ${v.myRecipeRows.map((row) => html`
-        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+        <div className="yc-admin-card yc-admin-recipe-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
-          <div onClick=${row.onOpen} style="flex:1;cursor:pointer">
+          <div className="yc-admin-card-info" onClick=${row.onOpen} style="flex:1;min-width:0;cursor:pointer">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-size:15px;font-weight:600">${row.name}</span>
               <span style=${row.sourceBadgeStyle}>${row.sourceLabel}</span>
             </div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · ${row.code}</div>
           </div>
-          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <div className="yc-admin-edit" onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
-          <div onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <div className="yc-admin-delete" onClick=${row.onDelete} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
@@ -1672,21 +1686,21 @@ function renderMyProductsTab(app, v) {
       ${v.productSelectionMode && v.productSelectionScope === 'my' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.myCreationLoading && !v.hasMyProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem produtos próprios.</div>`}
       ${v.myProductRows.map((row) => html`
-        <div key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+        <div className="yc-admin-card yc-admin-product-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
-          <img loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
-          <div style="flex:1">
+          <img className="yc-admin-product-image" loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
+          <div className="yc-admin-card-info" style="flex:1;min-width:0">
             <div style="font-size:15px;font-weight:600">${row.name}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}</div>
           </div>
-          <label style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
-          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${row.active ? '#34B23E22' : '#8A858022'};color:${row.active ? '#34B23E' : '#8A8580'};white-space:nowrap">${row.activeLabel}</span>
-          <div onClick=${row.onToggleActive} title=${row.toggleActiveLabel} style="font-size:12px;font-weight:700;color:var(--neutral-800);cursor:pointer;border:1.5px solid var(--neutral-200);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
-          <div onClick=${row.onRequestPublish} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">Solicitar publicação</div>
-          <div onClick=${row.onEdit} title="Editar" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <label className="yc-admin-price" style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
+          <span className="yc-admin-status" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);background:${row.active ? '#34B23E22' : '#8A858022'};color:${row.active ? '#34B23E' : '#8A8580'};white-space:nowrap">${row.activeLabel}</span>
+          <div className="yc-admin-primary-action" onClick=${row.onToggleActive} title=${row.toggleActiveLabel} style="font-size:12px;font-weight:700;color:var(--neutral-800);cursor:pointer;border:1.5px solid var(--neutral-200);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
+          <div className="yc-admin-request" onClick=${row.onRequestPublish} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">Solicitar publicação</div>
+          <div className="yc-admin-edit" onClick=${row.onEdit} title="Editar" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
           </div>
-          <div onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
+          <div className="yc-admin-delete" onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
           </div>
         </div>
@@ -1743,9 +1757,9 @@ function renderRecipeFormModal(app, v) {
         </div>
 
         <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${!!f.tagDestaque} onChange=${v.recipeFormOnTagDestaque}/> Receita do Dia</label>
+          ${checkbox({ checked: !!f.tagDestaque, onChange: v.recipeFormOnTagDestaque, label: 'Receita do Dia' })}
           ${v.recipeFormTagRows.map((row) => html`
-            <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+            ${checkbox({ key: row.key, checked: row.checked, onChange: row.onToggle, label: row.label })}
           `)}
         </div>
 
@@ -1796,7 +1810,7 @@ function renderProductFormModal(app, v) {
         ${v.productFormTagRows.length > 0 && html`
           <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap">
             ${v.productFormTagRows.map((row) => html`
-              <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+              ${checkbox({ key: row.key, checked: row.checked, onChange: row.onToggle, label: row.label })}
             `)}
           </div>
         `}
@@ -1830,7 +1844,7 @@ function renderMyRecipeFormModal(app, v) {
         <div style="font-size:15px;font-weight:700;margin-top:22px;margin-bottom:6px">Seções (opcional)</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">
           ${v.myRecipeSectionRows.map((row) => html`
-            <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+            ${checkbox({ key: row.key, checked: row.checked, onChange: row.onToggle, label: row.label })}
           `)}
         </div>
 
@@ -2275,12 +2289,12 @@ function renderSiteRecipeFormModal(app, v) {
           ${field('URL da imagem', html`<input type="text" value=${f.imageUrl} onInput=${v.siteRecipeFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`, { span: 2 })}
         </div>
 
-        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);margin-top:14px;flex-wrap:wrap"><input type="checkbox" checked=${!!f.featured} onChange=${v.siteRecipeFormOnFeatured}/> Receita do Dia (destaque na Home)</label>
+        <div style="margin-top:14px">${checkbox({ checked: !!f.featured, onChange: v.siteRecipeFormOnFeatured, label: 'Receita do Dia (destaque na Home)' })}</div>
 
         <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:6px">Seções (opcional)</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">
           ${v.siteRecipeSectionRows.map((row) => html`
-            <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+            ${checkbox({ key: row.key, checked: row.checked, onChange: row.onToggle, label: row.label })}
           `)}
         </div>
 
@@ -2340,13 +2354,13 @@ function renderSiteProductFormModal(app, v) {
           ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />`, { required: true })}
           ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.siteProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
           ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.siteProductFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`)}
-          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);flex-wrap:wrap"><input type="checkbox" checked=${!!f.active} onChange=${v.siteProductFormOnActive}/> Ativo (visível publicamente)</label>
+          ${checkbox({ checked: !!f.active, onChange: v.siteProductFormOnActive, label: 'Ativo (visível publicamente)' })}
         </div>
 
         <div style="font-size:15px;font-weight:700;margin-top:20px;margin-bottom:6px">Seções (opcional)</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">
           ${v.siteProductSectionRows.map((row) => html`
-            <label key=${row.key} style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900)"><input type="checkbox" checked=${row.checked} onChange=${row.onToggle}/> ${row.label}</label>
+            ${checkbox({ key: row.key, checked: row.checked, onChange: row.onToggle, label: row.label })}
           `)}
         </div>
 
@@ -2369,7 +2383,7 @@ function renderSiteCategoryFormModal(app, v) {
         <div style="display:flex;flex-direction:column;gap:14px">
           ${field('Nome da categoria', html`<input type="text" value=${f.name} onInput=${v.siteCategoryFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true })}
           ${field('Tipo', html`<${CustomSelect} options=${v.siteCategoryTypeOptions} value=${f.type} onChange=${v.siteCategoryFormOnTypeSet} />`, { required: true })}
-          <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;color:var(--neutral-900);flex-wrap:wrap"><input type="checkbox" checked=${!!f.active} onChange=${v.siteCategoryFormOnActive}/> Ativa (visível publicamente)</label>
+          ${checkbox({ checked: !!f.active, onChange: v.siteCategoryFormOnActive, label: 'Ativa (visível publicamente)' })}
         </div>
         <div style="display:flex;gap:10px;margin-top:22px;flex-wrap:wrap">
           <div onClick=${v.onCancelSiteCategoryForm} style="flex:1;min-width:120px;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:600;font-size:15px;cursor:pointer;color:var(--neutral-800);background:var(--neutral-50);transition:transform 0.15s ease">Cancelar</div>

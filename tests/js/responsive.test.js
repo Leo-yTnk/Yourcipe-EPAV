@@ -15,6 +15,7 @@ const read = (relPath) => readFileSync(path.join(ROOT, relPath), 'utf8');
 
 const templateJs = read('template.js');
 const stylesCss = read('styles.css');
+const indexHtml = read('index.html');
 
 describe('recipe form / recipe detail / references modal panels never overflow horizontally', () => {
   it('every "width:NNNpx;max-width:100%;...overflow-y:auto" modal panel also sets overflow-x:hidden', () => {
@@ -100,5 +101,37 @@ describe('mobile-first layout primitives cover pages, navigation and overlays', 
     expect(stylesCss).toMatch(/\.yc-modal-overlay[^}]*align-items:\s*flex-end/s);
     expect(stylesCss).toMatch(/@media \(max-width: 350px\)/);
     expect(stylesCss).toMatch(/\.yc-product-grid\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  });
+});
+
+describe('phone layouts change composition instead of compressing desktop rows', () => {
+  it('assigns catalog recipe/product content and actions to explicit mobile grid areas', () => {
+    expect(templateJs).toContain('yc-admin-recipe-card');
+    expect(templateJs).toContain('yc-admin-product-card');
+    expect(stylesCss).toMatch(/\.yc-admin-recipe-card[^}]*grid-template-areas/);
+    expect(stylesCss).toMatch(/\.yc-admin-product-card[^}]*grid-template-areas/);
+    expect(stylesCss).toMatch(/\.yc-admin-primary-action\s*\{[^}]*grid-area:primary/);
+  });
+
+  it('uses dedicated mobile structures for creation navigation, charts, profiles, and carousels', () => {
+    expect(templateJs).toContain('className="yc-creation-nav"');
+    expect(templateJs).toContain('className="yc-chart-header"');
+    expect(templateJs).toContain('className="yc-profile-card"');
+    expect(stylesCss).toMatch(/\.yc-creation-primary[^}]*overflow-x:auto/);
+    expect(stylesCss).toMatch(/\.yc-chart-header\s*\{[^}]*flex-direction:column/);
+    expect(stylesCss).toMatch(/\.yc-profile-card\s*\{[^}]*grid-template-areas/);
+  });
+});
+
+describe('typography and authored checkbox controls', () => {
+  it('loads Inter and authoritatively applies it to every element and pseudo-element', () => {
+    expect(indexHtml).toMatch(/fonts\.googleapis\.com\/css2\?family=Inter/);
+    expect(stylesCss).toMatch(/\*, \*::before, \*::after[^}]*font-family:\s*"Inter", sans-serif !important/);
+  });
+
+  it('routes every semantic checkbox through the shared recipe-details visual control', () => {
+    expect(templateJs).toContain('function checkbox({ checked, onChange, label');
+    expect(templateJs.match(/type="checkbox"/g)).toHaveLength(1);
+    expect(stylesCss).toMatch(/\.yc-checkbox-control[^}]*width:22px[^}]*height:22px[^}]*border-radius:7px/);
   });
 });
