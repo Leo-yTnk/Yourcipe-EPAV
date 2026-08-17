@@ -3799,7 +3799,12 @@ class App extends Component {
     const editorTypes = s.catalogEditorPage === 'products' ? ['secao_produto'] : (s.catalogEditorPage === 'recipes' ? ['secao'] : ['secao', 'secao_produto']);
     const catalogEditorSections = s.siteCategories.filter(c => editorTypes.includes(c.type) && c.active !== false).map(c => {
       const source = c.type === 'secao_produto' ? s.products : s.recipes;
-      const items = source.filter(item => (item.tags || []).includes(c.slug)).map(item => ({ id: item.id, name: item.nome, image: item.imagem }));
+      const items = source.filter(item => (item.tags || []).includes(c.slug)).map(item => ({
+        id: item.id, name: item.nome, image: item.imagem,
+        detail: c.type === 'secao_produto'
+          ? `${item.categoria || ''}${item.precoLabel ? ` · ${item.precoLabel}` : ''}`
+          : `${item.categoria || ''}${item.dificuldade ? ` · ${item.dificuldade}` : ''}`,
+      }));
       return { ...c, items, onEdit: () => this.onEditSiteCategory(c), onAdd: () => this.openCatalogPicker(c), onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id) };
     });
     const pickerSource = s.catalogPicker && s.catalogPicker.sectionType === 'secao_produto' ? s.siteProducts : s.siteRecipes;
@@ -4047,6 +4052,7 @@ class App extends Component {
       onRetrySiteCatalogData: () => this.loadSiteCatalogData(),
       siteRecipeRows, siteProductRows, siteCategoryRows,
       catalogEditorPage: s.catalogEditorPage, catalogEditorSections, catalogPicker: s.catalogPicker, catalogPickerItems, catalogPickerQuery: s.catalogPickerQuery,
+      catalogEditorLoading: s.siteCatalogLoading || s.publicCatalogSource === 'loading',
       onCatalogEditorHome: () => this.setCatalogEditorPage('home'), onCatalogEditorRecipes: () => this.setCatalogEditorPage('recipes'), onCatalogEditorProducts: () => this.setCatalogEditorPage('products'),
       onCatalogPickerQuery: this.onCatalogPickerQuery, onCloseCatalogPicker: this.closeCatalogPicker, catalogEditorLayout: s.productLayout,
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,

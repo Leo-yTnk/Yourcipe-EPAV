@@ -325,3 +325,18 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
   .yc-scroll { -webkit-overflow-scrolling: touch; }
   :where(button, [role="button"], [role="tab"], a[href]) { min-width: var(--yc-touch-target); }
 }
+
+/* The catalog editor is a faithful preview: these metrics mirror the public
+   page headings, section headings and catalog cards rather than admin UI. */
+.yc-editor-page-title { font-size:32px;font-weight:700;letter-spacing:-.02em;color:var(--neutral-950); }
+.yc-editor-section-head { margin-bottom:14px; }
+.yc-editor-section-head h3 { font-size:20px;font-weight:700;letter-spacing:-.01em; }
+.yc-editor-cards { gap:16px; }
+.yc-editor-cards.is-grid { grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); }
+.yc-editor-cards article { flex:0 0 180px;min-width:0; }
+.yc-editor-cards article img { height:160px;border-radius:var(--radius-lg);margin-bottom:10px;box-shadow:var(--shadow-sm); }
+.yc-editor-cards article b { display:block;font-size:15px;font-weight:600;color:var(--neutral-900); }
+.yc-editor-cards article small { display:block;font-size:13px;color:var(--neutral-600);margin-top:2px; }
+.yc-editor-loading { min-height:220px;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--neutral-600);font-size:14px; }
+.yc-editor-loading span { width:18px;height:18px;border:2px solid var(--neutral-200);border-top-color:var(--brand-700);border-radius:50%;animation:ycEditorSpin .7s linear infinite; }
+@keyframes ycEditorSpin { to { transform:rotate(360deg); } }

@@ -1475,12 +1475,13 @@ function renderLocalHomeCustomization(app, v) {
   return html`<div className="yc-catalog-editor">
     <div className="yc-editor-heading"><div><strong>Editor visual do catálogo</strong><span>Arraste seções, edite títulos e insira conteúdo na prévia real.</span></div><span className="yc-cloud-status">● Salvo no Supabase</span></div>
     <div className="yc-editor-tabs">${tab('home','Home',v.onCatalogEditorHome)}${tab('recipes','Receitas',v.onCatalogEditorRecipes)}${tab('products','Produtos',v.onCatalogEditorProducts)}</div>
-    <div className="yc-editor-canvas">
-      <div className="yc-editor-page-title">${v.catalogEditorPage === 'home' ? 'Descubra novos sabores' : v.catalogEditorPage === 'recipes' ? 'Receitas' : 'Produtos'}</div>
-      ${v.catalogEditorSections.map(sec => html`<section key=${sec.id} className="yc-editor-section" draggable="true" onDragStart=${sec.onDragStart} onDragOver=${sec.onDragOver} onDrop=${sec.onDrop}>
+    <div className="yc-editor-canvas" aria-busy=${v.catalogEditorLoading}>
+      <div className="yc-editor-page-title">${v.catalogEditorPage === 'home' ? 'O que vamos cozinhar hoje?' : v.catalogEditorPage === 'recipes' ? 'Receitas' : 'Produtos'}</div>
+      ${v.catalogEditorLoading && html`<div className="yc-editor-loading" role="status" aria-live="polite"><span></span>Carregando a prévia do catálogo...</div>`}
+      ${!v.catalogEditorLoading && v.catalogEditorSections.map(sec => html`<section key=${sec.id} className="yc-editor-section" draggable="true" onDragStart=${sec.onDragStart} onDragOver=${sec.onDragOver} onDrop=${sec.onDrop}>
         <div className="yc-editor-section-toolbar"><span className="yc-drag-handle">⠿</span><button onClick=${sec.onEdit} title="Editar título">✎</button></div>
         <div className="yc-editor-section-head"><h3 onClick=${sec.onEdit}>${sec.name}</h3><button onClick=${sec.onAdd}>＋ Adicionar</button></div>
-        <div className=${v.catalogEditorLayout === 'grid' ? 'yc-editor-cards is-grid' : 'yc-editor-cards'}>${sec.items.map(item => html`<article><img src=${item.image} alt=""/><b>${item.name}</b></article>`)}${!sec.items.length && html`<div className="yc-editor-empty">Use “Adicionar” para preencher esta seção</div>`}</div>
+        <div className=${v.catalogEditorLayout === 'grid' ? 'yc-editor-cards is-grid' : 'yc-editor-cards'}>${sec.items.map(item => html`<article><img loading="lazy" decoding="async" src=${item.image} alt=${item.name}/><b>${item.name}</b>${item.detail && html`<small>${item.detail}</small>`}</article>`)}${!sec.items.length && html`<div className="yc-editor-empty">Use “Adicionar” para preencher esta seção</div>`}</div>
       </section>`)}
     </div>
     ${v.catalogPicker && html`<aside className="yc-editor-picker"><div className="yc-picker-head"><div><b>Adicionar conteúdo</b><small>${v.catalogPicker.sectionName}</small></div><button onClick=${v.onCloseCatalogPicker}>×</button></div><input autofocus type="search" placeholder="Buscar no catálogo..." value=${v.catalogPickerQuery} onInput=${v.onCatalogPickerQuery}/><div className="yc-picker-list">${v.catalogPickerItems.map(item => html`<button onClick=${item.onAdd}><img src=${item.image} alt=""/><span>${item.name}</span><b>＋</b></button>`)}</div></aside>`}
