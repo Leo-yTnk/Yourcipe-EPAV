@@ -169,3 +169,107 @@ input[type="checkbox"] { margin-right: 8px; }
   .yc-redeem-form { flex-direction: column; }
   .yc-redeem-form button { width: 100%; }
 }
+
+/* Responsive composition --------------------------------------------------
+   The application deliberately keeps its spacious rail layout in landscape.
+   Portrait tablets and phones share fluid gutters, while the narrowest view
+   promotes primary content and turns dialogs into ergonomic bottom sheets. */
+:root {
+  --yc-page-gutter: clamp(16px, 4vw, 40px);
+  --yc-touch-target: 44px;
+}
+
+.yc-stage { min-width: 0; }
+.yc-recipe-card { min-width: 0; overflow-wrap: anywhere; cursor: pointer; }
+.yc-card-strip { overscroll-behavior-inline: contain; scroll-snap-type: inline proximity; scroll-padding-inline: var(--yc-page-gutter); -webkit-overflow-scrolling: touch; }
+.yc-card-strip > * { scroll-snap-align: start; }
+.yc-section-heading > :first-child { min-width: 0; }
+.yc-section-heading > :last-child { flex: 0 0 auto; min-height: var(--yc-touch-target); display: inline-flex; align-items: center; }
+.yc-modal-overlay { overscroll-behavior: contain; }
+
+@media (orientation: portrait) and (max-width: 900px) {
+  /* Inline spacing in the legacy templates is normalized here once, rather
+     than adding a page-specific query for every route and admin tab. */
+  .yc-stage :is([style^="padding:40px 40px"], [style^="padding:32px 40px"], [style^="padding:24px 40px"], [style^="padding:20px 40px"], [style^="padding:18px 40px"], [style^="padding:16px 40px"], [style^="padding:8px 40px"], [style^="padding:0 40px"]) {
+    padding-left: var(--yc-page-gutter) !important;
+    padding-right: var(--yc-page-gutter) !important;
+  }
+  .yc-stage [style*="padding:0 40px"] { padding-left: var(--yc-page-gutter) !important; padding-right: var(--yc-page-gutter) !important; }
+  .yc-stage [style^="margin:0 40px"] { margin-left: var(--yc-page-gutter) !important; margin-right: var(--yc-page-gutter) !important; }
+
+  .yc-product-grid { grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 14px; }
+  .yc-product-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .yc-editor-canvas { padding: clamp(16px, 3vw, 24px); }
+  .yc-editor-section-toolbar { display: flex; position: static; width: max-content; margin: 0 0 12px auto; }
+  .yc-editor-heading { align-items: flex-start; }
+
+  .yc-modal-overlay { align-items: center !important; padding: var(--yc-page-gutter) !important; }
+  .yc-modal-overlay > .yc-scroll,
+  .yc-modal-overlay > [role="dialog"],
+  .yc-modal-overlay > div { max-width: min(100%, 680px) !important; max-height: calc(100dvh - 2 * var(--yc-page-gutter)) !important; }
+}
+
+@media (max-width: 600px) {
+  :root { --yc-page-gutter: clamp(14px, 4.25vw, 20px); }
+  html { text-size-adjust: 100%; -webkit-text-size-adjust: 100%; }
+  .yc-app-frame { min-height: 0 !important; }
+
+  .yc-stage [style*="font-size:32px"] { font-size: clamp(25px, 7.4vw, 30px) !important; line-height: 1.12 !important; }
+  .yc-stage [style*="font-size:26px"] { font-size: 23px !important; line-height: 1.16 !important; }
+  .yc-section-heading { gap: 12px; }
+  .yc-section-heading [style*="font-size:20px"] { font-size: 18px !important; }
+
+  .yc-hero { padding-top: 18px !important; }
+  .yc-hero-slide { height: clamp(330px, 105vw, 420px) !important; }
+  .yc-hero-slide > [style*="left:28px"] { left: 18px !important; right: 18px !important; bottom: 20px !important; }
+  .yc-hero-slide [style*="font-size:30px"] { font-size: clamp(23px, 7vw, 28px) !important; line-height: 1.12; }
+  .yc-hero-slide [style*="justify-content:space-between"] { align-items: flex-start !important; flex-direction: column !important; }
+  .yc-card-strip { gap: 12px !important; padding-bottom: 12px !important; }
+  .yc-recipe-card { flex-basis: min(74vw, 260px) !important; }
+  .yc-recipe-card > [style*="height:160px"] { height: 148px !important; }
+  .yc-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+  .yc-bottom-nav { left: 8px !important; right: 8px !important; bottom: max(8px, env(safe-area-inset-bottom)) !important; height: 64px !important; border-radius: 20px !important; }
+  .yc-bottom-nav > div { width: auto !important; min-width: 52px; min-height: 52px; justify-content: center; }
+  .yc-bottom-nav svg { width: 22px; height: 22px; }
+  .yc-bottom-nav [style*="font-size:12px"] { font-size: 10px !important; }
+
+  .yc-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .yc-form-grid > * { grid-column: auto !important; }
+  .yc-product-picker-grid { grid-template-columns: minmax(0, 1fr); }
+  .yc-editor-heading { flex-direction: column; }
+  .yc-editor-tabs { overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
+  .yc-editor-tab { flex: 0 0 auto; scroll-snap-align: start; }
+  .yc-editor-canvas { border-radius: var(--radius-lg); }
+  .yc-editor-section-head { align-items: flex-start; flex-direction: column; }
+  .yc-editor-section-head > button { width: 100%; min-height: var(--yc-touch-target); }
+  .yc-editor-picker { width: 100%; padding: 20px var(--yc-page-gutter) max(20px, env(safe-area-inset-bottom)); }
+
+  /* Full-width bottom sheets retain context, provide reachable actions, and
+     avoid the cramped desktop-card treatment on 320–480 px viewports. */
+  .yc-modal-overlay { align-items: flex-end !important; padding: 0 !important; }
+  .yc-modal-overlay > .yc-scroll,
+  .yc-modal-overlay > [role="dialog"],
+  .yc-modal-overlay > div {
+    width: 100% !important; max-width: none !important; max-height: min(92dvh, 900px) !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+    padding: 24px var(--yc-page-gutter) max(24px, env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important; overflow-y: auto !important;
+  }
+  .yc-modal-overlay [style="display:flex;gap:10px"] { flex-wrap: wrap; }
+  .yc-modal-overlay [style="display:flex;gap:10px"] > * { min-width: min(130px, 100%); }
+
+  .yc-redeem-card { margin-top: 22px; }
+  .yc-selection-bar { max-height: calc(100dvh - 20px); overflow-y: auto; }
+}
+
+@media (max-width: 350px) {
+  .yc-product-grid { grid-template-columns: minmax(0, 1fr); }
+  .yc-bottom-nav [style*="font-size:12px"] { display: none; }
+  .yc-bottom-nav > div { min-width: 44px; }
+}
+
+@media (pointer: coarse) {
+  .yc-scroll { -webkit-overflow-scrolling: touch; }
+  :where(button, [role="button"], [role="tab"], a[href]) { min-width: var(--yc-touch-target); }
+}

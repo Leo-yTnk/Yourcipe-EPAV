@@ -31,11 +31,11 @@ export function renderApp(app) {
   return html`
     <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--neutral-800)">
       <a className="yc-skip-link" href="#yc-main-content">Ir para o conteúdo principal</a>
-      <div ref=${(el) => { app.frameRef.current = el; }} className=${v.appThemeClass} style=${`width:100%;max-width:${v.frameMaxWidth};height:100%;max-height:${v.frameMaxHeight};min-height:480px;margin:0 auto;background:var(--neutral-0);position:relative;overflow:hidden;font-family:var(--font-sans);color:var(--neutral-900);box-shadow:var(--shadow-lg);transition:background 0.2s ease,color 0.2s ease,max-width 0.2s ease,max-height 0.2s ease`}>
+      <div ref=${(el) => { app.frameRef.current = el; }} className=${`${v.appThemeClass} yc-app-frame`} style=${`width:100%;max-width:${v.frameMaxWidth};height:100%;max-height:${v.frameMaxHeight};min-height:480px;margin:0 auto;background:var(--neutral-0);position:relative;overflow:hidden;font-family:var(--font-sans);color:var(--neutral-900);box-shadow:var(--shadow-lg);transition:background 0.2s ease,color 0.2s ease,max-width 0.2s ease,max-height 0.2s ease`}>
 
         <main id="yc-main-content" ref=${(el) => { app.scrollRef.current = el; }} className="yc-scroll" tabindex="-1" style=${`position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding-bottom:${v.scrollBottomPad}px`}>
           <h1 className="yc-sr-only">${pageTitle}</h1>
-          <div ref=${(el) => { app.stageRef.current = el; }} style=${`padding-left:${v.stagePadLeft}px;padding-right:${v.stagePadRight}px;transition:padding 0.2s ease`}>
+          <div ref=${(el) => { app.stageRef.current = el; }} className="yc-stage" style=${`padding-left:${v.stagePadLeft}px;padding-right:${v.stagePadRight}px;transition:padding 0.2s ease`}>
 
             ${v.notLoaded && html`<div role="status" aria-live="polite" style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--neutral-600);font-size:15px">Carregando receitas...</div>`}
             ${v.isInicio && renderInicio(app, v)}
@@ -91,7 +91,7 @@ export function renderApp(app) {
 
 function recipeCard(item) {
   return html`
-    <div key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
+    <div className="yc-recipe-card" key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
       <div style="position:relative;border-radius:var(--radius-lg);overflow:hidden;height:160px;box-shadow:var(--shadow-sm)">
         <img loading="lazy" decoding="async" src=${item.imagem} alt=${item.nome} style="width:100%;height:100%;object-fit:cover"/>
         <div style="position:absolute;top:10px;left:10px;background:rgba(14,12,11,0.55);color:#F4F2F1;padding:5px 11px;border-radius:var(--radius-full);font-size:11px;font-weight:600">${item.tempoLabel}</div>
@@ -106,23 +106,23 @@ function carouselSection(icon, title, list, onSeeAll, layout) {
   if (layout === 'grid') return recipeGridSection(icon, title, list, onSeeAll);
   if (!list.length) return null;
   return html`
-    <div style="padding:18px 0 18px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 40px;margin-bottom:14px">
+    <section className="yc-carousel-section" style="padding:18px 0 18px">
+      <div className="yc-section-heading" style="display:flex;align-items:center;justify-content:space-between;padding:0 40px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:8px">
           ${icon}
           <div style="font-size:20px;font-weight:700;letter-spacing:-0.01em">${title}</div>
         </div>
         <div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div>
       </div>
-      <div className="yc-scroll" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
+      <div className="yc-scroll yc-card-strip" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
         ${list.map(recipeCard)}
       </div>
-    </div>
+    </section>
   `;
 }
 function recipeGridSection(icon, title, list, onSeeAll) {
   if (!list.length) return null;
-  return html`<div style="padding:18px 40px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="display:flex;align-items:center;gap:8px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div></div><div className="yc-product-grid">${list.map(item => recipeCard({ ...item, carouselStyle: item.gridCardStyle }))}</div></div>`;
+  return html`<section className="yc-grid-section" style="padding:18px 40px"><div className="yc-section-heading" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="display:flex;align-items:center;gap:8px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div></div><div className="yc-product-grid">${list.map(item => recipeCard({ ...item, carouselStyle: item.gridCardStyle }))}</div></section>`;
 }
 
 // Shared "Receita do Dia" hero carousel — used by both renderHome (Receitas)
@@ -131,7 +131,7 @@ function recipeGridSection(icon, title, list, onSeeAll) {
 // screen simultaneously), so sharing the ref here is safe.
 function heroSection(app, v) {
   return html`
-    <div style="padding:24px 40px 8px">
+    <section className="yc-hero" style="padding:24px 40px 8px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="#B24019"><path d="M12 2c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 4.4-3.6 8-8 8s-8-3.6-8-8c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.8 5-7.5z"></path></svg>
         <div style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--brand-700)">Receita do Dia</div>
@@ -139,7 +139,7 @@ function heroSection(app, v) {
       <div style="position:relative;padding-bottom:20px">
         <div ref=${(el) => { app.heroRef.current = el; }} onScroll=${v.onHeroScroll} className="yc-scroll" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:var(--radius-xl);box-shadow:var(--shadow-lg)">
           ${v.heroRecipes.map((hero) => html`
-            <div key=${hero.id} onClick=${hero.onOpen} style="position:relative;flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;height:400px;cursor:pointer">
+            <div className="yc-hero-slide" key=${hero.id} onClick=${hero.onOpen} style="position:relative;flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;height:400px;cursor:pointer">
               <img loading="lazy" decoding="async" src=${hero.imagem} alt=${hero.nome} style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0"/>
               <div style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(14,12,11,0.05) 20%, rgba(14,12,11,0.92) 100%)"></div>
               <div style="position:absolute;top:20px;left:20px;background:var(--overlay-strong);backdrop-filter:blur(8px);padding:8px 16px;border-radius:var(--radius-full);font-size:12px;font-weight:700;color:var(--brand-700)">Sugestão de hoje</div>
@@ -170,7 +170,7 @@ function heroSection(app, v) {
           </div>
         `}
       </div>
-    </div>
+    </section>
   `;
 }
 
@@ -304,7 +304,7 @@ function resolveSectionIcon(iconKey, fallbackKey, isProduct) {
 // productPageBlocks assembly in computeViewModel.
 function productCard(item) {
   return html`
-    <div key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
+    <div className="yc-recipe-card" key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
       <div style="position:relative;border-radius:var(--radius-lg);overflow:hidden;height:160px;box-shadow:var(--shadow-sm)">
         <img loading="lazy" decoding="async" src=${item.imagem} alt=${item.nome} style="width:100%;height:100%;object-fit:cover"/>
         <div style="position:absolute;top:10px;left:10px;background:rgba(14,12,11,0.55);color:#F4F2F1;padding:5px 11px;border-radius:var(--radius-full);font-size:11px;font-weight:600">${item.tempoLabel}</div>
@@ -323,7 +323,7 @@ function productCarouselSection(icon, title, list) {
         ${icon}
         <div style="font-size:20px;font-weight:700;letter-spacing:-0.01em">${title}</div>
       </div>
-      <div className="yc-scroll" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
+      <div className="yc-scroll yc-card-strip" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
         ${list.map(productCard)}
       </div>
     </div>
@@ -364,7 +364,7 @@ function renderProducts(app, v) {
 function renderProductDetailModal(app, v) {
   const p = v.productDetailData;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:21;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:21;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:460px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="position:relative;height:220px;overflow:hidden;border-radius:var(--radius-xl) var(--radius-xl) 0 0">
           <img loading="lazy" decoding="async" src=${p.imagem} alt=${p.nome} style="width:100%;height:100%;object-fit:cover"/>
@@ -401,7 +401,7 @@ function renderProductDetailModal(app, v) {
 // renderProductDetailModal (overlay, close button, centered card).
 function renderProductSectionPickerModal(app, v) {
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:21;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:21;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:480px;max-width:100%;max-height:80%;display:flex;flex-direction:column;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;overflow:hidden">
         <div style="padding:24px 24px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
           <div>
@@ -992,14 +992,14 @@ function navItems(v) {
 
 function renderBottomTabBar(app, v) {
   return html`
-    <div style=${`position:absolute;left:20px;right:20px;bottom:20px;height:60px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--tabbar-border);border-radius:var(--radius-full);display:flex;align-items:center;justify-content:space-around;box-shadow:var(--shadow-lg);z-index:10;transition:background 0.2s ease;border-color:${v.navBarBorderColor};background-color:${v.navBarBgColor}`}>
+    <nav aria-label="Navegação principal" className="yc-bottom-nav" style=${`position:absolute;left:20px;right:20px;bottom:20px;height:60px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--tabbar-border);border-radius:var(--radius-full);display:flex;align-items:center;justify-content:space-around;box-shadow:var(--shadow-lg);z-index:10;transition:background 0.2s ease;border-color:${v.navBarBorderColor};background-color:${v.navBarBgColor}`}>
       ${navItems(v).map((it) => html`
         <div key=${it.label} onClick=${it.onClick} style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;width:80px;transition:transform 0.15s ease">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke=${it.color} stroke-width="2">${it.path}</svg>
           <div style=${`font-size:12px;font-weight:600;color:${it.color}`}>${it.label}</div>
         </div>
       `)}
-    </div>
+    </nav>
   `;
 }
 
@@ -1019,7 +1019,7 @@ function renderSideNavRail(app, v) {
 function renderProfileSetupModal(app, v) {
   const f = v.profileForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:520px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:6px">Bem-vindo ao Yourcipe</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:24px">Conte um pouco sobre você para personalizar sua experiência.</div>
@@ -1035,7 +1035,7 @@ function renderProfileSetupModal(app, v) {
 }
 
 function renderIngredientProductPickerModal(app, v) {
-  return html`<div style="position:absolute;inset:0;background:rgba(14,12,11,.62);display:flex;align-items:center;justify-content:center;z-index:24;padding:20px;box-sizing:border-box">
+  return html`<div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,.62);display:flex;align-items:center;justify-content:center;z-index:24;padding:20px;box-sizing:border-box">
     <div className="yc-scroll" style="width:680px;max-width:100%;max-height:86%;overflow:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:26px;box-sizing:border-box;box-shadow:var(--shadow-lg)">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:16px"><div><div style="font-size:21px;font-weight:700">Selecionar produto</div><div style="font-size:13px;color:var(--neutral-600)">Pesquise e escolha um produto pela foto.</div></div><button type="button" onClick=${v.onCloseIngredientProductPicker} aria-label="Fechar" style="border:0;background:var(--neutral-50);border-radius:50%;width:38px;height:38px;cursor:pointer;font-size:20px;color:var(--neutral-900)">×</button></div>
       <input autofocus type="search" placeholder="Buscar produto..." value=${v.ingredientProductPickerQuery} onInput=${v.onIngredientProductPickerQuery} style=${FORM_INPUT_STYLE}/>
@@ -1050,7 +1050,7 @@ const AUTH_INPUT_STYLE = "background:var(--neutral-0);color:var(--neutral-900);w
 function renderLoginModal(app, v) {
   const submitStyle = `flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitLogin ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:6px">Entrar no Modo de Criação</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Informe sua credencial e senha para continuar.</div>
@@ -1074,7 +1074,7 @@ function renderLoginModal(app, v) {
 function renderSignupModal(app, v) {
   const submitStyle = `flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitSignup ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         ${!v.signupResult ? html`
           <div style="font-size:22px;font-weight:700;margin-bottom:6px">Criar Credencial</div>
@@ -1113,7 +1113,7 @@ function renderSignupModal(app, v) {
 function renderCompleteProfileModal(app, v) {
   const submitStyle = `text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitCompleteProfile ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:6px">Complete seu perfil</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Sua conta ainda não tem um nome cadastrado. Informe seu nome para continuar — ele será exibido ao administrador quando você enviar solicitações.</div>
@@ -1132,7 +1132,7 @@ function renderCompleteProfileModal(app, v) {
 function renderChangeNameModal(app, v) {
   const submitStyle = `flex:1;text-align:center;padding:14px;border-radius:var(--radius-md);font-weight:700;font-size:15px;color:#F4F2F1;background:var(--brand-700);transition:transform 0.15s ease;${v.canSubmitChangeName ? 'cursor:pointer' : 'cursor:not-allowed;opacity:0.5'}`;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:6px">Alterar nome</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Este nome é usado para identificação — inclusive nas solicitações que você enviar ao administrador.</div>
@@ -1152,7 +1152,7 @@ function renderChangeNameModal(app, v) {
 function renderSalesModal(app, v) {
   const f = v.saleForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:6px">${v.saleModalTitle}</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">Informe os dados da venda realizada.</div>
@@ -1181,7 +1181,7 @@ function renderSalesModal(app, v) {
 
 function renderAltModal(app, v) {
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:flex-end;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:flex-end;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:100%;max-width:600px;max-height:70%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px 32px 32px;box-shadow:var(--shadow-lg);animation:ycSlideUp 0.25s ease">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div style="font-size:20px;font-weight:700">Alternativas para ${v.altModalIngredientNome}</div>
@@ -1207,7 +1207,7 @@ function renderAltModal(app, v) {
 
 function renderConfirmDeleteModal(app, v) {
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:25;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div ref=${app.modalFocusRef('confirmDelete')} role="dialog" aria-modal="true" aria-label="Confirmar exclusão" tabindex="-1" style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="font-size:18px;font-weight:700;margin-bottom:8px">Confirmar exclusão</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:20px">${v.confirmDeleteMessage}</div>
@@ -1223,7 +1223,7 @@ function renderConfirmDeleteModal(app, v) {
 function renderReferencesModal(app, v) {
   const m = v.referencesModal;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div ref=${app.modalFocusRef('referencesModal')} role="dialog" aria-modal="true" aria-label="Referências a resolver" tabindex="-1" className="yc-scroll" style="width:520px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Referências a resolver</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:6px">A receita <strong>${m ? m.recipeName : ''}</strong> (código ${m ? m.recipeCode : ''})${(m && m.rows.length > 0) ? ' tem vínculos ativos. Resolva cada um antes de excluir.' : '.'}</div>
@@ -1276,7 +1276,7 @@ const REF_ACTION_BTN = (active) => `padding:8px 12px;border-radius:var(--radius-
 function renderProductReferencesModal(app, v) {
   const m = v.productReferencesModal;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div ref=${app.modalFocusRef('referencesModal')} role="dialog" aria-modal="true" aria-label="Referências a resolver" tabindex="-1" className="yc-scroll" style="width:560px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Referências a resolver</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:14px">O produto <strong>${m ? m.name : ''}</strong> (código ${m ? m.code : ''}) é usado em ${m ? m.rows.length : 0} receita(s). Escolha o que fazer em cada uma antes de excluir.</div>
@@ -1324,7 +1324,7 @@ function renderCategoryReferencesModal(app, v) {
     </div>
   `;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div ref=${app.modalFocusRef('referencesModal')} role="dialog" aria-modal="true" aria-label="Referências a resolver" tabindex="-1" className="yc-scroll" style="width:560px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="font-size:18px;font-weight:700;margin-bottom:4px">Referências a resolver</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:14px">A categoria <strong>${m ? m.name : ''}</strong> (código ${m ? m.code : ''}) está em uso. Toda referência obrigatória precisa de uma categoria substituta; seções podem ser apenas removidas.</div>
@@ -1729,7 +1729,7 @@ function renderMyCategoriesTab(app, v) {
 function renderRecipeFormModal(app, v) {
   const f = v.recipeForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.recipeFormTitle}</div>
         <div className="yc-form-grid">
@@ -1782,7 +1782,7 @@ function renderRecipeFormModal(app, v) {
 function renderProductFormModal(app, v) {
   const f = v.productForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.productFormTitle}</div>
         <div style="display:flex;flex-direction:column;gap:12px">
@@ -1812,7 +1812,7 @@ function renderProductFormModal(app, v) {
 function renderMyRecipeFormModal(app, v) {
   const f = v.myRecipeForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.myRecipeFormTitle}</div>
         ${v.hasMyFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myFormError}</div>`}
@@ -1879,7 +1879,7 @@ function renderMyRecipeFormModal(app, v) {
 function renderMyProductFormModal(app, v) {
   const f = v.myProductForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;box-sizing:border-box">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.myProductFormTitle}</div>
         ${v.hasMyFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myFormError}</div>`}
@@ -1903,7 +1903,7 @@ function renderMyProductFormModal(app, v) {
 function renderMyCategoryFormModal(app, v) {
   const f = v.myCategoryForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;box-sizing:border-box">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.myCategoryFormTitle}</div>
         ${v.hasMyFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.myFormError}</div>`}
@@ -1923,7 +1923,7 @@ function renderMyCategoryFormModal(app, v) {
 function renderMyRecipeDetailModal(app, v) {
   const d = v.myRecipeDetail;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:22;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:22;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div ref=${app.modalFocusRef('myRecipeDetail')} role="dialog" aria-modal="true" aria-label=${d ? d.name : 'Receita'} tabindex="-1" className="yc-scroll" style="width:640px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div style="font-size:22px;font-weight:700">${d ? d.name : 'Receita'}</div>
@@ -2011,7 +2011,7 @@ function renderMyRecipeDetailModal(app, v) {
 
 function renderCopyResolveModal(app, v) {
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:24;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:24;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:6px">Resolver referências da cópia</div>
         <div style="font-size:13px;color:var(--neutral-600);margin-bottom:18px">Esta receita usa itens pessoais de outro usuário. Decida o que fazer com cada um antes de concluir a cópia — a cópia será totalmente independente da receita original.</div>
@@ -2134,7 +2134,7 @@ function renderPublishRequestModal(app, v) {
   const pr = v.publishRequest;
   const blockers = pr.blockers;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:520px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:6px">Solicitar publicação</div>
         <div style="font-size:14px;color:var(--neutral-600);margin-bottom:16px">${pr.sourceName}</div>
@@ -2171,7 +2171,7 @@ function renderPublishRequestModal(app, v) {
 function renderRequestDetailModal(app, v) {
   const d = v.requestDetail;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.6);display:flex;align-items:center;justify-content:center;z-index:26;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div ref=${app.modalFocusRef('requestDetail')} role="dialog" aria-modal="true" aria-label=${d ? `Pedido ${d.code}` : 'Pedido'} tabindex="-1" className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease;outline:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <div style="font-size:20px;font-weight:700">${d ? d.code : 'Pedido'}</div>
@@ -2227,7 +2227,7 @@ function renderRequestDetailModal(app, v) {
 
 function renderReturnRequestModal(app, v) {
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.7);display:flex;align-items:center;justify-content:center;z-index:28;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.7);display:flex;align-items:center;justify-content:center;z-index:28;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:12px">Devolver para edição</div>
         <textarea placeholder="Explique o que precisa ser ajustado (obrigatório)" value=${v.returnNoteValue} onInput=${v.onReturnNoteChange} rows="4" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical;box-sizing:border-box"></textarea>
@@ -2243,7 +2243,7 @@ function renderReturnRequestModal(app, v) {
 
 function renderRejectRequestModal(app, v) {
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.7);display:flex;align-items:center;justify-content:center;z-index:28;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.7);display:flex;align-items:center;justify-content:center;z-index:28;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:12px">Rejeitar solicitação</div>
         <textarea placeholder="Explique o motivo da rejeição (obrigatório)" value=${v.rejectNoteValue} onInput=${v.onRejectNoteChange} rows="4" style="background:var(--neutral-0);color:var(--neutral-900);width:100%;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-family:var(--font-sans);font-size:14px;resize:vertical;box-sizing:border-box"></textarea>
@@ -2261,7 +2261,7 @@ function renderRejectRequestModal(app, v) {
 function renderSiteRecipeFormModal(app, v) {
   const f = v.siteRecipeForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:820px;max-width:100%;max-height:90%;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:22px;font-weight:700;margin-bottom:20px">${v.siteRecipeFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
@@ -2330,7 +2330,7 @@ function renderSiteRecipeFormModal(app, v) {
 function renderSiteProductFormModal(app, v) {
   const f = v.siteProductForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.siteProductFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
@@ -2362,7 +2362,7 @@ function renderSiteProductFormModal(app, v) {
 function renderSiteCategoryFormModal(app, v) {
   const f = v.siteCategoryForm;
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div style="width:420px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.siteCategoryFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
@@ -2382,7 +2382,7 @@ function renderSiteCategoryFormModal(app, v) {
 
 function renderImportModal(app, v) {
   return html`
-    <div style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:30;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
+    <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:30;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div style="font-size:22px;font-weight:700">Importar Planilha (.xlsx, .xls, .csv)</div>
