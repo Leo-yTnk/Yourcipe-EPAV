@@ -1,27 +1,28 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260817-5';
-import { CustomSelect } from './custom-select.js?v=20260817-5';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260817-6';
+import { CustomSelect } from './custom-select.js?v=20260817-6';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260817-5';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260817-5';
-import { supabase } from './supabase-client.js?v=20260817-5';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-5';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260817-5';
-import { normalizeDisplayName } from './display-name.js?v=20260817-5';
-import * as catalog from './catalog.js?v=20260817-5';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260817-5';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260817-5';
-import { createLoadGuard } from './load-guard.js?v=20260817-5';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260817-5';
+} from './data.js?v=20260817-6';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260817-6';
+import { supabase } from './supabase-client.js?v=20260817-6';
+import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260817-6';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-6';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260817-6';
+import { normalizeDisplayName } from './display-name.js?v=20260817-6';
+import * as catalog from './catalog.js?v=20260817-6';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260817-6';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260817-6';
+import { createLoadGuard } from './load-guard.js?v=20260817-6';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260817-6';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260817-5';
+const FRONTEND_VERSION = '20260817-6';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -1371,7 +1372,8 @@ class App extends Component {
   onSaveMyCategoryForm = async () => {
     const f = this.state.myCategoryForm;
     const uid = this.state.session.user.id;
-    if (!f.name || !f.name.trim()) { this.setState({ myFormError: 'Informe o nome da categoria.' }); return; }
+    const nameError = validateName(f.name, 'nome da categoria');
+    if (nameError) { this.setState({ myFormError: nameError }); return; }
     const res = f.id ? await catalog.updateCategoryName(f.id, f.name.trim()) : await catalog.createCategory(uid, { type: f.type, name: f.name.trim() });
     if (res.error) { this.setState({ myFormError: 'Não foi possível salvar a categoria.' }); return; }
     this.setState({ showMyCategoryForm: false, myCategoryForm: null });
@@ -1388,8 +1390,10 @@ class App extends Component {
   onSaveMyProductForm = async () => {
     const f = this.state.myProductForm;
     const uid = this.state.session.user.id;
-    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ myFormError: 'Informe o nome e a categoria do produto.' }); return; }
-    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0, image_url: (f.imageUrl || '').trim() || null };
+    const inputError = validateName(f.name, 'nome do produto') || (!f.categoryId ? 'Informe a categoria do produto.' : '') || validateOptionalHttpUrl(f.imageUrl);
+    const parsedPrice = parseNonNegativePrice(f.price);
+    if (inputError || parsedPrice.error) { this.setState({ myFormError: inputError || parsedPrice.error }); return; }
+    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parsedPrice.value, image_url: (f.imageUrl || '').trim() || null };
     const res = f.id
       ? await catalog.updateProduct(f.id, patch)
       : await catalog.createProduct(uid, { name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, imageUrl: patch.image_url });
@@ -1505,7 +1509,8 @@ class App extends Component {
   onSaveMyRecipeForm = async () => {
     const f = this.state.myRecipeForm;
     const uid = this.state.session.user.id;
-    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ myFormError: 'Informe o nome e a categoria da receita.' }); return; }
+    const inputError = validateName(f.name, 'nome da receita') || (!f.categoryId ? 'Informe a categoria da receita.' : '') || validateOptionalHttpUrl(f.imageUrl);
+    if (inputError) { this.setState({ myFormError: inputError }); return; }
     const validIngredients = f.ingredients.filter(i => i.productId);
     const fields = {
       name: f.name.trim(), categoryId: f.categoryId, prepTime: parseInt(f.prepTime, 10) || 0, servings: parseInt(f.servings, 10) || 0,
@@ -2171,7 +2176,8 @@ class App extends Component {
   toggleSiteCategoryFormActive = (e) => this.setState(s => ({ siteCategoryForm: { ...s.siteCategoryForm, active: e.target.checked } }));
   onSaveSiteCategoryForm = async () => {
     const f = this.state.siteCategoryForm;
-    if (!f.name || !f.name.trim()) { this.setState({ siteFormError: 'Informe o nome da categoria.' }); return; }
+    const nameError = validateName(f.name, 'nome da categoria');
+    if (nameError) { this.setState({ siteFormError: nameError }); return; }
     const res = f.id
       ? await catalog.updateSiteCategory(f.id, { name: f.name.trim(), active: !!f.active })
       : await catalog.createSiteCategory({ type: f.type, name: f.name.trim(), active: !!f.active });
@@ -2224,8 +2230,10 @@ class App extends Component {
   });
   onSaveSiteProductForm = async () => {
     const f = this.state.siteProductForm;
-    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ siteFormError: 'Informe o nome e a categoria do produto.' }); return; }
-    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parseFloat(String(f.price).replace(',', '.')) || 0, active: !!f.active, image_url: (f.imageUrl || '').trim() || null };
+    const inputError = validateName(f.name, 'nome do produto') || (!f.categoryId ? 'Informe a categoria do produto.' : '') || validateOptionalHttpUrl(f.imageUrl);
+    const parsedPrice = parseNonNegativePrice(f.price);
+    if (inputError || parsedPrice.error) { this.setState({ siteFormError: inputError || parsedPrice.error }); return; }
+    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parsedPrice.value, active: !!f.active, image_url: (f.imageUrl || '').trim() || null };
     const res = f.id
       ? await catalog.updateSiteProduct(f.id, patch)
       : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active, imageUrl: patch.image_url });
@@ -2289,7 +2297,8 @@ class App extends Component {
   });
   onSaveSiteRecipeForm = async () => {
     const f = this.state.siteRecipeForm;
-    if (!f.name || !f.name.trim() || !f.categoryId) { this.setState({ siteFormError: 'Informe o nome e a categoria da receita.' }); return; }
+    const inputError = validateName(f.name, 'nome da receita') || (!f.categoryId ? 'Informe a categoria da receita.' : '') || validateOptionalHttpUrl(f.imageUrl);
+    if (inputError) { this.setState({ siteFormError: inputError }); return; }
     if (f.status !== 'draft' && f.status !== 'published') { this.setState({ siteFormError: 'Escolha "Rascunho" ou "Publicada".' }); return; }
     const validIngredients = f.ingredients.filter(i => i.productId);
     const fields = {
@@ -4321,7 +4330,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260817-5';
+import { renderApp } from './template.js?v=20260817-6';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

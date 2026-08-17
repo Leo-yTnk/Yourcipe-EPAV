@@ -1,3 +1,13 @@
+# Round 022: catalog input constraints
+
+Apply `supabase/022_catalog_input_constraints.sql` after 021. The constraints
+immediately protect new and updated rows but are intentionally `NOT VALID` so a
+legacy invalid URL/name cannot abort deployment. Audit legacy rows, repair any
+violations, then run `alter table ... validate constraint ...` for each of the
+five constraints before production promotion.
+
+---
+
 # Round 011: cross-account visibility
 
 Apply **only after 010**:
