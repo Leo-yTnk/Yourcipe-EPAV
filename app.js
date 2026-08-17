@@ -2213,11 +2213,11 @@ class App extends Component {
     this.closeCatalogPicker(); this.refreshAdminCatalog(); this.flashAdmin('Conteúdo adicionado à seção.');
   };
 
-  onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true, imageUrl: '', sectionCategoryIds: [] } });
+  onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true, imageUrl: '', sectionCategoryIds: [], swiftUrl: '' } });
   onEditSiteProduct = async (p) => {
     this.setState({
       showSiteProductForm: true, siteProductFormMode: 'edit', siteFormError: '',
-      siteProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, active: p.active, imageUrl: p.image_url || '', sectionCategoryIds: [] },
+      siteProductForm: { id: p.id, name: p.name, categoryId: p.category_id, unit: p.unit, price: p.price, active: p.active, imageUrl: p.image_url || '', swiftUrl: p.swift_product_url || '', sectionCategoryIds: [] },
     });
     const { data, error } = await catalog.fetchProductSections(p.id);
     if (!error) this.setState(s => (s.siteProductForm && s.siteProductForm.id === p.id
@@ -2243,11 +2243,16 @@ class App extends Component {
       : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active, imageUrl: patch.image_url });
     if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
     const productId = f.id || (res.data && res.data.id);
+    const sourceRes = await catalog.setProductSwiftSource(productId, (f.swiftUrl || '').trim() || null);
+    if (sourceRes.error) { this.setState({ siteFormError: `Produto salvo, mas a página Swift é inválida: ${sourceRes.error.message}` }); return; }
     const secRes = await catalog.replaceProductCategories(productId, f.sectionCategoryIds || []);
     if (secRes.error) this.flashAdmin('O produto foi salvo, mas houve um erro ao salvar as seções.');
     this.setState({ showSiteProductForm: false, siteProductForm: null });
     this.refreshAdminCatalog();
   };
+  onRefreshSiteProductPrice = async (p) => { const res = await catalog.refreshProductPrice(p.id); this.flashAdmin(res.error ? `Falha ao atualizar: ${res.error.message}` : 'Preço consultado na Swift.'); await this.refreshAdminCatalog(); };
+  onRefreshAllPrices = async () => { const res = await catalog.refreshAllProductPrices(); this.flashAdmin(res.error ? `Falha na sincronização: ${res.error.message}` : `Sincronização concluída: ${res.data.products_synced} consultados, ${res.data.products_failed} falhas.`); await this.refreshAdminCatalog(); };
+
   onToggleSiteProductActive = async (p) => {
     const res = await catalog.updateSiteProduct(p.id, { active: !p.active });
     if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
@@ -3789,7 +3794,7 @@ class App extends Component {
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(p.updated_at),
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'site'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
-      onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p),
+      onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p), onRefreshPrice: () => this.onRefreshSiteProductPrice(p), priceStatusLabel: p.price_status || 'MISSING_SOURCE', priceDetailsLabel: p.price_last_success_at ? `Última confirmação: ${this.formatDateTime(p.price_last_success_at)}` : 'Sem preço confirmado na Swift',
       onDelete: () => this.askDeleteSiteProduct(p.id),
       onPriceChange: this.onInlinePriceChange('site', p.id), onPriceBlur: () => this.saveInlinePrice('site', p), onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
     }); }).filter(row => matchesSearch(row.name));
@@ -4069,7 +4074,7 @@ class App extends Component {
       onCatalogPickerQuery: this.onCatalogPickerQuery, onCloseCatalogPicker: this.closeCatalogPicker, catalogEditorLayout: s.productLayout,
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
-      onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onNewSiteCategory: this.onNewSiteCategory,
+      onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onRefreshAllPrices: this.onRefreshAllPrices, onNewSiteCategory: this.onNewSiteCategory,
       showSiteRecipeForm: s.showSiteRecipeForm, siteRecipeFormTitle: s.siteRecipeFormMode === 'new' ? 'Nova Receita do Catálogo' : 'Editar Receita do Catálogo', siteRecipeForm: s.siteRecipeForm || {},
       hasSiteFormError: !!s.siteFormError, siteFormError: s.siteFormError,
       siteRecipeFormOnName: this.siteRecipeFormField('name'), siteRecipeFormOnCategorySet: this.setFormField('siteRecipeForm', 'categoryId'),
@@ -4083,7 +4088,7 @@ class App extends Component {
       showSiteProductForm: s.showSiteProductForm, siteProductFormTitle: s.siteProductFormMode === 'new' ? 'Novo Produto do Catálogo' : 'Editar Produto do Catálogo', siteProductForm: s.siteProductForm || {},
       siteProductFormOnName: this.siteProductFormField('name'), siteProductFormOnCategorySet: this.setFormField('siteProductForm', 'categoryId'),
       siteProductFormOnUnitSet: this.setFormField('siteProductForm', 'unit'), siteProductFormOnPrice: this.siteProductFormField('price'), siteProductFormOnActive: this.toggleSiteProductFormActive,
-      siteProductFormOnImageUrl: this.siteProductFormField('imageUrl'),
+      siteProductFormOnImageUrl: this.siteProductFormField('imageUrl'), siteProductFormOnSwiftUrl: this.siteProductFormField('swiftUrl'),
       siteProteinCategoryOptions, siteProductSectionRows, unidadeOptionsSite: this.unidades,
       onCancelSiteProductForm: this.onCancelSiteProductForm, onSaveSiteProductForm: this.onSaveSiteProductForm,
       showSiteCategoryForm: s.showSiteCategoryForm, siteCategoryFormTitle: s.siteCategoryFormMode === 'new' ? 'Nova Categoria do Catálogo' : 'Editar Categoria do Catálogo', siteCategoryForm: s.siteCategoryForm || {},
