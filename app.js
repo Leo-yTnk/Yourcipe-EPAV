@@ -1,27 +1,27 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260817-2';
-import { CustomSelect } from './custom-select.js?v=20260817-2';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260817-3';
+import { CustomSelect } from './custom-select.js?v=20260817-3';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260817-2';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260817-2';
-import { supabase } from './supabase-client.js?v=20260817-2';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, updateCatalogCardLayout, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-2';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260817-2';
-import { normalizeDisplayName } from './display-name.js?v=20260817-2';
-import * as catalog from './catalog.js?v=20260817-2';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260817-2';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260817-2';
-import { createLoadGuard } from './load-guard.js?v=20260817-2';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260817-2';
+} from './data.js?v=20260817-3';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260817-3';
+import { supabase } from './supabase-client.js?v=20260817-3';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-3';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260817-3';
+import { normalizeDisplayName } from './display-name.js?v=20260817-3';
+import * as catalog from './catalog.js?v=20260817-3';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260817-3';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260817-3';
+import { createLoadGuard } from './load-guard.js?v=20260817-3';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260817-3';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260817-2';
+const FRONTEND_VERSION = '20260817-3';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -92,6 +92,8 @@ class App extends Component {
     try { const sw = localStorage.getItem(LS_KEYS.weekStartDay); if (sw !== null) weekStartDay = Number(sw); } catch (e) {}
     let fontSize = 'normal';
     try { const sfz = localStorage.getItem(LS_KEYS.fontSize); if (sfz === 'small' || sfz === 'large' || sfz === 'normal') fontSize = sfz; } catch (e) {}
+    let productLayout = 'carousel';
+    try { const spl = localStorage.getItem(LS_KEYS.productLayout); if (spl === 'carousel' || spl === 'grid') productLayout = spl; } catch (e) {}
     // Welcome splash shows once per browser, ever — not once per session/
     // login. If localStorage is unavailable (private browsing, disabled,
     // throws), this fails safe by falling through to the pre-existing
@@ -100,7 +102,7 @@ class App extends Component {
     return {
       frameW: (typeof window !== 'undefined') ? window.innerWidth : 1200,
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
-      darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize,
+      darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize, productLayout,
       productSectionPickerKey: null, productSectionPickerQuery: '', adminSearchQuery: '',
       catalogEditorPage: 'home', catalogPicker: null, catalogPickerQuery: '',
       ingredientProductPicker: null, ingredientProductPickerQuery: '',
@@ -875,10 +877,6 @@ class App extends Component {
   onEditProfile = () => this.setState({ showProfileSetup: true, profileForm: { productLayout: 'carousel', ...this.state.profile } });
   onSaveProfile = async () => {
     const profile = { ...this.state.profileForm };
-    if (this.state.session) {
-      const { error } = await updateCatalogCardLayout(this.state.session.user.id, profile.productLayout || 'carousel');
-      if (error) { this.flashAdmin('Não foi possível salvar a exibição no Supabase.'); return; }
-    }
     this.setState({ profile, showProfileSetup: false });
   };
 
@@ -2507,7 +2505,11 @@ class App extends Component {
   setNavRailLeft = () => { this.setState({ navRailSide: 'left' }); this.persist(LS_KEYS.navRailSide, 'left'); };
   setNavRailRight = () => { this.setState({ navRailSide: 'right' }); this.persist(LS_KEYS.navRailSide, 'right'); };
   onSetFontSize = (fontSize) => { this.setState({ fontSize }); this.persist(LS_KEYS.fontSize, fontSize); };
-  onProfileProductLayoutSet = (productLayout) => this.setState(s => ({ profileForm: { ...s.profileForm, productLayout } }));
+  onProfileProductLayoutSet = (productLayout) => {
+    if (productLayout !== 'carousel' && productLayout !== 'grid') return;
+    this.setState({ productLayout });
+    this.persist(LS_KEYS.productLayout, productLayout);
+  };
   toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       const el = document.documentElement;
@@ -3969,7 +3971,7 @@ class App extends Component {
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       // Produtos page + Início aggregator
       productHomeSectionBlocks, productCategoryChips, productPageBlocks, inicioProductBlock,
-      productLayout: (s.profile && s.profile.productLayout) || 'carousel',
+      productLayout: s.productLayout,
       productsEmpty: s.products.length === 0,
       showProductDetailModal: !!s.selectedProductId && !!selectedProduct, productDetailData: selectedProduct || { nome: '', categoria: '', unidade: '', precoLabel: '', imagem: FALLBACK_IMG, relatedRecipes: [] },
       onOpenProductDetail: (id) => this.openProductDetail(id), onCloseProductDetail: this.closeProductDetail,
@@ -4037,7 +4039,7 @@ class App extends Component {
       siteRecipeRows, siteProductRows, siteCategoryRows,
       catalogEditorPage: s.catalogEditorPage, catalogEditorSections, catalogPicker: s.catalogPicker, catalogPickerItems, catalogPickerQuery: s.catalogPickerQuery,
       onCatalogEditorHome: () => this.setCatalogEditorPage('home'), onCatalogEditorRecipes: () => this.setCatalogEditorPage('recipes'), onCatalogEditorProducts: () => this.setCatalogEditorPage('products'),
-      onCatalogPickerQuery: this.onCatalogPickerQuery, onCloseCatalogPicker: this.closeCatalogPicker, catalogEditorLayout: (s.profile && s.profile.productLayout) || 'carousel',
+      onCatalogPickerQuery: this.onCatalogPickerQuery, onCloseCatalogPicker: this.closeCatalogPicker, catalogEditorLayout: s.productLayout,
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
       onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onNewSiteCategory: this.onNewSiteCategory,
@@ -4319,7 +4321,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260817-2';
+import { renderApp } from './template.js?v=20260817-3';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

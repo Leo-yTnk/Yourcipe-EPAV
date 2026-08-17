@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260817-2';
-import { CustomSelect } from './custom-select.js?v=20260817-2';
+import { html } from './vendor/htm-preact-standalone.js?v=20260817-3';
+import { CustomSelect } from './custom-select.js?v=20260817-3';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -822,6 +822,18 @@ function renderProfile(app, v) {
           <div onClick=${v.onSetFontSizeLarge} style=${v.fontSizeLgBtnStyle}>Grande</div>
         </div>
       </div>
+      <div style=${`display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;margin-bottom:12px;border-color:${v.settingsBorderColor};flex-wrap:wrap;gap:12px`}>
+        <div style="display:flex;align-items:center;gap:14px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="1.8"><rect x="3" y="4" width="18" height="6" rx="2"></rect><rect x="3" y="14" width="8" height="6" rx="2"></rect><rect x="13" y="14" width="8" height="6" rx="2"></rect></svg>
+          <div>
+            <div style="font-size:16px;font-weight:600">Exibição dos produtos</div>
+            <div style="font-size:13px;color:var(--neutral-600)">Escolha como os produtos aparecem neste dispositivo</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;background:var(--neutral-50);border-radius:var(--radius-full);padding:3px">
+          ${[['carousel', 'Carrossel'], ['grid', 'Grid']].map(([value, label]) => html`<button type="button" aria-pressed=${v.productLayout === value} onClick=${() => v.onProfileProductLayoutSet(value)} style=${`height:38px;min-height:38px;padding:0 16px;border-radius:var(--radius-full);border:0;background:${v.productLayout === value ? 'var(--brand-700)' : 'transparent'};color:${v.productLayout === value ? '#F4F2F1' : 'var(--neutral-800)'};font:600 13px var(--font-sans);cursor:pointer`}>${label}</button>`)}
+        </div>
+      </div>
       <div onClick=${v.onOpenAdminAttempt} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;cursor:pointer;transition:transform 0.15s ease">
         <div style="display:flex;align-items:center;gap:14px">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B24019" stroke-width="1.8"><path d="M12 2l7 3v6c0 5-3 8-7 9-4-1-7-4-7-9V5l7-3z"></path><path d="M9 12l2 2 4-4"></path></svg>
@@ -1015,12 +1027,6 @@ function renderProfileSetupModal(app, v) {
           <input type="number" placeholder="Idade" value=${f.idade} onInput=${v.onProfileIdadeChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
           <${CustomSelect} options=${v.generoOptions} value=${f.genero} onChange=${v.onProfileGeneroSet} />
           <input type="text" placeholder="Cargo (ex: Dono de Açougue, Chef, Comprador)" value=${f.cargo} onInput=${v.onProfileCargoChange} style="background:var(--neutral-0);color:var(--neutral-900);padding:14px 16px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:15px;font-family:var(--font-sans)"/>
-          <div>
-            <div style="font-size:12px;font-weight:700;color:var(--neutral-600);margin-bottom:7px">Exibição dos produtos</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              ${[['carousel', 'Linhas (carrosséis)'], ['grid', 'Grid (colunas)']].map(([value, label]) => html`<button type="button" onClick=${() => v.onProfileProductLayoutSet(value)} style=${`padding:11px;border-radius:var(--radius-md);border:1.5px solid ${f.productLayout === value ? 'var(--brand-700)' : 'var(--neutral-200)'};background:${f.productLayout === value ? 'rgba(178,64,25,.08)' : 'var(--neutral-0)'};color:var(--neutral-900);font:600 13px var(--font-sans);cursor:pointer`}>${label}</button>`)}
-            </div>
-          </div>
         </div>
         <div onClick=${v.onSaveProfile} style="margin-top:24px;background:var(--brand-700);color:#F4F2F1;text-align:center;padding:16px;border-radius:var(--radius-md);font-weight:700;font-size:15px;cursor:pointer">Salvar</div>
       </div>

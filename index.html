@@ -33,7 +33,7 @@
 
   HOW TO BUMP (do this on every deploy that changes ANY .js file):
     1. Pick a new literal value, e.g. today's date + a counter for same-day
-       redeploys: `20260817-2`, `20260804-2`, ...
+       redeploys: `20260817-3`, `20260804-2`, ...
     2. Replace EVERY occurrence of the old value with the new one in:
        index.html, app.js, catalog.js, auth.js, custom-select.js,
        template.js (every `?v=...` query string AND the FRONTEND_VERSION
@@ -52,16 +52,16 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="./styles.css?v=20260817-2">
+  <link rel="stylesheet" href="./styles.css?v=20260817-3">
 </head>
 <body>
   <div id="app">
-    <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#38312E;color:#F4F2F1;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:15px">
+    <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#38312E;color:#F4F2F1;font-family:Inter,sans-serif;font-size:15px">
       Carregando…
     </div>
   </div>
-  <script src="./vendor/xlsx.full.min.js?v=20260817-2"></script>
+  <script src="./vendor/xlsx.full.min.js?v=20260817-3"></script>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
-  <script type="module" src="./app.js?v=20260817-2"></script>
+  <script type="module" src="./app.js?v=20260817-3"></script>
 </body>
 </html>
