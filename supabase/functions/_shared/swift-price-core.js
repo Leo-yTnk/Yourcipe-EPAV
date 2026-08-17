@@ -103,3 +103,28 @@ export function isSuspiciousChange(previous, next, warningPercent) {
   if (!previous || !next) return false;
   return Math.abs(next - previous) / previous * 100 > Number(warningPercent);
 }
+
+// Persistence policies are pure so success/failure semantics stay testable and
+// identical in the Edge Function. Spreadsheet imports never call these helpers.
+export function buildSwiftSuccessUpdate(product, parsed, { checkedAt, region = null, zip, sourceHash }) {
+  const changed = product.regular_price_cents !== parsed.regularPriceCents
+    || product.promo_price_cents !== parsed.promoPriceCents
+    || product.pricing_type !== parsed.pricingType;
+  return { changed, update: {
+    swift_product_url: parsed.canonicalUrl, swift_product_id: parsed.swiftProductId, swift_sku: parsed.swiftSku,
+    price_cents: parsed.regularPriceCents, regular_price_cents: parsed.regularPriceCents,
+    promo_price_cents: parsed.promoPriceCents, promo_min_quantity: parsed.promoMinQuantity,
+    pricing_type: parsed.pricingType, price_unit: parsed.priceUnit, price_source: 'SWIFT',
+    price_status: 'CURRENT', price_error: null, price_last_checked_at: checkedAt,
+    price_last_success_at: checkedAt,
+    price_last_changed_at: changed || !product.price_last_changed_at ? checkedAt : product.price_last_changed_at,
+    price_region: region, price_reference_zip_code: zip, price_source_hash: sourceHash,
+  } };
+}
+
+export function buildSwiftFailureUpdate(product, message, checkedAt) {
+  return {
+    price_status: product.price_last_success_at ? 'STALE' : 'ERROR',
+    price_error: String(message).slice(0, 500), price_last_checked_at: checkedAt,
+  };
+}

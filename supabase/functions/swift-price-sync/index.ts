@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { canonicalizeSwiftUrl, isFresh, isSuspiciousChange, parseSwiftProductPage } from '../_shared/swift-price-core.js';
+import { buildSwiftFailureUpdate, buildSwiftSuccessUpdate, canonicalizeSwiftUrl, isFresh, isSuspiciousChange, parseSwiftProductPage } from '../_shared/swift-price-core.js';
 
 const env = (key: string, fallback?: string) => Deno.env.get(key) || fallback;
 const ZIP = (env('SWIFT_REFERENCE_ZIP_CODE') || '').replace(/\D/g, '');
@@ -94,14 +94,10 @@ Deno.serve(async req => {
         parsed = confirmation;
       }
       const sourceHash = await hashObservation({ ...parsed, zip: ZIP });
-      const changed = product.regular_price_cents !== parsed.regularPriceCents || product.promo_price_cents !== parsed.promoPriceCents || product.pricing_type !== parsed.pricingType;
-      const update = { swift_product_url: url, swift_product_id: parsed.swiftProductId, swift_sku: parsed.swiftSku,
-        price_cents: parsed.regularPriceCents, regular_price_cents: parsed.regularPriceCents,
-        promo_price_cents: parsed.promoPriceCents, promo_min_quantity: parsed.promoMinQuantity,
-        pricing_type: parsed.pricingType, price_unit: parsed.priceUnit, price_source: 'SWIFT', price_status: 'CURRENT', price_error: null,
-        price_last_checked_at: checkedAt, price_last_success_at: checkedAt,
-        price_last_changed_at: changed || !product.price_last_changed_at ? checkedAt : product.price_last_changed_at,
-        price_region: env('SWIFT_REFERENCE_REGION') || null, price_reference_zip_code: ZIP, price_source_hash: sourceHash };
+      parsed.canonicalUrl = url;
+      const { changed, update } = buildSwiftSuccessUpdate(product, parsed, {
+        checkedAt, region: env('SWIFT_REFERENCE_REGION') || null, zip: ZIP, sourceHash,
+      });
       const { error: updateError } = await supabase.from('products').update(update).eq('id', product.id);
       if (updateError) throw updateError;
       await supabase.from('product_price_history').insert({ product_id: product.id, regular_price_cents: parsed.regularPriceCents,
@@ -112,7 +108,7 @@ Deno.serve(async req => {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       const stale = !!product.price_last_success_at;
-      await supabase.from('products').update({ price_status: stale ? 'STALE' : 'ERROR', price_error: message.slice(0, 500), price_last_checked_at: checkedAt }).eq('id', product.id);
+      await supabase.from('products').update(buildSwiftFailureUpdate(product, message, checkedAt)).eq('id', product.id);
       metrics.products_failed++; if (stale) metrics.products_stale++;
       log('product_failed', { product_id: product.id, error: message, last_success_at: product.price_last_success_at });
     }

@@ -2406,24 +2406,26 @@ function renderImportModal(app, v) {
     <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:30;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
       <div className="yc-scroll" style="width:640px;max-width:100%;max-height:88%;overflow-y:auto;background:var(--neutral-0);border-radius:var(--radius-xl);padding:32px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div style="font-size:22px;font-weight:700">Importar Planilha (.xlsx, .xls, .csv)</div>
+          <div style="font-size:22px;font-weight:700">Importação unificada do catálogo (.xlsx, .xls)</div>
           <div onClick=${v.onCloseImportModal} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
           </div>
         </div>
 
         ${v.importStepInstructions && html`
-          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:18px">Envie um arquivo <strong>.xlsx</strong> com três abas: <strong>Categorias</strong>, <strong>Produtos</strong> e <strong>Receitas</strong>. Veja o modelo esperado abaixo antes de enviar.</div>
+          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:18px">Use um único arquivo <strong>.xlsx</strong> com as três abas obrigatórias: <strong>Categorias</strong>, <strong>Produtos</strong> e <strong>Receitas</strong>. Veja o modelo esperado abaixo antes de enviar.</div>
 
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:12px">
             <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Produtos"</div>
             <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
               <strong>nome</strong> — obrigatório<br/>
-              Para atualizar somente preços de produtos já cadastrados, informe apenas <strong>nome</strong> e <strong>preco</strong>; categoria, unidade e imagem atuais serão preservadas.<br/>
+              Para produtos vinculados à Swift, não é necessário informar o preço. O Yourcipe consulta automaticamente a página oficial da Swift e confirma o preço após a importação.<br/>
               <strong>categoria</strong> — obrigatória para produtos novos, uma de: ${v.categoriasProdutoList}<br/>
               <strong>unidade</strong> — obrigatória para produtos novos: kg, un, pacote, caixa, pote<br/>
-              <strong>preco</strong> — obrigatório, número (ex: 34.90)<br/>
-              <strong>imagem</strong> — obrigatória para produtos novos, URL completa da foto (http ou https)
+              <strong>preco</strong> — opcional e apenas legado. Não confirma nem substitui preços Swift (ex: 34.90)<br/>
+              <strong>imagem</strong> — obrigatória para produtos novos, URL completa da foto (http ou https)<br/>
+              <strong>swift_url</strong> — obrigatória para produtos novos: página oficial HTTPS em www.swift.com.br, sem parâmetros<br/>
+              <strong>swift_sku</strong> — recomendado: código/SKU exibido pela Swift para confirmar a identidade do produto
             </div>
           </div>
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">
@@ -2443,9 +2445,9 @@ function renderImportModal(app, v) {
             </div>
           </div>
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Categorias" (opcional, mas recomendada)</div>
+            <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Categorias" (obrigatória; pode ficar sem linhas)</div>
             <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
-              <strong>tipo</strong> — obrigatório: "proteina" (categoria de produto), "receita" (categoria de receita) ou "secao" (seção da home)<br/>
+              <strong>tipo</strong> — obrigatório: "proteina" (categoria de produto), "receita" (categoria de receita), "secao_home", "secao_receita" ou "secao_produto"<br/>
               <strong>nome</strong> — obrigatório, nome da nova categoria ou seção<br/>
               Use esta aba para declarar as categorias/seções que ainda não existem no app antes de referenciá-las nas abas Produtos e Receitas.
             </div>
@@ -2453,8 +2455,8 @@ function renderImportModal(app, v) {
           <div onClick=${v.onDownloadTemplate} style="text-align:center;padding:12px;border-radius:var(--radius-md);border:1.5px solid var(--brand-500);color:var(--brand-700);font-weight:700;font-size:14px;cursor:pointer;margin-bottom:18px">Baixar modelo (.xlsx)</div>
 
           <label style="display:block;border:2px dashed var(--neutral-200);border-radius:var(--radius-md);padding:24px;text-align:center;cursor:pointer;color:var(--neutral-600);font-size:14px">
-            Clique para selecionar o arquivo .xlsx, .xls ou .csv
-            <input key=${v.importFileInputKey} type="file" accept=".xlsx,.xls,.csv" onChange=${v.onImportFileChange} style="display:none"/>
+            Clique para selecionar o arquivo .xlsx ou .xls (máximo 10 MB / 5.000 linhas)
+            <input key=${v.importFileInputKey} type="file" accept=".xlsx,.xls" onChange=${v.onImportFileChange} style="display:none"/>
           </label>
           ${v.hasImportParseError && html`<div style="color:var(--red-600);font-size:13px;margin-top:10px;font-weight:600">${v.importParseError}</div>`}
         `}
@@ -2483,7 +2485,7 @@ function renderImportModal(app, v) {
 
           ${v.hasImportWarnings && html`
             <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;max-height:180px;overflow-y:auto">
-              <div style="font-weight:700;font-size:14px;color:var(--yellow-600);margin-bottom:6px">Avisos — seções não cadastradas usadas em receitas</div>
+              <div style="font-weight:700;font-size:14px;color:var(--yellow-600);margin-bottom:6px">Avisos — seções não cadastradas usadas em receitas e validação preventiva</div>
               ${v.importWarnings.map((warn, i) => html`<div key=${i} style="font-size:13px;color:var(--neutral-800);margin-bottom:4px">• ${warn}</div>`)}
             </div>
           `}
@@ -2509,7 +2511,7 @@ function renderImportModal(app, v) {
                 />
               </div>
             `)}
-            <div style="font-size:12px;color:var(--neutral-600);line-height:1.5">As escolhas são independentes. Categorias e produtos ainda não cadastrados podem ser declarados nas respectivas abas e serão tratados conforme a opção selecionada.</div>
+            <div style="font-size:12px;color:var(--neutral-600);line-height:1.5">A operação é única e transacional: se qualquer validação falhar, nada será alterado. As escolhas são independentes. Categorias e produtos ainda não cadastrados podem ser declarados nas respectivas abas e serão tratados conforme a opção selecionada.</div>
           `}
 
           <div style="display:flex;gap:10px;margin-top:20px">
