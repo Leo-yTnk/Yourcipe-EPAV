@@ -105,7 +105,7 @@ describe('admin spreadsheet import wiring', () => {
   });
 
   it('shows the release version at the end of the profile page', () => {
-    expect(template).toContain('>V0.40</div>');
+    expect(template).toContain('>V0.41</div>');
   });
 
   it('installs server-side authorization and scope protections', () => {
