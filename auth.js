@@ -66,9 +66,15 @@ export async function signInWithCredential(rawCredential, password, captchaToken
  */
 export async function fetchProfile(userId) {
   if (!userId) return { role: null, displayName: null };
-  const { data, error } = await supabase.from('profiles').select('role, display_name').eq('id', userId).single();
+  const { data, error } = await supabase.from('profiles').select('role, display_name, catalog_card_layout').eq('id', userId).single();
   if (error || !data) return { role: 'user', displayName: null };
-  return { role: data.role === 'admin' ? 'admin' : 'user', displayName: data.display_name || null };
+  return { role: data.role === 'admin' ? 'admin' : 'user', displayName: data.display_name || null, catalogCardLayout: data.catalog_card_layout === 'grid' ? 'grid' : 'carousel' };
+}
+
+export async function updateCatalogCardLayout(userId, layout) {
+  if (!userId || !['carousel', 'grid'].includes(layout)) return { error: new Error('invalid-layout') };
+  const { data, error } = await supabase.from('profiles').update({ catalog_card_layout: layout }).eq('id', userId).select('catalog_card_layout').single();
+  return error ? { error } : { layout: data.catalog_card_layout };
 }
 
 /**

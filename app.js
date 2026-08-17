@@ -7,7 +7,7 @@ import {
 } from './data.js?v=20260817-1';
 import { generateCredential, normalizeCredential } from './credential.js?v=20260817-1';
 import { supabase } from './supabase-client.js?v=20260817-1';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, updateCatalogCardLayout, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-1';
 import { runSignupRetryLoop } from './signup-retry.js?v=20260817-1';
 import { normalizeDisplayName } from './display-name.js?v=20260817-1';
 import * as catalog from './catalog.js?v=20260817-1';
@@ -102,6 +102,7 @@ class App extends Component {
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
       darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize,
       productSectionPickerKey: null, productSectionPickerQuery: '', adminSearchQuery: '',
+      catalogEditorPage: 'home', catalogPicker: null, catalogPickerQuery: '',
       ingredientProductPicker: null, ingredientProductPickerQuery: '',
       inlinePriceDrafts: {}, inlinePriceBusy: {},
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
@@ -570,7 +571,7 @@ class App extends Component {
     // completion callback so persisted sales repaint the Dados dashboard as
     // soon as authentication restoration finishes.
     this.setState(
-      { session, authRole: profile.role, authDisplayName: profile.displayName },
+      { session, authRole: profile.role, authDisplayName: profile.displayName, profile: { ...(this.state.profile || {}), productLayout: profile.catalogCardLayout || 'carousel' } },
       () => { if (session) this.loadSalesData(); },
     );
     if (session && !profile.displayName) {
@@ -872,10 +873,13 @@ class App extends Component {
   onProfileIdadeChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, idade: e.target.value } }));
   onProfileCargoChange = (e) => this.setState(s => ({ profileForm: { ...s.profileForm, cargo: e.target.value } }));
   onEditProfile = () => this.setState({ showProfileSetup: true, profileForm: { productLayout: 'carousel', ...this.state.profile } });
-  onSaveProfile = () => {
+  onSaveProfile = async () => {
     const profile = { ...this.state.profileForm };
+    if (this.state.session) {
+      const { error } = await updateCatalogCardLayout(this.state.session.user.id, profile.productLayout || 'carousel');
+      if (error) { this.flashAdmin('Não foi possível salvar a exibição no Supabase.'); return; }
+    }
     this.setState({ profile, showProfileSetup: false });
-    this.persist(LS_KEYS.profile, profile);
   };
 
   // Mounting a brand-new modal subtree means this ref can fire before `el`'s
@@ -2181,6 +2185,24 @@ class App extends Component {
     const res = await catalog.updateSiteCategory(c.id, { active: !c.active });
     if (res.error) { this.flashAdmin(`Não foi possível atualizar: ${res.error.message || 'erro desconhecido'}`); return; }
     this.refreshAdminCatalog();
+  };
+
+  setCatalogEditorPage = (page) => this.setState({ catalogEditorPage: page, catalogPicker: null, catalogPickerQuery: '' });
+  openCatalogPicker = (section) => this.setState({ catalogPicker: { sectionId: section.id, sectionType: section.type, sectionName: section.name }, catalogPickerQuery: '' });
+  closeCatalogPicker = () => this.setState({ catalogPicker: null, catalogPickerQuery: '' });
+  onCatalogPickerQuery = (e) => this.setState({ catalogPickerQuery: e.target.value });
+  addCatalogItemToSection = async (item) => {
+    const picker = this.state.catalogPicker;
+    if (!picker) return;
+    const isProduct = picker.sectionType === 'secao_produto';
+    const detail = isProduct ? await catalog.fetchProductSections(item.id) : await catalog.fetchRecipeDetail(item.id);
+    if (detail.error) { this.flashAdmin('Não foi possível carregar as seções do item.'); return; }
+    const rows = isProduct ? (detail.data || []) : ((detail.data && detail.data.sections) || []);
+    const ids = rows.map(row => row.category_id).filter(Boolean);
+    if (!ids.includes(picker.sectionId)) ids.push(picker.sectionId);
+    const result = isProduct ? await catalog.replaceProductCategories(item.id, ids) : await catalog.replaceRecipeCategories(item.id, ids);
+    if (result.error) { this.flashAdmin('Não foi possível adicionar o item à seção.'); return; }
+    this.closeCatalogPicker(); this.refreshAdminCatalog(); this.flashAdmin('Conteúdo adicionado à seção.');
   };
 
   onNewSiteProduct = () => this.setState({ showSiteProductForm: true, siteProductFormMode: 'new', siteFormError: '', siteProductForm: { id: null, name: '', categoryId: (this.siteProteinCategories()[0] && this.siteProteinCategories()[0].id) || '', unit: 'kg', price: 0, active: true, imageUrl: '', sectionCategoryIds: [] } });
@@ -3763,6 +3785,15 @@ class App extends Component {
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
       onDelete: () => this.askDeleteSiteCategory(c.id), draggable: c.type === 'secao' || c.type === 'secao_produto', isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id),
     })).filter(row => matchesSearch(row.name));
+    const editorTypes = s.catalogEditorPage === 'products' ? ['secao_produto'] : (s.catalogEditorPage === 'recipes' ? ['secao'] : ['secao', 'secao_produto']);
+    const catalogEditorSections = s.siteCategories.filter(c => editorTypes.includes(c.type) && c.active !== false).map(c => {
+      const source = c.type === 'secao_produto' ? s.products : s.recipes;
+      const items = source.filter(item => (item.tags || []).includes(c.slug)).map(item => ({ id: item.id, name: item.nome, image: item.imagem }));
+      return { ...c, items, onEdit: () => this.onEditSiteCategory(c), onAdd: () => this.openCatalogPicker(c), onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id) };
+    });
+    const pickerSource = s.catalogPicker && s.catalogPicker.sectionType === 'secao_produto' ? s.siteProducts : s.siteRecipes;
+    const pickerNeedle = s.catalogPickerQuery.trim().toLocaleLowerCase('pt-BR');
+    const catalogPickerItems = (s.catalogPicker ? pickerSource : []).filter(item => !pickerNeedle || item.name.toLocaleLowerCase('pt-BR').includes(pickerNeedle)).map(item => ({ id: item.id, name: item.name, image: item.image_url || FALLBACK_IMG, onAdd: () => this.addCatalogItemToSection(item) }));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
     const siteProteinCategoryOptions = this.siteProteinCategories().map(c => ({ value: c.id, label: c.name }));
     const siteRecipeSectionRows = this.siteSectionCategories().map(c => ({
@@ -4004,6 +4035,9 @@ class App extends Component {
       siteCatalogLoading: s.siteCatalogLoading, hasSiteCatalogErrorBanner: !!s.siteCatalogError, siteCatalogError: s.siteCatalogError,
       onRetrySiteCatalogData: () => this.loadSiteCatalogData(),
       siteRecipeRows, siteProductRows, siteCategoryRows,
+      catalogEditorPage: s.catalogEditorPage, catalogEditorSections, catalogPicker: s.catalogPicker, catalogPickerItems, catalogPickerQuery: s.catalogPickerQuery,
+      onCatalogEditorHome: () => this.setCatalogEditorPage('home'), onCatalogEditorRecipes: () => this.setCatalogEditorPage('recipes'), onCatalogEditorProducts: () => this.setCatalogEditorPage('products'),
+      onCatalogPickerQuery: this.onCatalogPickerQuery, onCloseCatalogPicker: this.closeCatalogPicker, catalogEditorLayout: (s.profile && s.profile.productLayout) || 'carousel',
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
       onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onNewSiteCategory: this.onNewSiteCategory,

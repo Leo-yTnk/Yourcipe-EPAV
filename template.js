@@ -102,7 +102,8 @@ function recipeCard(item) {
   `;
 }
 
-function carouselSection(icon, title, list, onSeeAll) {
+function carouselSection(icon, title, list, onSeeAll, layout) {
+  if (layout === 'grid') return recipeGridSection(icon, title, list, onSeeAll);
   if (!list.length) return null;
   return html`
     <div style="padding:18px 0 18px">
@@ -118,6 +119,10 @@ function carouselSection(icon, title, list, onSeeAll) {
       </div>
     </div>
   `;
+}
+function recipeGridSection(icon, title, list, onSeeAll) {
+  if (!list.length) return null;
+  return html`<div style="padding:18px 40px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="display:flex;align-items:center;gap:8px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div></div><div className="yc-product-grid">${list.map(item => recipeCard({ ...item, carouselStyle: item.gridCardStyle }))}</div></div>`;
 }
 
 // Shared "Receita do Dia" hero carousel — used by both renderHome (Receitas)
@@ -198,7 +203,7 @@ function renderHome(app, v) {
       `}
     </div>
 
-    ${v.homeSectionBlocks.map((sec) => carouselSection(resolveSectionIcon(sec.icon, sec.key, false), sec.label, sec.items, v.goSearch))}
+    ${v.homeSectionBlocks.map((sec) => carouselSection(resolveSectionIcon(sec.icon, sec.key, false), sec.label, sec.items, v.goSearch, v.productLayout))}
   `;
 }
 
@@ -1448,48 +1453,22 @@ function adminSearchBar(v) {
   `;
 }
 
-// Local-device-only personalization (Home sections shown, which product
-// categories are offered when cadastro/import). NOT the public catalog —
-// that is now the Supabase-backed "Catálogo Público" admin tabs below,
-// which is also where "Receita do Dia" moved to (recipes.featured, set via
-// the site recipe form) once it became a real, syncing column instead of a
-// local-only tag. Kept here, clearly labeled, so nothing already working
-// is silently dropped (see PR description for why this split exists).
+// Supabase-backed visual authoring surface for the three catalog pages.
 function renderLocalHomeCustomization(app, v) {
-  return html`
-    <div style="margin-top:24px;border-top:1px solid var(--neutral-100);padding-top:20px">
-      <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);color:var(--yellow-700);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:18px">Personalização local — válida apenas neste dispositivo, não é sincronizada com o Supabase.</div>
-      <div style="font-size:15px;font-weight:700;margin-top:6px;margin-bottom:4px">Seções de Receitas</div>
-      <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na Home/Receitas. Arraste para reordenar. Segure uma seção para selecionar várias e excluir de uma vez.</div>
-      ${v.sectionSelectionMode && selectionBar(v.selectedSectionCountLabel, v.onBulkDeleteSectionsAsk, v.onCancelSectionSelection)}
-      ${v.homeSectionOrderBusy && html`<div style="font-size:12px;color:var(--neutral-600);margin-bottom:8px">Sincronizando ordem das seções...</div>`}
-      ${v.sectionToggleRows.map(toggleRow)}
-      ${iconChoiceRow(v.newSectionIcon, v.onPickSectionIcon)}
-      <div style="display:flex;gap:10px;margin-top:6px">
-        <input type="text" placeholder="Nova seção (ex: Sopas de Inverno)" value=${v.newSectionLabel} onInput=${v.onNewSectionLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
-        <div onClick=${v.onAddSection} style="padding:12px 18px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">+ Adicionar</div>
-      </div>
-
-      <div style="font-size:15px;font-weight:700;margin-top:26px;margin-bottom:4px">Seções de Produtos</div>
-      <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha, adicione ou remova as seções que aparecem na página Produtos/Início. Arraste para reordenar. Segure uma seção para selecionar várias e excluir de uma vez.</div>
-      ${v.productSectionSelectionMode && selectionBar(v.selectedProductSectionCountLabel, v.onBulkDeleteProductSectionsAsk, v.onCancelProductSectionSelection)}
-      ${v.productSectionToggleRows.map(toggleRow)}
-      ${iconChoiceRow(v.newProductSectionIcon, v.onPickProductSectionIcon)}
-      <div style="display:flex;gap:10px;margin-top:6px">
-        <input type="text" placeholder="Nova seção (ex: Promoções)" value=${v.newProductSectionLabel} onInput=${v.onNewProductSectionLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
-        <div onClick=${v.onAddProductSection} style="padding:12px 18px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">+ Adicionar</div>
-      </div>
-
-      <div style="font-size:15px;font-weight:700;margin-top:26px;margin-bottom:4px">Proteínas / Categorias de Produtos</div>
-      <div style="font-size:13px;color:var(--neutral-600);margin-bottom:14px">Escolha quais categorias ficam disponíveis para cadastro e importação de produtos. Segure uma categoria para selecionar várias e excluir de uma vez.</div>
-      ${v.proteinSelectionMode && selectionBar(v.selectedProteinCountLabel, v.onBulkDeleteProteinsAsk, v.onCancelProteinSelection)}
-      ${v.proteinToggleRows.map(toggleRow)}
-      <div style="display:flex;gap:10px;margin-top:6px">
-        <input type="text" placeholder="Nova categoria (ex: Caprinos)" value=${v.newProteinLabel} onInput=${v.onNewProteinLabelChange} style="flex:1;padding:12px 14px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);background:var(--neutral-0);color:var(--neutral-900);font-family:var(--font-sans);font-size:14px"/>
-        <div onClick=${v.onAddProtein} style="padding:12px 18px;border-radius:var(--radius-md);background:var(--brand-700);color:#F4F2F1;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap">+ Adicionar</div>
-      </div>
+  const tab = (key, label, click) => html`<button onClick=${click} className=${v.catalogEditorPage === key ? 'yc-editor-tab is-active' : 'yc-editor-tab'}>${label}</button>`;
+  return html`<div className="yc-catalog-editor">
+    <div className="yc-editor-heading"><div><strong>Editor visual do catálogo</strong><span>Arraste seções, edite títulos e insira conteúdo na prévia real.</span></div><span className="yc-cloud-status">● Salvo no Supabase</span></div>
+    <div className="yc-editor-tabs">${tab('home','Home',v.onCatalogEditorHome)}${tab('recipes','Receitas',v.onCatalogEditorRecipes)}${tab('products','Produtos',v.onCatalogEditorProducts)}</div>
+    <div className="yc-editor-canvas">
+      <div className="yc-editor-page-title">${v.catalogEditorPage === 'home' ? 'Descubra novos sabores' : v.catalogEditorPage === 'recipes' ? 'Receitas' : 'Produtos'}</div>
+      ${v.catalogEditorSections.map(sec => html`<section key=${sec.id} className="yc-editor-section" draggable="true" onDragStart=${sec.onDragStart} onDragOver=${sec.onDragOver} onDrop=${sec.onDrop}>
+        <div className="yc-editor-section-toolbar"><span className="yc-drag-handle">⠿</span><button onClick=${sec.onEdit} title="Editar título">✎</button></div>
+        <div className="yc-editor-section-head"><h3 onClick=${sec.onEdit}>${sec.name}</h3><button onClick=${sec.onAdd}>＋ Adicionar</button></div>
+        <div className=${v.catalogEditorLayout === 'grid' ? 'yc-editor-cards is-grid' : 'yc-editor-cards'}>${sec.items.map(item => html`<article><img src=${item.image} alt=""/><b>${item.name}</b></article>`)}${!sec.items.length && html`<div className="yc-editor-empty">Use “Adicionar” para preencher esta seção</div>`}</div>
+      </section>`)}
     </div>
-  `;
+    ${v.catalogPicker && html`<aside className="yc-editor-picker"><div className="yc-picker-head"><div><b>Adicionar conteúdo</b><small>${v.catalogPicker.sectionName}</small></div><button onClick=${v.onCloseCatalogPicker}>×</button></div><input autofocus type="search" placeholder="Buscar no catálogo..." value=${v.catalogPickerQuery} onInput=${v.onCatalogPickerQuery}/><div className="yc-picker-list">${v.catalogPickerItems.map(item => html`<button onClick=${item.onAdd}><img src=${item.image} alt=""/><span>${item.name}</span><b>＋</b></button>`)}</div></aside>`}
+  </div>`;
 }
 
 // ==== Catálogo Público (admin-only, Supabase scope='site' — bug #1 fix) ====
