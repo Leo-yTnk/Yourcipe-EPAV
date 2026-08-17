@@ -1532,6 +1532,7 @@ function renderSiteProductsTab(app, v) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Novo Produto no Catálogo
       </div>
+      <div onClick=${v.onRefreshAllPrices} style="text-align:center;padding:10px;margin-bottom:12px;border:1px solid var(--brand-500);border-radius:var(--radius-md);color:var(--brand-700);font-weight:700;cursor:pointer">Atualizar todos os preços na Swift</div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
@@ -1542,9 +1543,10 @@ function renderSiteProductsTab(app, v) {
           <img className="yc-admin-product-image" loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
           <div className="yc-admin-card-info" style="flex:1;min-width:0">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
+            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code} · ${row.priceStatusLabel}</div><div style="font-size:11px;color:var(--neutral-600)">${row.priceDetailsLabel}</div>
           </div>
           <label className="yc-admin-price" style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
+          <div className="yc-admin-primary-action" onClick=${row.onRefreshPrice} style="font-size:11px;font-weight:700;color:var(--brand-700);cursor:pointer">Atualizar preço agora</div>
           <div className="yc-admin-primary-action" onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div className="yc-admin-edit" onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
@@ -2357,6 +2359,7 @@ function renderSiteProductFormModal(app, v) {
           ${field('Categoria (proteína/produto)', html`<${CustomSelect} options=${v.siteProteinCategoryOptions} value=${f.categoryId} onChange=${v.siteProductFormOnCategorySet} />`, { required: true })}
           ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />`, { required: true })}
           ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.siteProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('Página oficial do produto na Swift', html`<input type="url" placeholder="https://www.swift.com.br/produto" value=${f.swiftUrl} onInput=${v.siteProductFormOnSwiftUrl} style=${FORM_INPUT_STYLE}/>`)}
           ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.siteProductFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`)}
           ${checkbox({ checked: !!f.active, onChange: v.siteProductFormOnActive, label: 'Ativo (visível publicamente)' })}
         </div>

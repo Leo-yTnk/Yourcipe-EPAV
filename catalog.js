@@ -16,7 +16,7 @@
 import { supabase } from './supabase-client.js?v=20260817-7';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
-const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, image_url, version, created_at, updated_at';
+const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, image_url, version, created_at, updated_at, swift_product_url, swift_product_id, swift_sku, price_cents, regular_price_cents, promo_price_cents, promo_min_quantity, pricing_type, price_unit, price_source, price_last_checked_at, price_last_changed_at, price_last_success_at, price_status, price_error, price_region, price_reference_zip_code, price_source_hash';
 const CATEGORY_SELECT = 'id, category_code, owner_id, scope, type, name, slug, sort_order, active, version, created_at, updated_at';
 
 // ---------------------------------------------------------------------
@@ -540,6 +540,15 @@ export async function createSiteProduct({ name, categoryId, unit, price, active,
 }
 export async function updateSiteProduct(id, patch) {
   return unwrap(await supabase.from('products').update(patch).eq('id', id).select(PRODUCT_SELECT).single(), 'updateSiteProduct');
+}
+export async function setProductSwiftSource(id, url) {
+  return unwrap(await supabase.rpc('set_product_swift_source', { p_product_id: id, p_url: url || null }), 'setProductSwiftSource');
+}
+export async function refreshProductPrice(productId) {
+  return unwrap(await supabase.functions.invoke('swift-price-sync', { body: { productId } }), 'refreshProductPrice');
+}
+export async function refreshAllProductPrices() {
+  return unwrap(await supabase.functions.invoke('swift-price-sync', { body: {} }), 'refreshAllProductPrices');
 }
 export async function createSiteRecipe(fields) {
   return unwrap(await supabase.from('recipes').insert({
