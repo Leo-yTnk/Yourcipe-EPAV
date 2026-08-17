@@ -8,10 +8,14 @@
   --shadow-sm: 0 1px 2px rgba(28, 24, 23, 0.06), 0 1px 1px rgba(28, 24, 23, 0.04);
   --shadow-md: 0 4px 12px rgba(28, 24, 23, 0.08), 0 2px 4px rgba(28, 24, 23, 0.04);
   --shadow-lg: 0 12px 32px rgba(28, 24, 23, 0.12), 0 4px 8px rgba(28, 24, 23, 0.06);
+  /* Shared interaction language: short, responsive, and consistent. */
+  --motion-fast: 100ms; --motion-base: 180ms; --motion-slow: 260ms;
+  --ease-out: cubic-bezier(.2,.8,.2,1); --ease-press: cubic-bezier(.2,0,0,1);
+  --press-scale: .975; --focus-ring: 0 0 0 3px color-mix(in srgb, var(--focus-orange) 38%, transparent);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; overflow: hidden; }
-body { margin: 0; font-family: var(--font-sans); }
+body { margin: 0; font-family: var(--font-sans); -webkit-tap-highlight-color: transparent; }
 
 @keyframes ycFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes ycPopIn { from { opacity: 0; transform: scale(0.95) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
@@ -33,7 +37,42 @@ body { margin: 0; font-family: var(--font-sans); }
 .yc-font-sm { zoom: 0.875; }
 .yc-font-lg { zoom: 1.15; }
 
-:focus { outline: 2px solid var(--focus-orange); outline-offset: 2px; }
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--focus-orange); outline-offset: 3px;
+  box-shadow: var(--focus-ring);
+}
+
+.yc-skip-link {
+  position: fixed; z-index: 1000; top: 10px; left: 10px; transform: translateY(-160%);
+  padding: 11px 16px; border-radius: var(--radius-md); color: #fff; background: var(--brand-900);
+  font-weight: 700; transition: transform var(--motion-fast) var(--ease-out);
+}
+.yc-skip-link:focus-visible { transform: translateY(0); }
+.yc-sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+}
+
+/* Universal affordances for native and ARIA controls. Inline component
+   colours remain authoritative; this layer only supplies motion and touch. */
+:where(button, [role="button"], [role="tab"], [role="option"], a[href]) {
+  touch-action: manipulation;
+  transition: transform var(--motion-fast) var(--ease-press), box-shadow var(--motion-base) var(--ease-out), opacity var(--motion-fast) linear, background-color var(--motion-base) var(--ease-out), border-color var(--motion-base) var(--ease-out) !important;
+}
+:where(button, [role="button"], [role="tab"], a[href]):not(:disabled):not([aria-disabled="true"]):active {
+  transform: scale(var(--press-scale)) !important; box-shadow: var(--shadow-sm) !important;
+}
+:where(button, [role="button"], [role="tab"]):disabled,
+:where([role="button"], [role="tab"])[aria-disabled="true"] { opacity: .58; cursor: not-allowed !important; }
+:where(input, textarea, select) {
+  min-height: 44px;
+  transition: border-color var(--motion-base) var(--ease-out), box-shadow var(--motion-base) var(--ease-out), background-color var(--motion-base) var(--ease-out);
+}
+:where(input, textarea, select):focus-visible { border-color: var(--focus-orange) !important; }
+:where(button, [role="button"]) { min-height: 44px; }
+[aria-busy="true"] { cursor: progress !important; }
 
 .yc-scroll::-webkit-scrollbar { width: 0; height: 0; }
 .yc-scroll { scrollbar-width: none; }
@@ -79,7 +118,10 @@ input[type="checkbox"] { margin-right: 8px; }
   color: #F4F2F1; background: var(--brand-700); font-family: var(--font-sans);
   transition: transform .15s ease, background .15s ease;
 }
-.yc-search-button:hover { background: var(--brand-900); transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine) {
+  .yc-search-button:hover { background: var(--brand-900); transform: translateY(-1px); }
+  :where(button, [role="button"], [role="tab"], a[href]):not(:disabled):not([aria-disabled="true"]):hover { filter: brightness(.97); }
+}
 
 .yc-selection-bar {
   position: fixed; left: 40px; right: 40px; top: 14px; z-index: 35;
@@ -110,6 +152,13 @@ input[type="checkbox"] { margin-right: 8px; }
   color: #F4F2F1; background: var(--brand-700); font: 700 14px var(--font-sans); cursor: pointer;
 }
 .yc-redeem-form button:disabled { opacity: .65; cursor: wait; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important; transition-duration: .01ms !important;
+  }
+}
 
 @media (max-width: 600px) {
   .yc-selection-bar { left: 12px; right: 12px; top: 10px; align-items: flex-start; flex-direction: column; }
