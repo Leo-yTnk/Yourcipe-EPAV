@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260813-1';
-import { CustomSelect } from './custom-select.js?v=20260813-1';
+import { html } from './vendor/htm-preact-standalone.js?v=20260817-1';
+import { CustomSelect } from './custom-select.js?v=20260817-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -27,14 +27,17 @@ function field(label, control, { required = false, span = 1 } = {}) {
 
 export function renderApp(app) {
   const v = app.computeViewModel();
+  const pageTitle = v.isInicio ? 'Início' : v.isHome ? 'Receitas' : v.isProducts ? 'Produtos' : v.isSearch ? 'Buscar receitas' : v.isFavorites ? 'Receitas favoritas' : v.isDados ? 'Indicadores' : v.isSalesHistory ? 'Histórico de vendas' : v.isProfile ? 'Perfil' : v.isDetail ? 'Detalhes da receita' : v.isAdmin ? 'Administração' : 'Yourcipe';
   return html`
     <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--neutral-800)">
+      <a className="yc-skip-link" href="#yc-main-content">Ir para o conteúdo principal</a>
       <div ref=${(el) => { app.frameRef.current = el; }} className=${v.appThemeClass} style=${`width:100%;max-width:${v.frameMaxWidth};height:100%;max-height:${v.frameMaxHeight};min-height:480px;margin:0 auto;background:var(--neutral-0);position:relative;overflow:hidden;font-family:var(--font-sans);color:var(--neutral-900);box-shadow:var(--shadow-lg);transition:background 0.2s ease,color 0.2s ease,max-width 0.2s ease,max-height 0.2s ease`}>
 
-        <div ref=${(el) => { app.scrollRef.current = el; }} className="yc-scroll" style=${`position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding-bottom:${v.scrollBottomPad}px`}>
+        <main id="yc-main-content" ref=${(el) => { app.scrollRef.current = el; }} className="yc-scroll" tabindex="-1" style=${`position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding-bottom:${v.scrollBottomPad}px`}>
+          <h1 className="yc-sr-only">${pageTitle}</h1>
           <div ref=${(el) => { app.stageRef.current = el; }} style=${`padding-left:${v.stagePadLeft}px;padding-right:${v.stagePadRight}px;transition:padding 0.2s ease`}>
 
-            ${v.notLoaded && html`<div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--neutral-600);font-size:15px">Carregando receitas...</div>`}
+            ${v.notLoaded && html`<div role="status" aria-live="polite" style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--neutral-600);font-size:15px">Carregando receitas...</div>`}
             ${v.isInicio && renderInicio(app, v)}
             ${v.isHome && renderHome(app, v)}
             ${v.isProducts && renderProducts(app, v)}
@@ -46,7 +49,7 @@ export function renderApp(app) {
             ${v.isDetail && renderDetail(app, v)}
             ${v.isAdmin && renderAdmin(app, v)}
           </div>
-        </div>
+        </main>
 
         ${v.isDetail && renderDetailButtons(app, v)}
         ${v.showProductDetailModal && renderProductDetailModal(app, v)}
