@@ -81,3 +81,24 @@ describe('the YSH share code never overflows its container', () => {
     expect(shareBlock.slice(0, 200)).not.toMatch(/<input|<textarea/);
   });
 });
+
+describe('mobile-first layout primitives cover pages, navigation and overlays', () => {
+  it('keeps landscape layouts isolated from the portrait-tablet adaptations', () => {
+    expect(stylesCss).toMatch(/@media \(orientation: portrait\) and \(max-width: 900px\)/);
+    expect(stylesCss).toMatch(/--yc-page-gutter:\s*clamp\(/);
+  });
+
+  it('uses shared stage, card strip, bottom navigation and modal hooks', () => {
+    expect(templateJs).toContain('className="yc-stage"');
+    expect(templateJs).toContain('yc-card-strip');
+    expect(templateJs).toContain('className="yc-bottom-nav"');
+    expect(templateJs.match(/className="yc-modal-overlay"/g)?.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it('provides phone and extra-narrow compositions instead of only shrinking desktop', () => {
+    expect(stylesCss).toMatch(/@media \(max-width: 600px\)/);
+    expect(stylesCss).toMatch(/\.yc-modal-overlay[^}]*align-items:\s*flex-end/s);
+    expect(stylesCss).toMatch(/@media \(max-width: 350px\)/);
+    expect(stylesCss).toMatch(/\.yc-product-grid\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  });
+});
