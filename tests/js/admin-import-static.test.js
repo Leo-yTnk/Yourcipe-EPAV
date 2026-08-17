@@ -51,12 +51,12 @@ describe('admin spreadsheet import wiring', () => {
     expect(nativeSectionsSql).toContain('perform public.ensure_native_recipe_sections()');
   });
 
-  it('requires images for new products while supporting price-only updates', () => {
+  it('requires product metadata while keeping legacy price updates compatible', () => {
     expect(app).toContain("get(row, ['imagem', 'image_url', 'url da imagem'])");
     expect(app).toContain('URL de imagem ausente ou inválida');
     expect(app).toContain('image_url: imageUrl');
     expect(template).toContain('<strong>imagem</strong> — obrigatória para produtos novos');
-    expect(template).toContain('informe apenas <strong>nome</strong> e <strong>preco</strong>');
+    expect(template).toContain('não é necessário informar o preço');
     expect(app).toContain("products: 'upsert'");
     expect(catalogSql).toContain("image_url = btrim(v_item->>'image_url')");
     expect(catalogSql).toContain('unit, price, image_url, active');
@@ -102,6 +102,25 @@ describe('admin spreadsheet import wiring', () => {
     expect(app).toContain('Seção de receita não encontrada:');
     expect(app).toContain('A validação do servidor rejeitou os dados');
     expect(app).toContain('Detalhe técnico: ${diagnostic}');
+  });
+
+  it('unifies Swift source data and blocks duplicate identities', () => {
+    const unifiedSql = fs.readFileSync('supabase/025_unified_secure_catalog_import.sql', 'utf8');
+    expect(app).toContain("['swift_url', 'url swift'");
+    expect(app).toContain('seenSwiftUrls');
+    expect(app).toContain('seenSwiftSkus');
+    expect(app).toContain('10 * 1024 * 1024');
+    expect(template).toContain('<strong>swift_url</strong>');
+    expect(template).toContain('operação é única e transacional');
+    expect(unifiedSql).toContain('duplicate_swift_url_in_payload');
+    expect(unifiedSql).toContain('products_site_swift_url_uk');
+    expect(unifiedSql).toContain("price_status = case");
+    expect(unifiedSql).toContain("coalesce(nullif(v_item->>'price', '')::numeric, 0)");
+    expect(unifiedSql).toContain("price_source = 'SWIFT' and price_last_success_at is not null");
+    expect(app).toContain("price: Number.isFinite(price) ? price : null");
+    expect(app).toContain('swift_url é obrigatória para integrar o preço');
+    expect(app).toContain('Origem Swift inválida ou duplicada');
+    expect(app).not.toContain("unidade: 'kg', preco: 89.90");
   });
 
   it('shows the release version at the end of the profile page', () => {
