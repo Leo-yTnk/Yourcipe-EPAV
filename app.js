@@ -1,28 +1,28 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260817-6';
-import { CustomSelect } from './custom-select.js?v=20260817-6';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260817-7';
+import { CustomSelect } from './custom-select.js?v=20260817-7';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260817-6';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260817-6';
-import { supabase } from './supabase-client.js?v=20260817-6';
-import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260817-6';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-6';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260817-6';
-import { normalizeDisplayName } from './display-name.js?v=20260817-6';
-import * as catalog from './catalog.js?v=20260817-6';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260817-6';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260817-6';
-import { createLoadGuard } from './load-guard.js?v=20260817-6';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260817-6';
+} from './data.js?v=20260817-7';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260817-7';
+import { supabase } from './supabase-client.js?v=20260817-7';
+import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260817-7';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-7';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260817-7';
+import { normalizeDisplayName } from './display-name.js?v=20260817-7';
+import * as catalog from './catalog.js?v=20260817-7';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260817-7';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260817-7';
+import { createLoadGuard } from './load-guard.js?v=20260817-7';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260817-7';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260817-6';
+const FRONTEND_VERSION = '20260817-7';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -2111,7 +2111,10 @@ class App extends Component {
   // never merged into one list, so a caller can't accidentally mix types.
   publicRecipeCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'receita');
   publicProteinCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'proteina');
-  publicSectionCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'secao');
+  // Legacy `secao` rows are treated as Home sections until migration 023 is
+  // applied. New rows always carry an explicit page-specific section type.
+  publicHomeSectionCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'secao_home' || c.type === 'secao');
+  publicSectionCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'secao_receita');
   publicProductSectionCategories = () => (this.state.publicCategories || []).filter(c => c.type === 'secao_produto');
 
   // =========================================================================
@@ -2121,7 +2124,8 @@ class App extends Component {
   // the public catalog instead of personal data.
   // =========================================================================
   siteRecipeCategories = () => this.state.siteCategories.filter(c => c.type === 'receita');
-  siteSectionCategories = () => this.state.siteCategories.filter(c => c.type === 'secao');
+  siteHomeSectionCategories = () => this.state.siteCategories.filter(c => c.type === 'secao_home' || c.type === 'secao');
+  siteSectionCategories = () => this.state.siteCategories.filter(c => c.type === 'secao_receita');
   siteProteinCategories = () => this.state.siteCategories.filter(c => c.type === 'proteina');
   siteProductSectionCategories = () => this.state.siteCategories.filter(c => c.type === 'secao_produto');
 
@@ -2698,8 +2702,8 @@ class App extends Component {
 
   onHomeSectionDragStart = (id) => this.setState({ homeSectionDragKey: id });
   onHomeSectionDragOver = (e) => { if (e && e.preventDefault) e.preventDefault(); };
-  // Handles both type='secao' (Receitas/Início sections) and
-  // type='secao_produto' (Produtos sections) rows in the same Categorias
+  // Each Editor page owns an independent section order. Keeping the type in
+  // the row prevents a drag in one page from scrambling another page.
   // admin list — the dragged row's own type decides which subset gets
   // reordered and which admin_reorder_*_sections RPC persists it, so the
   // two vocabularies never mix into one order.
@@ -2708,7 +2712,7 @@ class App extends Component {
     if (!sourceId || sourceId === targetId || this.state.authRole !== 'admin') { this.setState({ homeSectionDragKey: null }); return; }
     const siteCategories = [...this.state.siteCategories];
     const dragged = siteCategories.find(c => c.id === sourceId);
-    if (!dragged || (dragged.type !== 'secao' && dragged.type !== 'secao_produto')) { this.setState({ homeSectionDragKey: null }); return; }
+    if (!dragged || !['secao', 'secao_home', 'secao_receita', 'secao_produto'].includes(dragged.type)) { this.setState({ homeSectionDragKey: null }); return; }
     const sectionType = dragged.type;
     const sections = siteCategories.filter(c => c.type === sectionType);
     const from = sections.findIndex(c => c.id === sourceId), to = sections.findIndex(c => c.id === targetId);
@@ -2717,7 +2721,9 @@ class App extends Component {
     const orderedIds = new Set(sections.map(c => c.id));
     const reordered = [...siteCategories.filter(c => !orderedIds.has(c.id)), ...sections.map((c, i) => ({ ...c, sort_order: i }))];
     this.setState({ siteCategories: reordered, publicCategories: reordered, homeSectionDragKey: null, homeSectionOrderBusy: true });
-    const reorderFn = sectionType === 'secao' ? catalog.adminReorderHomeSections : catalog.adminReorderProductSections;
+    const reorderFn = sectionType === 'secao_produto'
+      ? catalog.adminReorderProductSections
+      : sectionType === 'secao_receita' ? catalog.adminReorderRecipeSections : catalog.adminReorderHomeSections;
     const { error } = await reorderFn(sections.map((c, i) => ({ id: c.id, sort_order: i })));
     this.setState({ homeSectionOrderBusy: false });
     if (error) { this.flashAdmin('Não foi possível sincronizar a ordem das seções.'); this.loadSiteCatalogData(); this.loadPublicCatalog(); }
@@ -3252,12 +3258,12 @@ class App extends Component {
     // Public section visibility is role-independent. Local preferences may
     // disable a known section, but an admin is never routed to a different
     // loader and a newly-created public section defaults to visible.
-    const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : this.publicSectionCategories().some(c => c.slug === key); };
+    const sectionOn = (key) => { const h = s.homeSections.find(x => x.key === key); return h ? h.enabled : this.publicHomeSectionCategories().some(c => c.slug === key); };
     // Home sections are public catalog data, ordered by categories.sort_order.
     // Admins can drag section rows in the public catalog; every visitor then
     // sees this same order because fetchPublicCategories/fetchAdminCategories
     // both order by sort_order before the Home blocks are assembled here.
-    const publicHomeSections = this.publicSectionCategories();
+    const publicHomeSections = this.publicHomeSectionCategories();
     const homeSectionSource = publicHomeSections.length
       ? publicHomeSections.map(c => ({ key: c.slug, label: c.name }))
       : SECTION_DEFS.map(d => ({ key: d.key, label: d.label }));
@@ -3667,7 +3673,7 @@ class App extends Component {
       onRequestPublish: () => this.onOpenPublishRequest('product', p.id, p.name),
       onPriceChange: this.onInlinePriceChange('my', p.id), onPriceBlur: () => this.saveInlinePrice('my', p), onPriceKeyDown: this.onInlinePriceKeyDown('my', p),
     }); }).filter(row => matchesSearch(row.name));
-    const myCategoryTypeLabel = (t) => t === 'receita' ? 'Receita' : t === 'secao' ? 'Seção' : t === 'secao_produto' ? 'Seção de Produto' : 'Proteína/Produto';
+    const myCategoryTypeLabel = (t) => t === 'receita' ? 'Categoria de Receita' : t === 'secao_home' || t === 'secao' ? 'Seção da Home' : t === 'secao_receita' ? 'Seção de Receitas' : t === 'secao_produto' ? 'Seção de Produtos' : 'Categoria de Produtos';
     const myCategoryRows = s.myCategories.map(c => ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       active: c.active, activeLabel: c.active ? 'Ativa' : 'Inativa', toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
@@ -3794,9 +3800,15 @@ class App extends Component {
       toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(c.updated_at),
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
-      onDelete: () => this.askDeleteSiteCategory(c.id), draggable: c.type === 'secao' || c.type === 'secao_produto', isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id),
+      onDelete: () => this.askDeleteSiteCategory(c.id), draggable: ['secao', 'secao_home', 'secao_receita', 'secao_produto'].includes(c.type), isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id),
     })).filter(row => matchesSearch(row.name));
-    const editorTypes = s.catalogEditorPage === 'products' ? ['secao_produto'] : (s.catalogEditorPage === 'recipes' ? ['secao'] : ['secao', 'secao_produto']);
+    const categoryGroupOrder = ['secao_home', 'secao_receita', 'secao_produto', 'receita', 'proteina'];
+    const normalizedCategoryType = type => type === 'secao' ? 'secao_home' : type;
+    const siteCategoryGroups = categoryGroupOrder.map(type => ({
+      type, label: myCategoryTypeLabel(type),
+      rows: siteCategoryRows.filter(row => normalizedCategoryType(s.siteCategories.find(c => c.id === row.id)?.type) === type),
+    })).filter(group => group.rows.length);
+    const editorTypes = s.catalogEditorPage === 'products' ? ['secao_produto'] : (s.catalogEditorPage === 'recipes' ? ['secao_receita'] : ['secao_home', 'secao']);
     const catalogEditorSections = s.siteCategories.filter(c => editorTypes.includes(c.type) && c.active !== false).map(c => {
       const source = c.type === 'secao_produto' ? s.products : s.recipes;
       const items = source.filter(item => (item.tags || []).includes(c.slug)).map(item => ({
@@ -4050,7 +4062,7 @@ class App extends Component {
       // Catálogo Público (admin)
       siteCatalogLoading: s.siteCatalogLoading, hasSiteCatalogErrorBanner: !!s.siteCatalogError, siteCatalogError: s.siteCatalogError,
       onRetrySiteCatalogData: () => this.loadSiteCatalogData(),
-      siteRecipeRows, siteProductRows, siteCategoryRows,
+      siteRecipeRows, siteProductRows, siteCategoryRows, siteCategoryGroups,
       catalogEditorPage: s.catalogEditorPage, catalogEditorSections, catalogPicker: s.catalogPicker, catalogPickerItems, catalogPickerQuery: s.catalogPickerQuery,
       catalogEditorLoading: s.siteCatalogLoading || s.publicCatalogSource === 'loading',
       onCatalogEditorHome: () => this.setCatalogEditorPage('home'), onCatalogEditorRecipes: () => this.setCatalogEditorPage('recipes'), onCatalogEditorProducts: () => this.setCatalogEditorPage('products'),
@@ -4076,7 +4088,7 @@ class App extends Component {
       onCancelSiteProductForm: this.onCancelSiteProductForm, onSaveSiteProductForm: this.onSaveSiteProductForm,
       showSiteCategoryForm: s.showSiteCategoryForm, siteCategoryFormTitle: s.siteCategoryFormMode === 'new' ? 'Nova Categoria do Catálogo' : 'Editar Categoria do Catálogo', siteCategoryForm: s.siteCategoryForm || {},
       siteCategoryFormOnName: this.siteCategoryFormField('name'), siteCategoryFormOnTypeSet: this.setFormField('siteCategoryForm', 'type'), siteCategoryFormOnActive: this.toggleSiteCategoryFormActive,
-      siteCategoryTypeOptions: [{ value: 'receita', label: 'Receita' }, { value: 'secao', label: 'Seção' }, { value: 'secao_produto', label: 'Seção de Produto' }, { value: 'proteina', label: 'Proteína/Produto' }],
+      siteCategoryTypeOptions: [{ value: 'secao_home', label: 'Seção da Home' }, { value: 'secao_receita', label: 'Seção de Receitas' }, { value: 'secao_produto', label: 'Seção de Produtos' }, { value: 'receita', label: 'Categoria de Receita' }, { value: 'proteina', label: 'Categoria de Produtos' }],
       onCancelSiteCategoryForm: this.onCancelSiteCategoryForm, onSaveSiteCategoryForm: this.onSaveSiteCategoryForm,
       // "Solicitar publicação"
       publishRequestOpen: !!s.publishRequest, publishRequest: s.publishRequest || {}, publishRequestBusy: s.publishRequestBusy,
@@ -4261,7 +4273,9 @@ class App extends Component {
         const isSite = impact.scope === 'site';
         const byType = (t) => (isSite ? s.siteCategories : s.creationCategories)
           .filter(c => c.type === t && c.id !== impact.category_id).map(c => ({ value: c.id, label: c.name }));
-        const productOptions = byType('proteina'), recipeOptions = byType('receita'), sectionOptions = byType('secao'), productSectionOptions = byType('secao_produto');
+        const productOptions = byType('proteina'), recipeOptions = byType('receita');
+        const sectionOptions = byType(['secao_home', 'secao_receita'].includes(impact.type) ? impact.type : 'secao');
+        const productSectionOptions = byType('secao_produto');
         const productRows = (s.deleteCategoryRows.products || []).map(p => ({
           key: p.id, label: `${p.name} (${p.product_code})`,
           replacementCategoryId: s.categoryResolutions.products[p.id] || '', options: productOptions,
@@ -4336,7 +4350,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260817-6';
+import { renderApp } from './template.js?v=20260817-7';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
