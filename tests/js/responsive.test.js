@@ -135,3 +135,21 @@ describe('typography and authored checkbox controls', () => {
     expect(stylesCss).toMatch(/\.yc-checkbox-control[^}]*width:22px[^}]*height:22px[^}]*border-radius:7px/);
   });
 });
+
+describe('catalog visual editor fidelity', () => {
+  it('waits for both catalog sources before showing the preview', () => {
+    const appJs = read('app.js');
+    expect(appJs).toContain("catalogEditorLoading: s.siteCatalogLoading || s.publicCatalogSource === 'loading'");
+    expect(templateJs).toContain('aria-busy=${v.catalogEditorLoading}');
+    expect(templateJs).toContain('Carregando a prévia do catálogo...');
+    expect(templateJs).toContain('!v.catalogEditorLoading && v.catalogEditorSections.map');
+  });
+
+  it('matches the public page and card typography in the preview', () => {
+    expect(templateJs).toContain("'O que vamos cozinhar hoje?'");
+    expect(stylesCss).toMatch(/\.yc-editor-page-title\s*\{[^}]*font-size:32px[^}]*font-weight:700/);
+    expect(stylesCss).toMatch(/\.yc-editor-section-head h3\s*\{[^}]*font-size:20px[^}]*font-weight:700/);
+    expect(stylesCss).toMatch(/\.yc-editor-cards article b\s*\{[^}]*font-size:15px[^}]*font-weight:600/);
+    expect(templateJs).toContain('<small>${item.detail}</small>');
+  });
+});
