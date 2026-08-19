@@ -94,7 +94,7 @@ class App extends Component {
     let fontSize = 'normal';
     try { const sfz = localStorage.getItem(LS_KEYS.fontSize); if (sfz === 'small' || sfz === 'large' || sfz === 'normal') fontSize = sfz; } catch (e) {}
     let productLayout = 'carousel';
-    try { const spl = localStorage.getItem(LS_KEYS.productLayout); if (spl === 'carousel' || spl === 'grid') productLayout = spl; } catch (e) {}
+    try { const spl = localStorage.getItem(LS_KEYS.productLayout); if (spl === 'carousel' || spl === 'grid' || spl === 'spreadsheet') productLayout = spl; } catch (e) {}
     // Welcome splash shows once per browser, ever — not once per session/
     // login. If localStorage is unavailable (private browsing, disabled,
     // throws), this fails safe by falling through to the pre-existing
@@ -111,6 +111,7 @@ class App extends Component {
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
       productSelectionMode: false, selectedProductIds: [], productSelectionScope: '',
+      categorySelectionMode: false, selectedCategoryIds: [], categorySelectionScope: '',
       sectionSelectionMode: false, selectedSectionKeys: [],
       productSectionSelectionMode: false, selectedProductSectionKeys: [],
       proteinSelectionMode: false, selectedProteinKeys: [],
@@ -2524,7 +2525,7 @@ class App extends Component {
   setNavRailRight = () => { this.setState({ navRailSide: 'right' }); this.persist(LS_KEYS.navRailSide, 'right'); };
   onSetFontSize = (fontSize) => { this.setState({ fontSize }); this.persist(LS_KEYS.fontSize, fontSize); };
   onProfileProductLayoutSet = (productLayout) => {
-    if (productLayout !== 'carousel' && productLayout !== 'grid') return;
+    if (!['carousel', 'grid', 'spreadsheet'].includes(productLayout)) return;
     this.setState({ productLayout });
     this.persist(LS_KEYS.productLayout, productLayout);
   };
@@ -2891,6 +2892,12 @@ class App extends Component {
     } else if (cd.type === 'sale') {
       if (this.state.session) { await catalog.deleteSale(cd.id); await this.loadSalesData(); this.setState({ confirmDelete: null }); }
       else { const vendas = this.state.vendas.filter(v => v.id !== cd.id); this.setState({ vendas, confirmDelete: null }); this.persist(LS_KEYS.vendas, vendas); }
+    } else if (cd.type === 'bulk-delete-categories') {
+      const results = await Promise.all(cd.ids.map(id => catalog.deleteCategory(id)));
+      const failed = results.filter(result => result.error).length;
+      this.setState({ confirmDelete: null, categorySelectionMode: false, selectedCategoryIds: [], categorySelectionScope: '' });
+      if (cd.scope === 'site') { this.refreshAdminCatalog(); this.loadPublicCatalog(); } else this.loadMyCreationData(this.state.session && this.state.session.user.id);
+      this.flashAdmin(failed ? `${failed} categoria(s) em uso não puderam ser excluídas.` : 'Categorias excluídas.');
     } else if (cd.type === 'bulk-delete-sales') {
       if (this.state.session) { await Promise.all(cd.ids.map(id => catalog.deleteSale(id))); await this.loadSalesData(); this.setState({ confirmDelete: null, saleSelectionMode: false, selectedSaleIds: [] }); }
       else { const vendas = this.state.vendas.filter(v => !cd.ids.includes(v.id)); this.setState({ vendas, confirmDelete: null, saleSelectionMode: false, selectedSaleIds: [] }); this.persist(LS_KEYS.vendas, vendas); }
@@ -2961,6 +2968,30 @@ class App extends Component {
     }
   };
   askBulkDeleteProducts = () => { const scope = this.state.productSelectionScope || (this.state.adminTab === 'products' ? 'site' : this.state.adminTab === 'myProducts' ? 'my' : 'local'); this.setState({ confirmDelete: { type: scope === 'site' ? 'bulk-delete-site-products' : scope === 'my' ? 'bulk-delete-my-products' : 'bulk-delete-products', ids: [...this.state.selectedProductIds], message: `Excluir ${this.state.selectedProductIds.length} produto(s) selecionado(s)? Esta ação não pode ser desfeita.` } }); };
+
+  startCategoryRowPress = (id, scope) => {
+    clearTimeout(this._categoryPressTimer);
+    this._categoryPressTimer = setTimeout(() => {
+      this.markLongPressSelectionActivated();
+      this.setState(s => ({ categorySelectionMode: true, categorySelectionScope: scope, selectedCategoryIds: s.categorySelectionScope === scope && s.selectedCategoryIds.includes(id) ? s.selectedCategoryIds : [id] }));
+    }, MULTI_SELECT_LONG_PRESS_MS);
+  };
+  endCategoryRowPress = () => clearTimeout(this._categoryPressTimer);
+  toggleCategorySelected = (id) => this.setState(s => {
+    const selectedCategoryIds = s.selectedCategoryIds.includes(id) ? s.selectedCategoryIds.filter(x => x !== id) : [...s.selectedCategoryIds, id];
+    return { selectedCategoryIds, categorySelectionMode: selectedCategoryIds.length > 0, categorySelectionScope: selectedCategoryIds.length ? s.categorySelectionScope : '' };
+  });
+  onCancelCategorySelection = () => this.setState({ categorySelectionMode: false, selectedCategoryIds: [], categorySelectionScope: '' });
+  setBulkCategoriesActive = async (active) => {
+    const scope = this.state.categorySelectionScope;
+    const results = await Promise.all(this.state.selectedCategoryIds.map(id => scope === 'site' ? catalog.updateSiteCategory(id, { active }) : catalog.setCategoryActive(id, active)));
+    if (results.some(result => result.error)) { this.flashAdmin('Não foi possível atualizar todas as categorias selecionadas.'); return; }
+    this.onCancelCategorySelection();
+    if (scope === 'site') { this.refreshAdminCatalog(); this.loadPublicCatalog(); } else this.refreshAfterMyCreationMutation(this.state.session.user.id);
+    this.flashAdmin(active ? 'Categorias ativadas.' : 'Categorias desativadas.');
+  };
+  askBulkDeleteCategories = () => this.setState({ confirmDelete: { type: 'bulk-delete-categories', scope: this.state.categorySelectionScope, ids: [...this.state.selectedCategoryIds], message: `Excluir ${this.state.selectedCategoryIds.length} categoria(s) selecionada(s)? Categorias em uso não serão excluídas.` } });
+
 
   onNewProduct = () => this.setState({
     showProductForm: true, productFormMode: 'new',
@@ -3709,12 +3740,13 @@ class App extends Component {
       onPriceChange: this.onInlinePriceChange('my', p.id), onPriceBlur: () => this.saveInlinePrice('my', p), onPriceKeyDown: this.onInlinePriceKeyDown('my', p),
     }); }).filter(row => matchesSearch(row.name));
     const myCategoryTypeLabel = (t) => t === 'receita' ? 'Categoria de Receita' : t === 'secao_home' || t === 'secao' ? 'Seção da Home' : t === 'secao_receita' ? 'Seção de Receitas' : t === 'secao_produto' ? 'Seção de Produtos' : 'Categoria de Produtos';
-    const myCategoryRows = s.myCategories.map(c => ({
+    const myCategoryRows = s.myCategories.map(c => { const selected = s.categorySelectionScope === 'my' && s.selectedCategoryIds.includes(c.id); return ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
+      showCheckbox: s.categorySelectionMode && s.categorySelectionScope === 'my', showActions: !(s.categorySelectionMode && s.categorySelectionScope === 'my'), selected, onPressStart: () => this.startCategoryRowPress(c.id, 'my'), onPressEnd: this.endCategoryRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.categorySelectionMode && this.state.categorySelectionScope === 'my') this.toggleCategorySelected(c.id); },
       active: c.active, activeLabel: c.active ? 'Ativa' : 'Inativa', toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       onEdit: () => this.onEditMyCategory(c), onToggleActive: () => this.onToggleMyCategoryActive(c), onDelete: () => this.askDeleteMyCategory(c.id),
       onRequestPublish: () => this.onOpenPublishRequest('category', c.id, c.name),
-    })).filter(row => matchesSearch(row.name));
+    }); }).filter(row => matchesSearch(row.name));
     const sharedLibraryRows = s.sharedLibrary.map(r => ({
       id: r.id, name: r.name, code: r.recipe_code, categoryName: (r.category && r.category.name) || '',
       source: 'shared', sourceLabel: 'Compartilhada', sourceBadgeStyle: statusBadge('Compartilhada', SOURCE_BADGE_COLORS.shared),
@@ -3828,15 +3860,16 @@ class App extends Component {
       onDelete: () => this.askDeleteSiteProduct(p.id),
       onPriceChange: this.onInlinePriceChange('site', p.id), onPriceBlur: () => this.saveInlinePrice('site', p), onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
     }); }).filter(row => matchesSearch(row.name));
-    const siteCategoryRows = s.siteCategories.map(c => ({
+    const siteCategoryRows = s.siteCategories.map(c => { const selected = s.categorySelectionScope === 'site' && s.selectedCategoryIds.includes(c.id); return ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
+      showCheckbox: s.categorySelectionMode && s.categorySelectionScope === 'site', showActions: !(s.categorySelectionMode && s.categorySelectionScope === 'site'), selected, onPressStart: () => this.startCategoryRowPress(c.id, 'site'), onPressEnd: this.endCategoryRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.categorySelectionMode && this.state.categorySelectionScope === 'site') this.toggleCategorySelected(c.id); },
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: c.active ? 'Ativa' : 'Inativa', statusBadgeStyle: statusBadge('', c.active ? '#34B23E' : '#8A8580'),
       toggleActiveLabel: c.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(c.updated_at),
       onToggleActive: () => this.onToggleSiteCategoryActive(c), onEdit: () => this.onEditSiteCategory(c),
       onDelete: () => this.askDeleteSiteCategory(c.id), draggable: ['secao', 'secao_home', 'secao_receita', 'secao_produto'].includes(c.type), isDragging: s.homeSectionDragKey === c.id, onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id),
-    })).filter(row => matchesSearch(row.name));
+    }); }).filter(row => matchesSearch(row.name));
     const categoryGroupOrder = ['secao_home', 'secao_receita', 'secao_produto', 'receita', 'proteina'];
     const normalizedCategoryType = type => type === 'secao' ? 'secao_home' : type;
     const siteCategoryGroups = categoryGroupOrder.map(type => ({
@@ -4213,6 +4246,7 @@ class App extends Component {
       onBulkHideAsk: this.askBulkHide, onBulkDeleteAsk: this.askBulkDelete, onCancelSelection: this.onCancelSelection,
       onBulkRecipesActivate: () => this.setBulkRecipeStatus('published'), onBulkRecipesDeactivate: () => this.setBulkRecipeStatus('draft'),
       productSelectionMode: s.productSelectionMode, selectedProductCountLabel: `${s.selectedProductIds.length} selecionado(s)`, onBulkDeleteProductsAsk: this.askBulkDeleteProducts, onCancelProductSelection: this.onCancelProductSelection,
+      categorySelectionMode: s.categorySelectionMode, categorySelectionScope: s.categorySelectionScope, selectedCategoryCountLabel: `${s.selectedCategoryIds.length} selecionada(s)`, onBulkDeleteCategoriesAsk: this.askBulkDeleteCategories, onCancelCategorySelection: this.onCancelCategorySelection, onBulkCategoriesActivate: () => this.setBulkCategoriesActive(true), onBulkCategoriesDeactivate: () => this.setBulkCategoriesActive(false),
       onBulkProductsActivate: () => this.setBulkProductsActive(true), onBulkProductsDeactivate: () => this.setBulkProductsActive(false),
       sectionSelectionMode: s.sectionSelectionMode, selectedSectionCountLabel: `${s.selectedSectionKeys.length} selecionada(s)`, onBulkDeleteSectionsAsk: this.askBulkDeleteSections, onCancelSectionSelection: this.onCancelSectionSelection,
       proteinSelectionMode: s.proteinSelectionMode, selectedProteinCountLabel: `${s.selectedProteinKeys.length} selecionada(s)`, onBulkDeleteProteinsAsk: this.askBulkDeleteProteins, onCancelProteinSelection: this.onCancelProteinSelection,

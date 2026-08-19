@@ -347,6 +347,12 @@ function productGridSection(icon, title, list) {
   return html`<div style="padding:18px 40px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div className="yc-product-grid">${list.map(productCard)}</div></div>`;
 }
 
+function productSpreadsheet(blocks) {
+  const rows = blocks.flatMap(sec => sec.items.map(item => ({ ...item, sectionLabel: sec.label })));
+  if (!rows.length) return null;
+  return html`<div className="yc-product-sheet-wrap"><table className="yc-product-sheet"><thead><tr><th>Produto</th><th>Preço</th></tr></thead><tbody>${rows.map(item => html`<tr key=${item.id} onClick=${item.onOpen} tabindex="0" role="button"><td><strong>${item.name}</strong><small>${item.sectionLabel}</small></td><td>${item.priceLabel}</td></tr>`)}</tbody></table></div>`;
+}
+
 function renderProducts(app, v) {
   return html`
     <div style="padding:40px 40px 8px">
@@ -365,7 +371,7 @@ function renderProducts(app, v) {
       </div>
     </div>
 
-    ${v.productPageBlocks.map((sec) => (v.productLayout === 'grid' ? productGridSection : productCarouselSection)(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
+    ${v.productLayout === 'spreadsheet' ? productSpreadsheet(v.productPageBlocks) : v.productPageBlocks.map((sec) => (v.productLayout === 'grid' ? productGridSection : productCarouselSection)(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
     ${v.productsEmpty && html`<div style="padding:60px 40px;text-align:center;color:var(--neutral-600);font-size:15px">Nenhum produto cadastrado ainda.</div>`}
   `;
 }
@@ -724,15 +730,7 @@ function renderSalesHistory(app, v) {
     </div>
 
     <div style="padding:8px 40px 40px">
-      ${v.saleSelectionMode && html`
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:22px 16px 14px;margin-bottom:14px;position:fixed;left:40px;right:40px;top:14px;z-index:35;box-shadow:var(--shadow-md);animation:ycFadeIn 0.2s ease">
-          <div style="font-size:14px;font-weight:600">${v.selectedSaleCountLabel}</div>
-          <div style="display:flex;gap:10px">
-            <div onClick=${v.onBulkDeleteSalesAsk} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Excluir</div>
-            <div onClick=${v.onCancelSaleSelection} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Cancelar</div>
-          </div>
-        </div>
-      `}
+      ${v.saleSelectionMode && selectionBar(v.selectedSaleCountLabel, v.onBulkDeleteSalesAsk, v.onCancelSaleSelection)}
       ${v.salesHistoryEmpty && html`<div style="text-align:center;padding:60px 20px;color:var(--neutral-600);font-size:14px">Nenhuma venda registrada ainda.</div>`}
       ${v.salesHistoryRows.map((row) => html`
         <div key=${row.id} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${row.rowStyle}>
@@ -843,7 +841,7 @@ function renderProfile(app, v) {
           </div>
         </div>
         <div style="display:flex;gap:6px;background:var(--neutral-50);border-radius:var(--radius-full);padding:3px">
-          ${[['carousel', 'Carrossel'], ['grid', 'Grid']].map(([value, label]) => html`<button type="button" aria-pressed=${v.productLayout === value} onClick=${() => v.onProfileProductLayoutSet(value)} style=${`height:38px;min-height:38px;padding:0 16px;border-radius:var(--radius-full);border:0;background:${v.productLayout === value ? 'var(--brand-700)' : 'transparent'};color:${v.productLayout === value ? '#F4F2F1' : 'var(--neutral-800)'};font:600 13px var(--font-sans);cursor:pointer`}>${label}</button>`)}
+          ${[['carousel', 'Carrossel'], ['grid', 'Grid'], ['spreadsheet', 'Planilha']].map(([value, label]) => html`<button type="button" aria-pressed=${v.productLayout === value} onClick=${() => v.onProfileProductLayoutSet(value)} style=${`height:38px;min-height:38px;padding:0 16px;border-radius:var(--radius-full);border:0;background:${v.productLayout === value ? 'var(--brand-700)' : 'transparent'};color:${v.productLayout === value ? '#F4F2F1' : 'var(--neutral-800)'};font:600 13px var(--font-sans);cursor:pointer`}>${label}</button>`)}
         </div>
       </div>
       <div onClick=${v.onOpenAdminAttempt} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;cursor:pointer;transition:transform 0.15s ease">
@@ -1413,10 +1411,10 @@ function selectionBar(count, onDelete, onCancel, extraAction) {
   `;
 }
 
-function bulkStatusActions(onActivate, onDeactivate) {
+function bulkStatusActions(onActivate, onDeactivate, activateLabel = 'Ativar', deactivateLabel = 'Desativar') {
   return html`
-    <div onClick=${onActivate} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Ativar</div>
-    <div onClick=${onDeactivate} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">Desativar</div>
+    <div onClick=${onActivate} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">${activateLabel}</div>
+    <div onClick=${onDeactivate} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">${deactivateLabel}</div>
   `;
 }
 
@@ -1503,7 +1501,7 @@ function renderSiteRecipesTab(app, v) {
       </div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
-      ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection, bulkStatusActions(v.onBulkRecipesActivate, v.onBulkRecipesDeactivate))}
+      ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection, bulkStatusActions(v.onBulkRecipesActivate, v.onBulkRecipesDeactivate, 'Publicar', 'Despublicar'))}
       ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
       ${v.siteRecipeRows.map((row) => html`
         <div className="yc-admin-card yc-admin-recipe-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
@@ -1569,11 +1567,12 @@ function renderSiteCategoriesTab(app, v) {
       </div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.categorySelectionMode && v.categorySelectionScope === 'site' && selectionBar(v.selectedCategoryCountLabel, v.onBulkDeleteCategoriesAsk, v.onCancelCategorySelection, bulkStatusActions(v.onBulkCategoriesActivate, v.onBulkCategoriesDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
       ${v.siteCategoryGroups.map(group => html`<section className="yc-category-group" key=${group.type}>
         <h3 style="font-size:14px;color:var(--brand-700);margin:22px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--neutral-100)">${group.label} <span style="color:var(--neutral-500);font-weight:500">(${group.rows.length})</span></h3>
         ${group.rows.map((row) => html`
-        <div key=${row.id} style=${`display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;opacity:1`}>
+        <div key=${row.id} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${`display:flex;align-items:center;gap:14px;background:${row.selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${row.selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px`} >${row.showCheckbox && html`<span className="yc-row-checkbox">${row.selected ? '✓' : ''}</span>`}
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
@@ -1724,9 +1723,10 @@ function renderMyCategoriesTab(app, v) {
       </div>
       ${adminSearchBar(v)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.categorySelectionMode && v.categorySelectionScope === 'my' && selectionBar(v.selectedCategoryCountLabel, v.onBulkDeleteCategoriesAsk, v.onCancelCategorySelection, bulkStatusActions(v.onBulkCategoriesActivate, v.onBulkCategoriesDeactivate))}
       ${!v.myCreationLoading && !v.hasMyCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem categorias próprias.</div>`}
       ${v.myCategoryRows.map((row) => html`
-        <div key=${row.id} style="display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px">
+        <div key=${row.id} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${`display:flex;align-items:center;gap:14px;background:${row.selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${row.selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px`}>${row.showCheckbox && html`<span className="yc-row-checkbox">${row.selected ? '✓' : ''}</span>`}
           <div style="flex:1">
             <div style="font-size:15px;font-weight:600">${row.name}</div>
             <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}</div>
