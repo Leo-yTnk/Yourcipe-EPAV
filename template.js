@@ -2447,7 +2447,7 @@ function renderImportModal(app, v) {
           <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">
             <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Categorias" (obrigatória; pode ficar sem linhas)</div>
             <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
-              <strong>tipo</strong> — obrigatório: "proteina" (categoria de produto), "receita" (categoria de receita) ou "secao" (seção da home)<br/>
+              <strong>tipo</strong> — obrigatório: "proteina" (categoria de produto), "receita" (categoria de receita), "secao_home" (seção da Home), "secao_receita" (seção de Receitas) ou "secao_produto" (seção de Produtos)<br/>
               <strong>nome</strong> — obrigatório, nome da nova categoria ou seção<br/>
               Use esta aba para declarar as categorias/seções que ainda não existem no app antes de referenciá-las nas abas Produtos e Receitas.
             </div>
