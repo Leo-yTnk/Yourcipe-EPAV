@@ -10,6 +10,7 @@ describe('admin spreadsheet import wiring', () => {
   const collisionSafeSql = fs.readFileSync('supabase/018_collision_safe_import.sql', 'utf8');
   const nativeNameEquivalenceSql = fs.readFileSync('supabase/019_native_section_name_equivalence.sql', 'utf8');
   const nativeSectionResolutionSql = fs.readFileSync('supabase/020_native_recipe_section_resolution.sql', 'utf8');
+  const pageSpecificImportSql = fs.readFileSync('supabase/026_page_specific_import_sections.sql', 'utf8');
 
   it('shows Importar Planilha only through admin site catalog UI and guards the opener', () => {
     expect(template).toContain('v.isAdminRole && v.isAdminRecipesTab && renderSiteRecipesTab');
@@ -95,6 +96,18 @@ describe('admin spreadsheet import wiring', () => {
     }
     expect(nativeSectionResolutionSql.match(/case v_sec#>>'\{\}'/g)).toHaveLength(2);
     expect(nativeSectionResolutionSql).toContain('section_not_found');
+  });
+
+  it('imports page-specific category types and never resolves recipe tags through legacy secao', () => {
+    for (const type of ['proteina', 'receita', 'secao_home', 'secao_receita', 'secao_produto']) {
+      expect(app).toContain(`'${type}'`);
+      expect(pageSpecificImportSql).toContain(`'${type}'`);
+    }
+    expect(app).not.toContain("typeRaw === 'secao_produto' ? 'secao' : typeRaw");
+    expect(pageSpecificImportSql.match(/type in \('secao_receita', 'secao_home'\)/g)).toHaveLength(2);
+    expect(pageSpecificImportSql).not.toContain("active and type = 'secao'");
+    expect(pageSpecificImportSql).toContain("values ('site', null, 'secao_home'");
+    expect(template).not.toContain('"secao" (seção da home)');
   });
 
   it('surfaces actionable server diagnostics instead of a generic import failure', () => {

@@ -16,9 +16,13 @@ abaixo. Cada registro deve ocupar uma única linha.
 
 ABA `Categorias`
 Cabeçalhos, nesta ordem: `tipo`, `nome`
-- `tipo` aceita somente: `proteina`, `receita` ou `secao`.
+- `tipo` aceita somente: `proteina`, `receita`, `secao_home`,
+  `secao_receita` ou `secao_produto`.
 - Use `proteina` para categorias referenciadas por Produtos, `receita` para
-  categorias referenciadas por Receitas e `secao` para seções/tags novas.
+  categorias principais referenciadas por Receitas, `secao_home` para seções
+  exibidas na Home, `secao_receita` para seções/tags da página de Receitas e
+  `secao_produto` para seções da página de Produtos. Não use o tipo legado
+  `secao`.
 - Não repita nomes equivalentes, mesmo com diferenças de acento, maiúsculas,
   pontuação ou espaços.
 
@@ -52,7 +56,8 @@ Cabeçalhos, nesta ordem: `nome`, `categoria`, `tempo`, `porcoes`,
 - `imagem`: URL absoluta opcional.
 - `tags`: valores separados por vírgula. Valores nativos permitidos:
   `destaque`, `recomendado`, `pratico`, `ocasiao`, `rapido`, `churrasco` e
-  `petisco`; uma seção nova precisa ser declarada como `secao` em Categorias.
+  `petisco`; uma seção nova precisa ser declarada como `secao_receita` (ou
+  `secao_home`, quando também for exibida na Home) em Categorias.
 - `ingredientes`: obrigatório. Formato `Nome exato do produto:quantidade`, com
   itens separados por ponto e vírgula. Exemplo:
   `Picanha Swift:1.5; Sal Grosso Swift:0.2`. Use ponto como decimal e quantidade

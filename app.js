@@ -3065,7 +3065,8 @@ class App extends Component {
     ]);
     const categoriasSheet = XLSX.utils.json_to_sheet([
       { tipo: 'proteina', nome: 'Caprinos' },
-      { tipo: 'secao', nome: 'Receitas Veganas' },
+      { tipo: 'receita', nome: 'Bovina' },
+      { tipo: 'secao_receita', nome: 'Receitas Veganas' },
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, produtosSheet, 'Produtos');
@@ -3110,14 +3111,14 @@ class App extends Component {
     const seenCategories = new Map();
     categoryRows.forEach((row, i) => {
       const typeRaw = this.normalizeImportText(get(row, ['tipo', 'type']));
-      const type = typeRaw === 'secao_produto' ? 'secao' : typeRaw;
+      const type = typeRaw;
       const name = String(get(row, ['nome', 'name', 'categoria']) || '').trim();
       const key = `${type}:${this.normalizeImportSlug(name)}`;
-      if (!['proteina', 'receita', 'secao'].includes(type)) errors.push(`Categorias, linha ${i + 2}: tipo inválido "${typeRaw}".`);
+      if (!['proteina', 'receita', 'secao_home', 'secao_receita', 'secao_produto'].includes(type)) errors.push(`Categorias, linha ${i + 2}: tipo inválido "${typeRaw}".`);
       if (!name) errors.push(`Categorias, linha ${i + 2}: campo nome ausente.`);
       else if (seenCategories.has(key)) {
         const first = seenCategories.get(key);
-        const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : 'seção da home';
+        const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : type === 'secao_home' ? 'seção da home' : type === 'secao_receita' ? 'seção de receitas' : 'seção de produtos';
         warnings.push(`Categorias, linhas ${first.line} ("${first.name}") e ${i + 2} ("${name}"): são equivalentes como ${typeLabel}; a primeira ocorrência será usada e a duplicada não impedirá a importação.`);
       } else {
         seenCategories.set(key, { line: i + 2, name });
@@ -3170,7 +3171,8 @@ class App extends Component {
     const recipeCategoryNames = new Set([...categoryKeys].filter(k => k.startsWith('receita:')).map(k => k.slice(8)));
     const sectionKeys = new Set([
       ...SECTION_DEFS.map(section => section.key),
-      ...[...categoryKeys].filter(k => k.startsWith('secao:')).map(k => k.slice(6)),
+      ...[...categoryKeys].filter(k => k.startsWith('secao_home:')).map(k => k.slice(11)),
+      ...[...categoryKeys].filter(k => k.startsWith('secao_receita:')).map(k => k.slice(15)),
     ]);
     const seenRecipes = new Set();
     recipeRows.forEach((row, i) => {
@@ -3225,14 +3227,14 @@ class App extends Component {
     const message = String((error && error.message) || '');
     const details = String((error && error.details) || '');
     if (message.includes('categories_site_slug_uk')) {
-      const collision = details.match(/\((proteina|receita|secao),\s*([^\)]+)\)/i);
+      const collision = details.match(/\((proteina|receita|secao_home|secao_receita|secao_produto),\s*([^\)]+)\)/i);
       const type = collision && collision[1].toLowerCase();
       const slug = collision && collision[2].trim();
       const matches = (this.state.importParsedCategories || []).filter(category =>
         (!type || category.type === type) && (!slug || this.normalizeImportSlug(category.name) === slug)
       );
       const imported = matches.map(category => `linha ${category.source_line || '?'} ("${category.name}")`).join(' e ');
-      const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : type === 'secao' ? 'seção da home' : 'categoria';
+      const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : type === 'secao_home' ? 'seção da home' : type === 'secao_receita' ? 'seção de receitas' : type === 'secao_produto' ? 'seção de produtos' : 'categoria';
       return imported
         ? `Conflito na aba Categorias: ${imported} coincide com outra ${typeLabel} pelo nome simplificado${slug ? ` "${slug}"` : ''}. Procure esse nome na planilha, mantenha apenas uma versão e envie o arquivo novamente. Nenhuma alteração foi aplicada.`
         : `Conflito na aba Categorias: já existe outra ${typeLabel} com o mesmo nome simplificado${slug ? ` ("${slug}")` : ''}. Remova ou renomeie a categoria equivalente na planilha e tente novamente. Nenhuma alteração foi aplicada.`;
@@ -3244,7 +3246,7 @@ class App extends Component {
     const productFailure = message.match(/product_not_found:\s*(.+)/i);
     if (productFailure) return `Produto usado como ingrediente não encontrado: "${productFailure[1]}". Cadastre-o na aba Produtos ou corrija o nome no campo ingredientes. Nenhuma alteração foi aplicada.`;
     const sectionFailure = message.match(/section_not_found:\s*(.+)/i);
-    if (sectionFailure) return `Seção de receita não encontrada: "${sectionFailure[1]}". Cadastre-a na aba Categorias com o tipo "secao" ou corrija a tag da receita. Nenhuma alteração foi aplicada.`;
+    if (sectionFailure) return `Seção de receita não encontrada: "${sectionFailure[1]}". Cadastre-a na aba Categorias com o tipo "secao_receita" ou "secao_home", ou corrija a tag da receita. Nenhuma alteração foi aplicada.`;
     const invalidFailure = message.match(/(invalid_[a-z_]+|ingredients_required|duplicate_recipe_name_in_payload)(?::| at item)?\s*(.*)/i);
     if (invalidFailure) return `A validação do servidor rejeitou os dados${invalidFailure[2] ? ` relacionados a "${invalidFailure[2]}"` : ''} (${invalidFailure[1]}). Revise essa linha da planilha e tente novamente. Nenhuma alteração foi aplicada.`;
     const diagnostic = [message, details].filter(Boolean).join(' — ').slice(0, 240);
