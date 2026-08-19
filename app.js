@@ -1,28 +1,29 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260817-7';
-import { CustomSelect } from './custom-select.js?v=20260817-7';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260819-1';
+import { CustomSelect } from './custom-select.js?v=20260819-1';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260817-7';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260817-7';
-import { supabase } from './supabase-client.js?v=20260817-7';
-import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260817-7';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260817-7';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260817-7';
-import { normalizeDisplayName } from './display-name.js?v=20260817-7';
-import * as catalog from './catalog.js?v=20260817-7';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260817-7';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260817-7';
-import { createLoadGuard } from './load-guard.js?v=20260817-7';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260817-7';
+} from './data.js?v=20260819-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260819-1';
+import { supabase } from './supabase-client.js?v=20260819-1';
+import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260819-1';
+import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260819-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260819-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260819-1';
+import { normalizeDisplayName } from './display-name.js?v=20260819-1';
+import * as catalog from './catalog.js?v=20260819-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260819-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260819-1';
+import { createLoadGuard } from './load-guard.js?v=20260819-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260819-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260817-7';
+const FRONTEND_VERSION = '20260819-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -1407,13 +1408,17 @@ class App extends Component {
   saveInlinePrice = async (scope, product) => {
     const key = `${scope}:${product.id}`;
     if (this.state.inlinePriceBusy[key] || this.state.inlinePriceDrafts[key] === undefined) return;
-    const price = parseFloat(String(this.state.inlinePriceDrafts[key]).replace(',', '.'));
-    if (!Number.isFinite(price) || price < 0) { this.flashAdmin('Informe um preço válido.'); return; }
+    const policy = priceEditPolicy(product);
+    if (!policy.editable) { this.flashAdmin(policy.reason); return; }
+    const parsed = parseBRLPrice(this.state.inlinePriceDrafts[key]);
+    if (parsed.error) { this.flashAdmin(parsed.error); return; }
+    const price = parsed.value;
     this.setState(s => ({ inlinePriceBusy: { ...s.inlinePriceBusy, [key]: true } }));
     const res = scope === 'site' ? await catalog.updateSiteProduct(product.id, { price }) : await catalog.updateProduct(product.id, { price });
     this.setState(s => { const drafts = { ...s.inlinePriceDrafts }; delete drafts[key]; const busy = { ...s.inlinePriceBusy }; delete busy[key]; return { inlinePriceDrafts: drafts, inlinePriceBusy: busy }; });
     if (res.error) { this.flashAdmin('Não foi possível atualizar o preço.'); return; }
-    if (scope === 'site') this.loadSiteCatalogData(); else this.loadMyCreationData(this.state.session.user.id);
+    if (scope === 'site') { await Promise.all([this.loadSiteCatalogData(), this.loadPublicCatalog()]); } else await this.loadMyCreationData(this.state.session.user.id);
+    this.flashAdmin('Preço salvo com sucesso.');
   };
   // askDeleteMyProduct: see the reference-checked version defined below,
   // alongside askDeleteRecipeChecked (openProductDeleteImpact).
@@ -2069,6 +2074,7 @@ class App extends Component {
       // the data source changes, from a local seed to live Supabase data.
       const products = (prodsRes.data || []).map(p => ({
         id: p.id, nome: p.name, categoria: (p.category && p.category.name) || '', unidade: p.unit, preco: Number(p.price) || 0,
+        swift_product_url: p.swift_product_url || '', price_source: p.price_source || '',
         imagem: p.image_url || FALLBACK_IMG,
         tags: (secByProduct[p.id] || []).map(s => s.slug).filter(Boolean),
       }));
@@ -2774,8 +2780,7 @@ class App extends Component {
     }, MULTI_SELECT_LONG_PRESS_MS);
   };
   toggleRecipeSelected = (id) => this.setState(s => {
-    const has = s.selectedRecipeIds.includes(id);
-    const selectedRecipeIds = has ? s.selectedRecipeIds.filter(x => x !== id) : [...s.selectedRecipeIds, id];
+    const selectedRecipeIds = toggleSelected(s.selectedRecipeIds, id);
     return { selectedRecipeIds, selectionMode: selectedRecipeIds.length > 0, recipeSelectionScope: selectedRecipeIds.length ? s.recipeSelectionScope : '' };
   });
   onCancelSelection = () => this.setState({ selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '' });
@@ -2826,12 +2831,21 @@ class App extends Component {
   makeProductCard = (p, idx) => {
     const d = Math.min(idx || 0, 12) * 65;
     const rise = `animation:ycRise 0.5s cubic-bezier(0.22,0.8,0.24,1) ${d}ms backwards`;
+    const pricePolicy = priceEditPolicy(p);
+    const priceKey = `site:${p.id}`;
     return {
-      id: p.id, nome: p.nome, imagem: p.imagem || FALLBACK_IMG, categoria: p.categoria,
+      id: p.id, name: p.nome, nome: p.nome, imagem: p.imagem || FALLBACK_IMG, categoria: p.categoria,
+      priceLabel: this.formatBRL(p.preco),
       tempoLabel: this.formatBRL(p.preco), dificuldade: p.unidade,
       carouselStyle: `flex:0 0 ${this.state.deviceMode === 'desktop' ? 280 : (this.state.deviceMode === 'tablet' ? 260 : 240)}px;cursor:pointer;transition:transform 0.18s ease,flex-basis 0.2s ease;scroll-snap-align:start;${rise}`,
       gridCardStyle: `position:relative;cursor:pointer;background:var(--neutral-0);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--neutral-100);transition:transform 0.18s ease,box-shadow 0.18s ease;${rise}`,
       onOpen: () => this.openProductDetail(p.id),
+      priceValue: this.state.inlinePriceDrafts[priceKey] ?? String(p.preco).replace('.', ','),
+      priceEditable: this.state.authRole === 'admin' && pricePolicy.editable,
+      priceBusy: !!this.state.inlinePriceBusy[priceKey], priceHelp: pricePolicy.reason,
+      onPriceChange: this.onInlinePriceChange('site', p.id),
+      onPriceBlur: () => this.saveInlinePrice('site', { ...p, price: p.preco }),
+      onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
     };
   };
 
@@ -2893,11 +2907,16 @@ class App extends Component {
       if (this.state.session) { await catalog.deleteSale(cd.id); await this.loadSalesData(); this.setState({ confirmDelete: null }); }
       else { const vendas = this.state.vendas.filter(v => v.id !== cd.id); this.setState({ vendas, confirmDelete: null }); this.persist(LS_KEYS.vendas, vendas); }
     } else if (cd.type === 'bulk-delete-categories') {
-      const results = await Promise.all(cd.ids.map(id => catalog.deleteCategory(id)));
-      const failed = results.filter(result => result.error).length;
-      this.setState({ confirmDelete: null, categorySelectionMode: false, selectedCategoryIds: [], categorySelectionScope: '' });
+      // The transactional RPC refuses deletion while any product, recipe,
+      // section or pending request still references the category. An empty
+      // resolution is intentionally safe here: bulk deletion never guesses
+      // replacements or silently detaches references.
+      const results = await Promise.all(cd.ids.map(id => catalog.deleteCategoryResolved(id, {})));
+      const failedIds = cd.ids.filter((id, index) => results[index].error);
+      const failed = failedIds.length;
+      this.setState({ confirmDelete: null, categorySelectionMode: failed > 0, selectedCategoryIds: failedIds, categorySelectionScope: failed > 0 ? cd.scope : '' });
       if (cd.scope === 'site') { this.refreshAdminCatalog(); this.loadPublicCatalog(); } else this.loadMyCreationData(this.state.session && this.state.session.user.id);
-      this.flashAdmin(failed ? `${failed} categoria(s) em uso não puderam ser excluídas.` : 'Categorias excluídas.');
+      this.flashAdmin(failed ? `${cd.ids.length - failed} excluída(s); ${failed} categoria(s) em uso foram mantidas e continuam selecionadas.` : `${cd.ids.length} categoria(s) excluída(s).`);
     } else if (cd.type === 'bulk-delete-sales') {
       if (this.state.session) { await Promise.all(cd.ids.map(id => catalog.deleteSale(id))); await this.loadSalesData(); this.setState({ confirmDelete: null, saleSelectionMode: false, selectedSaleIds: [] }); }
       else { const vendas = this.state.vendas.filter(v => !cd.ids.includes(v.id)); this.setState({ vendas, confirmDelete: null, saleSelectionMode: false, selectedSaleIds: [] }); this.persist(LS_KEYS.vendas, vendas); }
@@ -2978,17 +2997,18 @@ class App extends Component {
   };
   endCategoryRowPress = () => clearTimeout(this._categoryPressTimer);
   toggleCategorySelected = (id) => this.setState(s => {
-    const selectedCategoryIds = s.selectedCategoryIds.includes(id) ? s.selectedCategoryIds.filter(x => x !== id) : [...s.selectedCategoryIds, id];
+    const selectedCategoryIds = toggleSelected(s.selectedCategoryIds, id);
     return { selectedCategoryIds, categorySelectionMode: selectedCategoryIds.length > 0, categorySelectionScope: selectedCategoryIds.length ? s.categorySelectionScope : '' };
   });
   onCancelCategorySelection = () => this.setState({ categorySelectionMode: false, selectedCategoryIds: [], categorySelectionScope: '' });
   setBulkCategoriesActive = async (active) => {
     const scope = this.state.categorySelectionScope;
     const results = await Promise.all(this.state.selectedCategoryIds.map(id => scope === 'site' ? catalog.updateSiteCategory(id, { active }) : catalog.setCategoryActive(id, active)));
-    if (results.some(result => result.error)) { this.flashAdmin('Não foi possível atualizar todas as categorias selecionadas.'); return; }
+    const summary = summarizeBulkResults(results, 'categoria');
+    if (!summary.ok) { this.flashAdmin(summary.message); return; }
     this.onCancelCategorySelection();
     if (scope === 'site') { this.refreshAdminCatalog(); this.loadPublicCatalog(); } else this.refreshAfterMyCreationMutation(this.state.session.user.id);
-    this.flashAdmin(active ? 'Categorias ativadas.' : 'Categorias desativadas.');
+    this.flashAdmin(summary.message);
   };
   askBulkDeleteCategories = () => this.setState({ confirmDelete: { type: 'bulk-delete-categories', scope: this.state.categorySelectionScope, ids: [...this.state.selectedCategoryIds], message: `Excluir ${this.state.selectedCategoryIds.length} categoria(s) selecionada(s)? Categorias em uso não serão excluídas.` } });
 
@@ -4419,7 +4439,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260817-7';
+import { renderApp } from './template.js?v=20260819-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

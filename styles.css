@@ -350,5 +350,11 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
 .yc-product-sheet td:last-child { color:var(--brand-700); font-weight:750; font-variant-numeric:tabular-nums; }
 .yc-product-sheet small { display:block; margin-top:3px; color:var(--neutral-600); font-size:11px; font-weight:500; }
 .yc-product-sheet tr:hover td { background:color-mix(in srgb,var(--brand-500) 7%,var(--neutral-0)); }
+.yc-sheet-product-link { border:0;padding:0;background:transparent;color:var(--neutral-900);font:700 14px var(--font-sans);cursor:pointer;text-align:left; }
+.yc-sheet-product-link:hover { color:var(--brand-700);text-decoration:underline; }
+.yc-sheet-price { display:grid;grid-template-columns:auto minmax(82px,110px);align-items:center;justify-content:end;gap:4px; }
+.yc-sheet-price input { min-width:0;width:100%;padding:8px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700;text-align:right; }
+.yc-sheet-price input:focus { outline:3px solid color-mix(in srgb,var(--brand-500) 25%,transparent);border-color:var(--brand-500); }
+.yc-sheet-price em { grid-column:1/-1;color:var(--neutral-500);font-size:10px;font-style:normal;font-weight:500; }
 .yc-row-checkbox { width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex:0 0 24px;background:var(--brand-700);color:#F4F2F1;font-size:13px;font-weight:700; }
 @media (max-width:600px) { .yc-product-sheet-wrap { padding:14px var(--yc-page-gutter) 30px; } .yc-product-sheet th:last-child,.yc-product-sheet td:last-child { width:110px; } }

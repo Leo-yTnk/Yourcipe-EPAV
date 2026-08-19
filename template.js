@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260817-7';
-import { CustomSelect } from './custom-select.js?v=20260817-7';
+import { html } from './vendor/htm-preact-standalone.js?v=20260819-1';
+import { CustomSelect } from './custom-select.js?v=20260819-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -348,9 +348,10 @@ function productGridSection(icon, title, list) {
 }
 
 function productSpreadsheet(blocks) {
-  const rows = blocks.flatMap(sec => sec.items.map(item => ({ ...item, sectionLabel: sec.label })));
+  const seen = new Set();
+  const rows = blocks.flatMap(sec => sec.items.map(item => ({ ...item, sectionLabel: sec.label }))).filter(item => !seen.has(item.id) && seen.add(item.id));
   if (!rows.length) return null;
-  return html`<div className="yc-product-sheet-wrap"><table className="yc-product-sheet"><thead><tr><th>Produto</th><th>Preço</th></tr></thead><tbody>${rows.map(item => html`<tr key=${item.id} onClick=${item.onOpen} tabindex="0" role="button"><td><strong>${item.name}</strong><small>${item.sectionLabel}</small></td><td>${item.priceLabel}</td></tr>`)}</tbody></table></div>`;
+  return html`<div className="yc-product-sheet-wrap"><table className="yc-product-sheet"><thead><tr><th>Produto</th><th>Preço</th></tr></thead><tbody>${rows.map(item => html`<tr key=${item.id}><td><button className="yc-sheet-product-link" type="button" onClick=${item.onOpen}>${item.name}</button><small>${item.sectionLabel}</small></td><td>${item.priceEditable ? html`<label className="yc-sheet-price"><span>R$</span><input aria-label=${`Preço de ${item.name}`} inputmode="decimal" value=${item.priceValue} disabled=${item.priceBusy} onInput=${item.onPriceChange} onBlur=${item.onPriceBlur} onKeyDown=${item.onPriceKeyDown}/><em aria-live="polite">${item.priceBusy ? 'Salvando…' : 'Salvo ao sair'}</em></label>` : html`<span title=${item.priceHelp || 'Somente leitura'}>${item.priceLabel}</span>`}</td></tr>`)}</tbody></table></div>`;
 }
 
 function renderProducts(app, v) {
