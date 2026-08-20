@@ -1178,7 +1178,14 @@ class App extends Component {
   // require the caller to have created their own category/product first.
   pickerCategoriesByType = (type) => this.state.creationCategories.filter(c => c.type === type);
   myRecipeCategories = () => this.pickerCategoriesByType('receita');
-  mySectionCategories = () => this.pickerCategoriesByType('secao');
+  // supabase/023_page_specific_sections.sql renamed every existing 'secao'
+  // row to 'secao_home' and introduced 'secao_receita' as the recipe-page-
+  // specific type (mirroring siteSectionCategories below, which already
+  // used 'secao_receita'). Filtering by the old 'secao' here left this
+  // picker permanently empty post-migration — no row has had that type
+  // since — which is why default sections stopped appearing when creating
+  // or editing a personal recipe.
+  mySectionCategories = () => this.pickerCategoriesByType('secao_receita');
   myProteinCategories = () => this.pickerCategoriesByType('proteina');
   pickerProducts = () => [...this.state.pickerPublicProducts, ...this.state.myProducts];
 
