@@ -347,13 +347,6 @@ function productGridSection(icon, title, list) {
   return html`<div style="padding:18px 40px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div className="yc-product-grid">${list.map(productCard)}</div></div>`;
 }
 
-function productSpreadsheet(blocks) {
-  const seen = new Set();
-  const rows = blocks.flatMap(sec => sec.items.map(item => ({ ...item, sectionLabel: sec.label }))).filter(item => !seen.has(item.id) && seen.add(item.id));
-  if (!rows.length) return null;
-  return html`<div className="yc-product-sheet-wrap"><table className="yc-product-sheet"><thead><tr><th>Produto</th><th>Preço</th></tr></thead><tbody>${rows.map(item => html`<tr key=${item.id}><td><button className="yc-sheet-product-link" type="button" onClick=${item.onOpen}>${item.name}</button><small>${item.sectionLabel}</small></td><td>${item.priceEditable ? html`<label className="yc-sheet-price"><span>R$</span><input aria-label=${`Preço de ${item.name}`} inputmode="decimal" value=${item.priceValue} disabled=${item.priceBusy} onInput=${item.onPriceChange} onBlur=${item.onPriceBlur} onKeyDown=${item.onPriceKeyDown}/><em aria-live="polite">${item.priceBusy ? 'Salvando…' : 'Salvo ao sair'}</em></label>` : html`<span title=${item.priceHelp || 'Somente leitura'}>${item.priceLabel}</span>`}</td></tr>`)}</tbody></table></div>`;
-}
-
 function renderProducts(app, v) {
   return html`
     <div style="padding:40px 40px 8px">
@@ -372,7 +365,7 @@ function renderProducts(app, v) {
       </div>
     </div>
 
-    ${v.productLayout === 'spreadsheet' ? productSpreadsheet(v.productPageBlocks) : v.productPageBlocks.map((sec) => (v.productLayout === 'grid' ? productGridSection : productCarouselSection)(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
+    ${v.productPageBlocks.map((sec) => (v.productLayout === 'grid' ? productGridSection : productCarouselSection)(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
     ${v.productsEmpty && html`<div style="padding:60px 40px;text-align:center;color:var(--neutral-600);font-size:15px">Nenhum produto cadastrado ainda.</div>`}
   `;
 }
@@ -842,7 +835,7 @@ function renderProfile(app, v) {
           </div>
         </div>
         <div style="display:flex;gap:6px;background:var(--neutral-50);border-radius:var(--radius-full);padding:3px">
-          ${[['carousel', 'Carrossel'], ['grid', 'Grid'], ['spreadsheet', 'Planilha']].map(([value, label]) => html`<button type="button" aria-pressed=${v.productLayout === value} onClick=${() => v.onProfileProductLayoutSet(value)} style=${`height:38px;min-height:38px;padding:0 16px;border-radius:var(--radius-full);border:0;background:${v.productLayout === value ? 'var(--brand-700)' : 'transparent'};color:${v.productLayout === value ? '#F4F2F1' : 'var(--neutral-800)'};font:600 13px var(--font-sans);cursor:pointer`}>${label}</button>`)}
+          ${[['carousel', 'Carrossel'], ['grid', 'Grid']].map(([value, label]) => html`<button type="button" aria-pressed=${v.productLayout === value} onClick=${() => v.onProfileProductLayoutSet(value)} style=${`height:38px;min-height:38px;padding:0 16px;border-radius:var(--radius-full);border:0;background:${v.productLayout === value ? 'var(--brand-700)' : 'transparent'};color:${v.productLayout === value ? '#F4F2F1' : 'var(--neutral-800)'};font:600 13px var(--font-sans);cursor:pointer`}>${label}</button>`)}
         </div>
       </div>
       <div onClick=${v.onOpenAdminAttempt} style="display:flex;align-items:center;justify-content:space-between;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-lg);padding:20px 22px;cursor:pointer;transition:transform 0.15s ease">
@@ -1532,11 +1525,16 @@ function renderSiteProductsTab(app, v) {
         Novo Produto no Catálogo
       </div>
       <div onClick=${v.onRefreshAllPrices} style="text-align:center;padding:10px;margin-bottom:12px;border:1px solid var(--brand-500);border-radius:var(--radius-md);color:var(--brand-700);font-weight:700;cursor:pointer">Atualizar todos os preços na Swift</div>
+      <div className="yc-admin-product-view" aria-label="Exibição dos produtos">
+        <span><strong>Exibição dos produtos</strong><small>Use a planilha para editar preços com Tab, setas e Ctrl+C/Ctrl+V.</small></span>
+        <div>${[['list', 'Lista'], ['spreadsheet', 'Planilha']].map(([value, label]) => html`<button type="button" aria-pressed=${v.adminProductView === value} className=${v.adminProductView === value ? 'is-active' : ''} onClick=${() => v.onAdminProductViewSet(value)}>${label}</button>`)}</div>
+      </div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
-      ${v.siteProductRows.map((row) => html`
+      ${v.adminProductView === 'spreadsheet' && v.siteProductRows.length > 0 && html`<div className="yc-product-sheet-wrap yc-admin-product-sheet-wrap"><table className="yc-product-sheet yc-admin-product-sheet"><thead><tr><th>Produto</th><th>Categoria</th><th>Unidade</th><th>Preço</th></tr></thead><tbody>${v.siteProductRows.map(row => html`<tr key=${row.id}><td>${row.name}<small>${row.code}</small></td><td>${row.categoryName}</td><td>${row.unit}</td><td><label className="yc-sheet-price"><span>R$</span><input aria-label=${`Preço de ${row.name}`} inputmode="decimal" value=${row.priceValue} disabled=${!row.priceEditable || row.priceBusy} title=${row.priceEditable ? 'Use Tab ou as setas para navegar; Ctrl+C e Ctrl+V para copiar e colar.' : row.priceHelp} data-price-row-index=${row.priceRowIndex} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown}/></label></td></tr>`)}</tbody></table></div>`}
+      ${v.adminProductView !== 'spreadsheet' && v.siteProductRows.map((row) => html`
         <div className="yc-admin-card yc-admin-product-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <img className="yc-admin-product-image" loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
