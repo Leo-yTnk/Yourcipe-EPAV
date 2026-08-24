@@ -9,6 +9,24 @@ POST (for example every minute); the function uses
 `SWIFT_PRICE_SYNC_INTERVAL_MINUTES` to avoid unnecessary runs. Never expose the
 service-role or cron secret to the browser.
 
+Production is project `ytvztfvypiwgnslisxep`, the same project hard-coded by the
+browser client. Merging a function/configuration change to `main` runs
+`.github/workflows/deploy-swift-price-sync.yml`; the protected GitHub `production`
+environment must contain `SUPABASE_ACCESS_TOKEN`. The workflow deploys with
+`--no-verify-jwt` (matching `supabase/config.toml`) and fails unless the live
+`OPTIONS` preflight returns 200. Git content alone does **not** update a deployed
+Edge Function.
+
+For an audited manual recovery, an operator with Supabase CLI access can run:
+
+```sh
+export SUPABASE_ACCESS_TOKEN='...' # operator token; never commit it
+supabase functions deploy swift-price-sync \
+  --project-ref ytvztfvypiwgnslisxep --no-verify-jwt
+curl --fail-with-body -i -X OPTIONS \
+  https://ytvztfvypiwgnslisxep.supabase.co/functions/v1/swift-price-sync
+```
+
 The provider allowlists HTTPS detail URLs on `www.swift.com.br`, rejects search and
 category paths and cross-domain redirects, sends the configured reference CEP in the
 regional cookie/header context, prefers JSON-LD/application JSON, and only then uses a
@@ -19,9 +37,9 @@ tools for the EPAV account before production promotion.
 
 ## Required secrets/configuration
 
-- `SWIFT_REFERENCE_ZIP_CODE` (required, exactly eight digits)
+- `SWIFT_REFERENCE_ZIP_CODE` (must be set manually; required, exactly eight digits)
 - `SWIFT_REFERENCE_REGION` (recommended human-readable region)
-- `SWIFT_PRICE_CRON_SECRET` (required for scheduler calls)
+- `SWIFT_PRICE_CRON_SECRET` (must be set manually only when scheduler calls are used)
 - `SWIFT_PRICE_SYNC_INTERVAL_MINUTES` (default `30`)
 - `SWIFT_PRICE_MAX_AGE_MINUTES` (default `30`)
 - `SWIFT_PRICE_REQUEST_TIMEOUT_MS` (default `10000`)
@@ -30,7 +48,23 @@ tools for the EPAV account before production promotion.
 - `SWIFT_PRICE_CHANGE_WARNING_PERCENT` (default `50`)
 - `SWIFT_REGION_COOKIE_NAME` (default `postalCode`; verify in staging)
 - standard Edge secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and
-  `SUPABASE_SERVICE_ROLE_KEY`
+  `SUPABASE_SERVICE_ROLE_KEY` (automatically supplied by hosted Supabase; do not
+  duplicate them in GitHub or the browser)
+
+Set manual function secrets reproducibly (values shown are placeholders):
+
+```sh
+supabase secrets set --project-ref ytvztfvypiwgnslisxep \
+  SWIFT_REFERENCE_ZIP_CODE=00000000 \
+  SWIFT_REFERENCE_REGION='Cidade/UF' \
+  SWIFT_PRICE_CRON_SECRET='a-long-random-value'
+```
+
+At startup of every POST, the function validates the standard secrets, CEP and
+all numeric settings. Missing/invalid values return HTTP 503 with code
+`service_misconfigured` and only the **names** of invalid settings (never values).
+An absent cron secret can no longer accidentally authorize a request. Browser
+requests require a valid user JWT (401), then `is_admin()` (403 for a non-admin).
 
 ## Operations and audit
 

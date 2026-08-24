@@ -546,6 +546,15 @@ export async function setProductSwiftSource(id, url) {
   return unwrap(await supabase.rpc('set_product_swift_source', { p_product_id: id, p_url: url || null }), 'setProductSwiftSource');
 }
 async function invokeSwiftPriceSync(body) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !sessionData?.session?.access_token) {
+    const error = await normalizeSwiftSyncError({
+      code: 'session_expired',
+      message: sessionError?.message || 'No active Supabase session',
+    });
+    console.error('[Swift price sync] authentication failed', error.technical);
+    return { data: null, error };
+  }
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -555,9 +564,20 @@ async function invokeSwiftPriceSync(body) {
     } catch (error) {
       lastError = error;
     }
-    if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 400));
+    if (attempt === 0) {
+      const normalized = await normalizeSwiftSyncError(lastError);
+      if (!normalized.retryable) break;
+      await new Promise(resolve => setTimeout(resolve, 400));
+    }
   }
-  return { data: null, error: normalizeSwiftSyncError(lastError) };
+  const error = await normalizeSwiftSyncError(lastError);
+  // The original SDK error/Response remains available here, but credentials
+  // and request headers are deliberately never copied into the log payload.
+  console.error('[Swift price sync] invocation failed', {
+    code: error.code, status: error.status, technicalMessage: error.technical.message,
+    providerCode: error.technical.providerCode, providerMessage: error.technical.providerMessage,
+  });
+  return { data: null, error };
 }
 export async function refreshProductPrice(productId) {
   return invokeSwiftPriceSync({ productId });
