@@ -17,6 +17,7 @@ import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAc
 import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260819-2';
 import { createLoadGuard } from './load-guard.js?v=20260819-2';
 import { shouldApplyAuthEvent } from './auth-events.js?v=20260819-2';
+import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260819-2';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
@@ -221,6 +222,7 @@ class App extends Component {
       productSectionDragKey: null,
       homeSectionOrderBusy: false,
       adminFlash: '',
+      swiftSyncReport: null, swiftSyncDetailsOpen: false,
       session: null,
       authRole: null,
       authDisplayName: null,
@@ -2272,6 +2274,7 @@ class App extends Component {
       const reference = res.error?.correlationId ? ` (referência ${res.error.correlationId})` : '';
       this.flashAdmin(res.error ? `Falha ao atualizar: ${res.error.message}${reference}` : 'Preço consultado na Swift.');
       await this.refreshAdminCatalog();
+      this.setState({ swiftSyncReport: buildSwiftSyncReport(res), swiftSyncDetailsOpen: false });
     } finally { this.setState(s => ({ swiftSyncBusyIds: { ...s.swiftSyncBusyIds, [p.id]: false } })); }
   };
   onRefreshAllPrices = async () => {
@@ -2281,6 +2284,7 @@ class App extends Component {
       const res = await catalog.refreshAllProductPrices();
       this.flashAdmin(res.error ? `${res.error.code === 'partial_sync' ? 'Sincronização parcial' : 'Falha na sincronização'}: ${res.error.message}` : `Sincronização concluída: ${res.data.products_synced} consultados, sem falhas.`);
       await this.refreshAdminCatalog();
+      this.setState({ swiftSyncReport: buildSwiftSyncReport(res), swiftSyncDetailsOpen: false });
     } finally { this.setState({ swiftSyncAllBusy: false }); }
   };
 
@@ -4179,6 +4183,7 @@ class App extends Component {
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
       onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onRefreshAllPrices: this.onRefreshAllPrices, swiftSyncAllBusy: s.swiftSyncAllBusy, onNewSiteCategory: this.onNewSiteCategory,
+      swiftSyncReport: s.swiftSyncReport, swiftSyncDetailsOpen: s.swiftSyncDetailsOpen, onToggleSwiftSyncDetails: () => this.setState(x => ({ swiftSyncDetailsOpen: !x.swiftSyncDetailsOpen })),
       adminProductView: s.adminProductView, onAdminProductViewSet: this.onAdminProductViewSet,
       showSiteRecipeForm: s.showSiteRecipeForm, siteRecipeFormTitle: s.siteRecipeFormMode === 'new' ? 'Nova Receita do Catálogo' : 'Editar Receita do Catálogo', siteRecipeForm: s.siteRecipeForm || {},
       hasSiteFormError: !!s.siteFormError, siteFormError: s.siteFormError,
