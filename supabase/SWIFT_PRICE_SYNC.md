@@ -17,6 +17,22 @@ environment must contain `SUPABASE_ACCESS_TOKEN`. The workflow deploys with
 `OPTIONS` preflight returns 200. Git content alone does **not** update a deployed
 Edge Function.
 
+### GitHub Actions credential
+
+The access token used by the deployment is an operator credential and cannot be
+created or recovered by the workflow. Create a Supabase personal access token, then
+add it in GitHub under **Settings → Environments → production → Environment
+secrets**, using the exact name `SUPABASE_ACCESS_TOKEN`. Do not use the project's
+anon key, service-role key, database password, or a repository variable: those are
+different credentials, and GitHub variables are not exposed through the `secrets`
+context.
+
+After saving the environment secret, rerun the failed job from GitHub Actions. The
+workflow validates that the credential is present before invoking the Supabase CLI,
+so a missing or misspelled secret produces an actionable annotation rather than the
+CLI's generic “Access token not provided” message. Environment protection rules may
+also require an authorized reviewer before GitHub releases the secret to the job.
+
 For an audited manual recovery, an operator with Supabase CLI access can run:
 
 ```sh
