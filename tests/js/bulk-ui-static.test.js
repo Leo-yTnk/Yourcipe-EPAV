@@ -16,10 +16,12 @@ describe('connected bulk-selection UI', () => {
     expect(app).toContain('catalog.updateSiteProduct(id, { active })');
     expect(app).toContain('catalog.updateSiteRecipe(id, { status })');
   });
-  it('renders and persists spreadsheet mode with inline price editing', () => {
-    expect(template).toContain("v.productLayout === 'spreadsheet'");
-    expect(template).toContain('onBlur=${item.onPriceBlur}');
-    expect(app).toContain("this.persist(LS_KEYS.productLayout, productLayout)");
-    expect(app).toContain("spl === 'spreadsheet'");
+  it('keeps spreadsheet price editing in the admin product catalog', () => {
+    expect(template).toContain("v.adminProductView === 'spreadsheet'");
+    expect(template).toContain("[['carousel', 'Carrossel'], ['grid', 'Grid']]");
+    expect(template).toContain('Tab, setas e Ctrl+C/Ctrl+V');
+    expect(template).toContain('onBlur=${row.onPriceBlur}');
+    expect(app).toContain("!['list', 'spreadsheet'].includes(adminProductView)");
+    expect(app).not.toContain("spl === 'spreadsheet'");
   });
 });

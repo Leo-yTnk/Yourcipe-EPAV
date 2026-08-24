@@ -95,7 +95,7 @@ class App extends Component {
     let fontSize = 'normal';
     try { const sfz = localStorage.getItem(LS_KEYS.fontSize); if (sfz === 'small' || sfz === 'large' || sfz === 'normal') fontSize = sfz; } catch (e) {}
     let productLayout = 'carousel';
-    try { const spl = localStorage.getItem(LS_KEYS.productLayout); if (spl === 'carousel' || spl === 'grid' || spl === 'spreadsheet') productLayout = spl; } catch (e) {}
+    try { const spl = localStorage.getItem(LS_KEYS.productLayout); if (spl === 'carousel' || spl === 'grid') productLayout = spl; } catch (e) {}
     // Welcome splash shows once per browser, ever — not once per session/
     // login. If localStorage is unavailable (private browsing, disabled,
     // throws), this fails safe by falling through to the pre-existing
@@ -107,7 +107,7 @@ class App extends Component {
       darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize, productLayout,
       productSectionPickerKey: null, productSectionPickerQuery: '', adminSearchQuery: '',
       catalogEditorPage: 'home', catalogPicker: null, catalogPickerQuery: '',
-      ingredientProductPicker: null, ingredientProductPickerQuery: '',
+      ingredientProductPicker: null, ingredientProductPickerQuery: '', adminProductView: 'list',
       inlinePriceDrafts: {}, inlinePriceBusy: {},
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
@@ -1404,7 +1404,15 @@ class App extends Component {
     this.refreshAfterMyCreationMutation(uid, 'Produto salvo com sucesso.');
   };
   onInlinePriceChange = (scope, id) => (e) => this.setState(s => ({ inlinePriceDrafts: { ...s.inlinePriceDrafts, [`${scope}:${id}`]: e.target.value } }));
-  onInlinePriceKeyDown = (scope, product) => (e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } };
+  onInlinePriceKeyDown = (scope, product) => (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); return; }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.currentTarget.dataset.priceRowIndex !== undefined) {
+      const direction = e.key === 'ArrowUp' ? -1 : 1;
+      const next = Number(e.currentTarget.dataset.priceRowIndex) + direction;
+      const input = e.currentTarget.closest('table')?.querySelector(`[data-price-row-index="${next}"]`);
+      if (input) { e.preventDefault(); input.focus(); input.select(); }
+    }
+  };
   saveInlinePrice = async (scope, product) => {
     const key = `${scope}:${product.id}`;
     if (this.state.inlinePriceBusy[key] || this.state.inlinePriceDrafts[key] === undefined) return;
@@ -2531,9 +2539,13 @@ class App extends Component {
   setNavRailRight = () => { this.setState({ navRailSide: 'right' }); this.persist(LS_KEYS.navRailSide, 'right'); };
   onSetFontSize = (fontSize) => { this.setState({ fontSize }); this.persist(LS_KEYS.fontSize, fontSize); };
   onProfileProductLayoutSet = (productLayout) => {
-    if (!['carousel', 'grid', 'spreadsheet'].includes(productLayout)) return;
+    if (!['carousel', 'grid'].includes(productLayout)) return;
     this.setState({ productLayout });
     this.persist(LS_KEYS.productLayout, productLayout);
+  };
+  onAdminProductViewSet = (adminProductView) => {
+    if (!['list', 'spreadsheet'].includes(adminProductView)) return;
+    this.setState({ adminProductView });
   };
   toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -2831,8 +2843,6 @@ class App extends Component {
   makeProductCard = (p, idx) => {
     const d = Math.min(idx || 0, 12) * 65;
     const rise = `animation:ycRise 0.5s cubic-bezier(0.22,0.8,0.24,1) ${d}ms backwards`;
-    const pricePolicy = priceEditPolicy(p);
-    const priceKey = `site:${p.id}`;
     return {
       id: p.id, name: p.nome, nome: p.nome, imagem: p.imagem || FALLBACK_IMG, categoria: p.categoria,
       priceLabel: this.formatBRL(p.preco),
@@ -2840,12 +2850,6 @@ class App extends Component {
       carouselStyle: `flex:0 0 ${this.state.deviceMode === 'desktop' ? 280 : (this.state.deviceMode === 'tablet' ? 260 : 240)}px;cursor:pointer;transition:transform 0.18s ease,flex-basis 0.2s ease;scroll-snap-align:start;${rise}`,
       gridCardStyle: `position:relative;cursor:pointer;background:var(--neutral-0);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--neutral-100);transition:transform 0.18s ease,box-shadow 0.18s ease;${rise}`,
       onOpen: () => this.openProductDetail(p.id),
-      priceValue: this.state.inlinePriceDrafts[priceKey] ?? String(p.preco).replace('.', ','),
-      priceEditable: this.state.authRole === 'admin' && pricePolicy.editable,
-      priceBusy: !!this.state.inlinePriceBusy[priceKey], priceHelp: pricePolicy.reason,
-      onPriceChange: this.onInlinePriceChange('site', p.id),
-      onPriceBlur: () => this.saveInlinePrice('site', { ...p, price: p.preco }),
-      onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
     };
   };
 
@@ -3869,7 +3873,7 @@ class App extends Component {
         onDelete: () => this.askDeleteRecipeChecked(r.id),
       };
     }).filter(row => matchesSearch(row.name));
-    const siteProductRows = s.siteProducts.map(p => { const selected = s.productSelectionScope === 'site' && s.selectedProductIds.includes(p.id); return ({
+    const siteProductRows = s.siteProducts.map(p => { const selected = s.productSelectionScope === 'site' && s.selectedProductIds.includes(p.id); const pricePolicy = priceEditPolicy(p); return ({
       id: p.id, name: p.name, code: p.product_code, categoryName: (p.category && p.category.name) || '', unit: p.unit, priceLabel: this.formatBRL(p.price), priceValue: s.inlinePriceDrafts[`site:${p.id}`] ?? p.price, imagem: p.image_url || FALLBACK_IMG,
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
       statusLabel: p.active ? 'Ativo' : 'Inativo', statusBadgeStyle: statusBadge('', p.active ? '#34B23E' : '#8A8580'),
@@ -3878,8 +3882,9 @@ class App extends Component {
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'site'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
       onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p), onRefreshPrice: () => this.onRefreshSiteProductPrice(p), priceStatusLabel: p.price_status || 'MISSING_SOURCE', priceDetailsLabel: p.price_last_success_at ? `Última confirmação: ${this.formatDateTime(p.price_last_success_at)}` : 'Sem preço confirmado na Swift',
       onDelete: () => this.askDeleteSiteProduct(p.id),
+      priceEditable: pricePolicy.editable, priceHelp: pricePolicy.reason, priceBusy: !!s.inlinePriceBusy[`site:${p.id}`],
       onPriceChange: this.onInlinePriceChange('site', p.id), onPriceBlur: () => this.saveInlinePrice('site', p), onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
-    }); }).filter(row => matchesSearch(row.name));
+    }); }).filter(row => matchesSearch(row.name)).map((row, priceRowIndex) => ({ ...row, priceRowIndex }));
     const siteCategoryRows = s.siteCategories.map(c => { const selected = s.categorySelectionScope === 'site' && s.selectedCategoryIds.includes(c.id); return ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       showCheckbox: s.categorySelectionMode && s.categorySelectionScope === 'site', showActions: !(s.categorySelectionMode && s.categorySelectionScope === 'site'), selected, onPressStart: () => this.startCategoryRowPress(c.id, 'site'), onPressEnd: this.endCategoryRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.categorySelectionMode && this.state.categorySelectionScope === 'site') this.toggleCategorySelected(c.id); },
@@ -4158,6 +4163,7 @@ class App extends Component {
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
       onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onRefreshAllPrices: this.onRefreshAllPrices, onNewSiteCategory: this.onNewSiteCategory,
+      adminProductView: s.adminProductView, onAdminProductViewSet: this.onAdminProductViewSet,
       showSiteRecipeForm: s.showSiteRecipeForm, siteRecipeFormTitle: s.siteRecipeFormMode === 'new' ? 'Nova Receita do Catálogo' : 'Editar Receita do Catálogo', siteRecipeForm: s.siteRecipeForm || {},
       hasSiteFormError: !!s.siteFormError, siteFormError: s.siteFormError,
       siteRecipeFormOnName: this.siteRecipeFormField('name'), siteRecipeFormOnCategorySet: this.setFormField('siteRecipeForm', 'categoryId'),
