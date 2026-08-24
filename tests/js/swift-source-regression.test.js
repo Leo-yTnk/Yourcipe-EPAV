@@ -22,6 +22,12 @@ describe('Swift source regression', () => {
     expect(handler).toContain("'access-control-allow-origin': '*'");
   });
 
+  it('lets publishable-key projects reach the function before its own admin check', () => {
+    const config = readFileSync('supabase/config.toml', 'utf8');
+    expect(config).toContain('[functions.swift-price-sync]');
+    expect(config).toContain('verify_jwt = false');
+  });
+
   it('turns an opaque Edge Function network failure into deployment guidance', () => {
     const error = normalizeSwiftSyncError(new Error('Failed to send a request to the Edge Function'));
     expect(error.message).toContain('swift-price-sync está implantada');
@@ -31,5 +37,12 @@ describe('Swift source regression', () => {
     const app = readFileSync('app.js', 'utf8');
     expect(app).toMatch(/onRefreshSiteProductPrice[\s\S]*if \(!p\.swift_product_url\)[\s\S]*onEditSiteProduct\(p\)/);
     expect(app).toContain("MISSING_SOURCE: 'Sem página Swift'");
+  });
+
+  it('renders catalog products as a card grid with four icon-only actions', () => {
+    const template = readFileSync('template.js', 'utf8');
+    expect(template).toContain('className="yc-admin-product-grid"');
+    expect(template).toContain("[['grid', 'Cards'], ['spreadsheet', 'Planilha']]");
+    expect(template).toMatch(/yc-admin-card-actions[\s\S]*aria-label=\$\{row\.toggleActiveLabel\}[\s\S]*aria-label=\$\{row\.hasSwiftSource \? 'Atualizar preço'/);
   });
 });
