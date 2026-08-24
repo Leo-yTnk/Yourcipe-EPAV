@@ -22,6 +22,18 @@ const responseHeaders = {
 };
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const log = (event: string, fields = {}) => console.log(JSON.stringify({ provider: 'swift', event, ...fields }));
+const json = (payload: Record<string, unknown>, status = 200) => new Response(JSON.stringify(payload), { status, headers: responseHeaders });
+
+function configurationError() {
+  const required = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
+  const missing = required.filter(key => !env(key));
+  if (!ZIP || ZIP.length !== 8) missing.push('SWIFT_REFERENCE_ZIP_CODE');
+  const numeric = { SWIFT_PRICE_MAX_AGE_MINUTES: MAX_AGE, SWIFT_PRICE_SYNC_INTERVAL_MINUTES: SYNC_INTERVAL,
+    SWIFT_PRICE_REQUEST_TIMEOUT_MS: TIMEOUT, SWIFT_PRICE_MAX_RETRIES: RETRIES,
+    SWIFT_PRICE_SYNC_CONCURRENCY: CONCURRENCY, SWIFT_PRICE_CHANGE_WARNING_PERCENT: WARNING_PERCENT };
+  const invalid = Object.entries(numeric).filter(([, value]) => !Number.isFinite(value) || value < 0).map(([key]) => key);
+  return { missing: [...new Set(missing)], invalid };
+}
 
 async function hashObservation(value: unknown) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -60,17 +72,35 @@ async function fetchPage(url: string) {
 
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: responseHeaders });
-  if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'method_not_allowed' }), { status: 405, headers: responseHeaders });
-  if (!ZIP || ZIP.length !== 8) return new Response(JSON.stringify({ error: 'SWIFT_REFERENCE_ZIP_CODE must contain 8 digits' }), { status: 503, headers: responseHeaders });
+  if (req.method !== 'POST') return json({ error: 'method_not_allowed', code: 'method_not_allowed' }, 405);
+  const config = configurationError();
+  if (config.missing.length || config.invalid.length) {
+    log('configuration_error', config);
+    return json({ error: 'service_misconfigured', code: 'service_misconfigured',
+      message: 'Required Edge Function configuration is missing or invalid', ...config }, 503);
+  }
   const supabase = createClient(env('SUPABASE_URL')!, env('SUPABASE_SERVICE_ROLE_KEY')!);
   const auth = req.headers.get('authorization') || '';
-  const cronAuthorized = req.headers.get('x-cron-secret') === env('SWIFT_PRICE_CRON_SECRET');
+  const cronSecret = env('SWIFT_PRICE_CRON_SECRET');
+  const cronHeader = req.headers.get('x-cron-secret');
+  const cronAuthorized = !!cronSecret && !!cronHeader && cronHeader === cronSecret;
   let adminAuthorized = false;
+  let authenticated = false;
   if (auth.startsWith('Bearer ')) {
     const userClient = createClient(env('SUPABASE_URL')!, env('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } });
-    const { data } = await userClient.rpc('is_admin'); adminAuthorized = data === true;
+    const { data: userData } = await userClient.auth.getUser();
+    authenticated = !!userData?.user;
+    if (authenticated) {
+      const { data, error: adminError } = await userClient.rpc('is_admin');
+      if (adminError) {
+        log('admin_check_failed', { code: adminError.code });
+        return json({ error: 'admin_check_failed', code: 'sync_internal_error' }, 500);
+      }
+      adminAuthorized = data === true;
+    }
   }
-  if (!cronAuthorized && !adminAuthorized) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: responseHeaders });
+  if (!cronAuthorized && !authenticated) return json({ error: 'unauthorized', code: 'unauthorized' }, 401);
+  if (!cronAuthorized && !adminAuthorized) return json({ error: 'forbidden', code: 'forbidden' }, 403);
   let body: { productId?: string; staleOnly?: boolean } = {};
   try { body = await req.json(); } catch { /* cron may have no body */ }
   if (cronAuthorized && !body.productId) {
@@ -81,9 +111,11 @@ Deno.serve(async req => {
   let query = supabase.from('products').select('*').eq('scope', 'site').eq('active', true);
   if (body.productId) query = query.eq('id', body.productId);
   const { data: products, error } = await query;
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: responseHeaders });
+  if (error) return json({ error: 'product_query_failed', code: 'sync_internal_error' }, 500);
+  if (body.productId && !products?.length) return json({ error: 'product_not_found', code: 'product_not_found' }, 404);
   const started = Date.now();
   const metrics = { products_synced: 0, products_updated: 0, products_unchanged: 0, products_failed: 0, products_stale: 0 };
+  let productFailureCode = '';
   const { data: run } = await supabase.from('swift_price_sync_runs').insert({}).select('id').single();
 
   async function refresh(product: Record<string, any>) {
@@ -118,6 +150,7 @@ Deno.serve(async req => {
       log('product_synced', { product_id: product.id, changed, pricing_type: parsed.pricingType });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
+      productFailureCode = message;
       const stale = !!product.price_last_success_at;
       await supabase.from('products').update(buildSwiftFailureUpdate(product, message, checkedAt)).eq('id', product.id);
       metrics.products_failed++; if (stale) metrics.products_stale++;
@@ -129,5 +162,10 @@ Deno.serve(async req => {
   const duration_ms = Date.now() - started;
   if (run) await supabase.from('swift_price_sync_runs').update({ ...metrics, duration_ms, finished_at: new Date().toISOString() }).eq('id', run.id);
   if (metrics.products_failed >= 3) log('provider_alert', { reason: 'consecutive_batch_failures', ...metrics });
-  return new Response(JSON.stringify({ ...metrics, duration_ms }), { headers: responseHeaders });
+  if (body.productId && metrics.products_failed) {
+    const code = /price_not_found|invalid_price/.test(productFailureCode) ? 'price_not_found'
+      : /invalid|mismatch|redirect|swift_http_4/.test(productFailureCode) ? 'invalid_swift_page' : 'swift_unavailable';
+    return json({ ...metrics, duration_ms, error: 'product_sync_failed', code }, 502);
+  }
+  return json({ ...metrics, duration_ms });
  });

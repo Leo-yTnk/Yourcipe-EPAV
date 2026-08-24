@@ -28,15 +28,18 @@ describe('Swift source regression', () => {
     expect(config).toContain('verify_jwt = false');
   });
 
-  it('turns an opaque Edge Function network failure into deployment guidance', () => {
-    const error = normalizeSwiftSyncError(new Error('Failed to send a request to the Edge Function'));
-    expect(error.message).toContain('swift-price-sync está implantada');
+  it('preserves an opaque Edge Function network failure for diagnosis', async () => {
+    const original = new Error('Failed to send a request to the Edge Function');
+    const error = await normalizeSwiftSyncError(original);
+    expect(error.code).toBe('network_error');
+    expect(error.message).toContain('conectar ao serviço');
+    expect(error.technical.original).toBe(original);
   });
 
   it('retries transient Edge Function transport failures', () => {
     const catalog = readFileSync('catalog.js', 'utf8');
     expect(catalog).toMatch(/async function invokeSwiftPriceSync[\s\S]*attempt < 2/);
-    expect(catalog).toMatch(/catch \(error\)[\s\S]*normalizeSwiftSyncError\(lastError\)/);
+    expect(catalog).toMatch(/catch \(error\)[\s\S]*await normalizeSwiftSyncError\(lastError\)/);
     expect(catalog).toContain('setTimeout(resolve, 400)');
   });
 
