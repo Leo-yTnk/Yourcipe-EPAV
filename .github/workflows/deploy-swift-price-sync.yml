@@ -67,12 +67,15 @@ jobs:
             https://ytvztfvypiwgnslisxep.supabase.co/functions/v1/swift-price-sync)" = 401
           grep -q '"code":"unauthorized"' /tmp/unauthorized
       - name: Controlled authenticated smoke tests
-        if: ${{ secrets.SWIFT_SMOKE_USER_JWT != '' && secrets.SWIFT_SMOKE_ADMIN_JWT != '' }}
         env:
           USER_JWT: ${{ secrets.SWIFT_SMOKE_USER_JWT }}
           ADMIN_JWT: ${{ secrets.SWIFT_SMOKE_ADMIN_JWT }}
           PRODUCT_ID: ${{ secrets.SWIFT_SMOKE_PRODUCT_ID }}
         run: |
+          if [ -z "$USER_JWT" ] || [ -z "$ADMIN_JWT" ]; then
+            echo "Authenticated smoke tests skipped: configure SWIFT_SMOKE_USER_JWT and SWIFT_SMOKE_ADMIN_JWT in the production environment to enable them."
+            exit 0
+          fi
           test "$(curl -sS -o /tmp/forbidden -w '%{http_code}' -X POST -H "Authorization: Bearer $USER_JWT" -H 'Content-Type: application/json' -d '{}' https://ytvztfvypiwgnslisxep.supabase.co/functions/v1/swift-price-sync)" = 403
           test -n "$PRODUCT_ID" || { echo '::error::Missing SWIFT_SMOKE_PRODUCT_ID'; exit 1; }
           curl --fail-with-body -sS -X POST -H "Authorization: Bearer $ADMIN_JWT" -H 'Content-Type: application/json' \

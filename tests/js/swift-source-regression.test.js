@@ -28,6 +28,12 @@ describe('Swift source regression', () => {
     expect(config).toContain('verify_jwt = false');
   });
 
+  it('does not reference the secrets context in a step condition', () => {
+    const workflow = readFileSync('.github/workflows/deploy-swift-price-sync.yml', 'utf8');
+    expect(workflow).not.toMatch(/^\s*if:\s*\$\{\{\s*secrets\./m);
+    expect(workflow).toContain('if [ -z "$USER_JWT" ] || [ -z "$ADMIN_JWT" ]; then');
+  });
+
   it('preserves an opaque Edge Function network failure for diagnosis', async () => {
     const original = new Error('Failed to send a request to the Edge Function');
     const error = await normalizeSwiftSyncError(original);
