@@ -1524,7 +1524,7 @@ function renderSiteProductsTab(app, v) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Novo Produto no Catálogo
       </div>
-      <div onClick=${v.onRefreshAllPrices} style="text-align:center;padding:10px;margin-bottom:12px;border:1px solid var(--brand-500);border-radius:var(--radius-md);color:var(--brand-700);font-weight:700;cursor:pointer">Atualizar todos os preços na Swift</div>
+      <button type="button" onClick=${v.onRefreshAllPrices} disabled=${v.swiftSyncAllBusy} aria-busy=${v.swiftSyncAllBusy} style="width:100%;text-align:center;padding:10px;margin-bottom:12px;border:1px solid var(--brand-500);background:transparent;border-radius:var(--radius-md);color:var(--brand-700);font-weight:700;cursor:${v.swiftSyncAllBusy ? 'wait' : 'pointer'}">${v.swiftSyncAllBusy ? 'Atualizando preços…' : 'Atualizar todos os preços na Swift'}</button>
       <div className="yc-admin-product-view" aria-label="Exibição dos produtos">
         <span><strong>Exibição dos produtos</strong><small>Use a planilha para editar preços com Tab, setas e Ctrl+C/Ctrl+V.</small></span>
         <div>${[['grid', 'Cards'], ['spreadsheet', 'Planilha']].map(([value, label]) => html`<button type="button" aria-pressed=${v.adminProductView === value} className=${v.adminProductView === value ? 'is-active' : ''} onClick=${() => v.onAdminProductViewSet(value)}>${label}</button>`)}</div>
@@ -1548,7 +1548,7 @@ function renderSiteProductsTab(app, v) {
           <button type="button" className="yc-admin-icon-action yc-admin-primary-action" onClick=${row.onToggleActive} title=${row.toggleActiveLabel} aria-label=${row.toggleActiveLabel}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"></path><path d="M18.4 6.6a9 9 0 11-12.8 0"></path></svg>
           </button>
-          <button type="button" className=${`yc-admin-icon-action yc-admin-price-refresh ${row.hasSwiftSource ? '' : 'is-source-cta'}`} onClick=${row.onRefreshPrice} title=${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'} aria-label=${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'}>
+          <button type="button" className=${`yc-admin-icon-action yc-admin-price-refresh ${row.hasSwiftSource ? '' : 'is-source-cta'}`} onClick=${row.onRefreshPrice} disabled=${row.refreshPriceBusy} aria-busy=${row.refreshPriceBusy} title=${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'} aria-label=${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6v5h-5"></path><path d="M4 18v-5h5"></path><path d="M18.5 9A7 7 0 006 6.5L4 11"></path><path d="M5.5 15A7 7 0 0018 17.5l2-4.5"></path></svg>
           </button>
           <button type="button" className="yc-admin-icon-action yc-admin-edit" onClick=${row.onEdit} title="Editar" aria-label="Editar">
@@ -2364,7 +2364,7 @@ function renderSiteProductFormModal(app, v) {
           ${field('Nome do produto', html`<input type="text" value=${f.name} onInput=${v.siteProductFormOnName} style=${FORM_INPUT_STYLE}/>`, { required: true })}
           ${field('Categoria (proteína/produto)', html`<${CustomSelect} options=${v.siteProteinCategoryOptions} value=${f.categoryId} onChange=${v.siteProductFormOnCategorySet} />`, { required: true })}
           ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />`, { required: true })}
-          ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.siteProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
+          ${field('Preço legado (R$)', html`<input type="number" step="0.01" value=${f.price} disabled=${!!f.swiftUrl} title=${f.swiftUrl ? 'O preço é confirmado exclusivamente pela sincronização Swift.' : ''} onInput=${v.siteProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: !f.swiftUrl })}
           ${field('Página oficial do produto na Swift', html`<input type="url" placeholder="https://www.swift.com.br/detail/nome-do-produto" value=${f.swiftUrl} onInput=${v.siteProductFormOnSwiftUrl} style=${FORM_INPUT_STYLE}/>`)}
           ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.siteProductFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`)}
           ${checkbox({ checked: !!f.active, onChange: v.siteProductFormOnActive, label: 'Ativo (visível publicamente)' })}

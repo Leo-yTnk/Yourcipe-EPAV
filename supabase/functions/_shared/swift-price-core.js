@@ -50,23 +50,48 @@ function scripts(html, type) {
   return [...html.matchAll(re)].map(m => m[1]);
 }
 
-export function parseSwiftProductPage(html, { expectedName, expectedSku, canonicalUrl } = {}) {
+const IDENTITY_STOPWORDS = new Set(['swift', 'carne', 'produto', 'congelado', 'congelada', 'resfriado', 'resfriada', 'para', 'com', 'sem', 'tipo']);
+const normalizeIdentity = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function assertProductIdentity({ expectedName, expectedSku, expectedProductId, name, sku, productId }) {
+  if (expectedSku && !sku) throw new Error('product_sku_not_found');
+  if (expectedSku && normalizeIdentity(expectedSku) !== normalizeIdentity(sku)) throw new Error('product_sku_mismatch');
+  if (expectedProductId && !productId) throw new Error('product_id_not_found');
+  if (expectedProductId && normalizeIdentity(expectedProductId) !== normalizeIdentity(productId)) throw new Error('product_id_mismatch');
+  if (!expectedName || expectedSku || expectedProductId) return;
+  const expected = normalizeIdentity(expectedName).split(' ').filter(w => w.length > 2 && !IDENTITY_STOPWORDS.has(w));
+  const actual = new Set(normalizeIdentity(name).split(' ').filter(Boolean));
+  // Brand-only matches are explicitly forbidden. Without a stable identifier,
+  // require most meaningful name tokens (and at least two when available).
+  const matched = expected.filter(w => actual.has(w));
+  const required = Math.min(expected.length, Math.max(1, Math.ceil(expected.length * 0.6), expected.length > 1 ? 2 : 1));
+  if (!expected.length || matched.length < required) throw new Error('product_name_mismatch');
+}
+
+function selectOffer(offers, expectedSku) {
+  const list = (Array.isArray(offers) ? offers : [offers]).filter(Boolean);
+  const available = list.filter(o => !o.availability || /InStock|LimitedAvailability/i.test(String(o.availability)));
+  const pool = available.length ? available : list;
+  if (expectedSku) {
+    const exact = pool.find(o => normalizeIdentity(o.sku || o.itemOffered?.sku || o.itemOffered?.productID) === normalizeIdentity(expectedSku));
+    if (exact) return exact;
+  }
+  return pool.find(o => o.price != null || o.highPrice != null) || null;
+}
+
+export function parseSwiftProductPage(html, { expectedName, expectedSku, expectedProductId, canonicalUrl } = {}) {
   if (!html || html.length < 80) throw new Error('incomplete_product_page');
   const candidates = [];
   for (const raw of [...scripts(html, 'application/ld\\+json'), ...scripts(html, 'application/json')]) {
     try { candidates.push(...allJsonObjects(JSON.parse(raw))); } catch { /* malformed unrelated script */ }
   }
   const product = candidates.find(o => String(o['@type'] || o.type || '').toLowerCase() === 'product' && (o.offers || o.price));
-  const pageText = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ');
-  const offer = product && (Array.isArray(product.offers) ? product.offers[0] : product.offers);
+  const visibleHtml = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ').replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ');
+  const pageText = visibleHtml.replace(/<[^>]+>/g, ' ').replace(/&(?:nbsp|#160);/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/\s+/g, ' ');
+  const offer = product && selectOffer(product.offers || product, expectedSku);
   const name = product?.name || html.match(/<h1[^>]*>([^<]+)/i)?.[1]?.trim();
   const sku = product?.sku || product?.productID || null;
   if (!name) throw new Error('product_identity_not_found');
-  if (expectedSku && sku && String(expectedSku) !== String(sku)) throw new Error('product_sku_mismatch');
-  if (expectedName) {
-    const words = String(expectedName).toLowerCase().split(/\W+/).filter(w => w.length > 3);
-    if (words.length && !words.some(w => String(name).toLowerCase().includes(w))) throw new Error('product_name_mismatch');
-  }
+  assertProductIdentity({ expectedName, expectedSku, expectedProductId, name, sku, productId: product?.productID });
   const currency = offer?.priceCurrency || product?.priceCurrency || (pageText.includes('R$') ? 'BRL' : null);
   if (currency !== 'BRL') throw new Error('invalid_currency');
   const contextual = `${offer?.priceSpecification?.unitText || ''} ${offer?.description || ''} ${product?.description || ''} ${pageText}`;

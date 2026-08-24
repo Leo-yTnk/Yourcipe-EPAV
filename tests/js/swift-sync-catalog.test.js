@@ -22,13 +22,13 @@ describe('Swift sync catalog calls', () => {
   it('invokes an individual update with the product id and returns success', async () => {
     mocks.invoke.mockResolvedValue({ data: { products_synced: 1, products_updated: 1, products_failed: 0 }, error: null });
     await expect(refreshProductPrice('product-1')).resolves.toMatchObject({ data: { products_updated: 1 }, error: null });
-    expect(mocks.invoke).toHaveBeenCalledWith('swift-price-sync', { body: { productId: 'product-1' } });
+    expect(mocks.invoke).toHaveBeenCalledWith('swift-price-sync', { body: expect.objectContaining({ productId: 'product-1', requestId: expect.any(String) }) });
   });
 
   it('invokes a batch update with an empty body', async () => {
     mocks.invoke.mockResolvedValue({ data: { products_synced: 3, products_failed: 0 }, error: null });
     await expect(refreshAllProductPrices()).resolves.toMatchObject({ data: { products_synced: 3 }, error: null });
-    expect(mocks.invoke).toHaveBeenCalledWith('swift-price-sync', { body: {} });
+    expect(mocks.invoke).toHaveBeenCalledWith('swift-price-sync', { body: expect.objectContaining({ requestId: expect.any(String) }) });
   });
 
   it('does not call the function when the user session is absent', async () => {
@@ -54,5 +54,29 @@ describe('Swift sync catalog calls', () => {
     expect(result.error.code).toBe('network_error');
     expect(result.error.technical.original).toBe(error);
     expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.invoke.mock.calls[0][1].body.requestId).toBe(mocks.invoke.mock.calls[1][1].body.requestId);
+  });
+
+  it('does not report HTTP success when product metrics contain failures', async () => {
+    mocks.invoke.mockResolvedValue({ data: { products_synced: 3, products_failed: 1, run_id: 7 }, error: null });
+    const result = await refreshAllProductPrices();
+    expect(result.error).toMatchObject({ code: 'partial_sync' });
+    expect(result.data.products_failed).toBe(1);
+  });
+
+  it('coalesces simultaneous clicks into one request', async () => {
+    let release;
+    mocks.invoke.mockReturnValue(new Promise(resolve => { release = resolve; }));
+    const first = refreshProductPrice('product-1');
+    const second = refreshProductPrice('product-1');
+    await Promise.resolve();
+    release({ data: { products_synced: 1, products_failed: 0 }, error: null });
+    expect(await first).toEqual(await second);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a response without trustworthy metrics', async () => {
+    mocks.invoke.mockResolvedValue({ data: { ok: true }, error: null });
+    expect((await refreshAllProductPrices()).error.code).toBe('invalid_sync_response');
   });
 });

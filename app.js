@@ -289,7 +289,7 @@ class App extends Component {
 
       // ---- Modo de Criação: "Catálogo Público" (admin-only direct authoring
       // of scope='site' rows — supabase/006_admin_catalog_publishing.sql).
-      siteCatalogLoading: false, siteCatalogError: '',
+      siteCatalogLoading: false, siteCatalogError: '', swiftSyncAllBusy: false, swiftSyncBusyIds: {},
       siteCategories: [], siteProducts: [], siteRecipes: [],
       showSiteCategoryForm: false, siteCategoryFormMode: 'new', siteCategoryForm: null,
       showSiteProductForm: false, siteProductFormMode: 'new', siteProductForm: null,
@@ -2252,16 +2252,10 @@ class App extends Component {
     const inputError = validateName(f.name, 'nome do produto') || (!f.categoryId ? 'Informe a categoria do produto.' : '') || validateOptionalHttpUrl(f.imageUrl);
     const parsedPrice = parseNonNegativePrice(f.price);
     if (inputError || parsedPrice.error) { this.setState({ siteFormError: inputError || parsedPrice.error }); return; }
-    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parsedPrice.value, active: !!f.active, image_url: (f.imageUrl || '').trim() || null };
-    const res = f.id
-      ? await catalog.updateSiteProduct(f.id, patch)
-      : await catalog.createSiteProduct({ name: patch.name, categoryId: patch.category_id, unit: patch.unit, price: patch.price, active: patch.active, imageUrl: patch.image_url });
+    const patch = { name: f.name.trim(), category_id: f.categoryId, unit: f.unit, price: parsedPrice.value, active: !!f.active,
+      image_url: (f.imageUrl || '').trim() || null, swift_product_url: (f.swiftUrl || '').trim() || null };
+    const res = await catalog.saveSiteProductAtomic(f.id, patch, f.sectionCategoryIds || []);
     if (res.error) { this.setState({ siteFormError: `Não foi possível salvar: ${res.error.message || 'erro desconhecido'}` }); return; }
-    const productId = f.id || (res.data && res.data.id);
-    const sourceRes = await catalog.setProductSwiftSource(productId, (f.swiftUrl || '').trim() || null);
-    if (sourceRes.error) { this.setState({ siteFormError: `Produto salvo, mas a página Swift é inválida: ${sourceRes.error.message}` }); return; }
-    const secRes = await catalog.replaceProductCategories(productId, f.sectionCategoryIds || []);
-    if (secRes.error) this.flashAdmin('O produto foi salvo, mas houve um erro ao salvar as seções.');
     this.setState({ showSiteProductForm: false, siteProductForm: null });
     this.refreshAdminCatalog();
   };
@@ -2271,11 +2265,24 @@ class App extends Component {
       this.onEditSiteProduct(p);
       return;
     }
-    const res = await catalog.refreshProductPrice(p.id);
-    this.flashAdmin(res.error ? `Falha ao atualizar: ${res.error.message}` : 'Preço consultado na Swift.');
-    await this.refreshAdminCatalog();
+    if (this.state.swiftSyncBusyIds[p.id]) return;
+    this.setState(s => ({ swiftSyncBusyIds: { ...s.swiftSyncBusyIds, [p.id]: true } }));
+    try {
+      const res = await catalog.refreshProductPrice(p.id);
+      const reference = res.error?.correlationId ? ` (referência ${res.error.correlationId})` : '';
+      this.flashAdmin(res.error ? `Falha ao atualizar: ${res.error.message}${reference}` : 'Preço consultado na Swift.');
+      await this.refreshAdminCatalog();
+    } finally { this.setState(s => ({ swiftSyncBusyIds: { ...s.swiftSyncBusyIds, [p.id]: false } })); }
   };
-  onRefreshAllPrices = async () => { const res = await catalog.refreshAllProductPrices(); this.flashAdmin(res.error ? `Falha na sincronização: ${res.error.message}` : `Sincronização concluída: ${res.data.products_synced} consultados, ${res.data.products_failed} falhas.`); await this.refreshAdminCatalog(); };
+  onRefreshAllPrices = async () => {
+    if (this.state.swiftSyncAllBusy) return;
+    this.setState({ swiftSyncAllBusy: true });
+    try {
+      const res = await catalog.refreshAllProductPrices();
+      this.flashAdmin(res.error ? `${res.error.code === 'partial_sync' ? 'Sincronização parcial' : 'Falha na sincronização'}: ${res.error.message}` : `Sincronização concluída: ${res.data.products_synced} consultados, sem falhas.`);
+      await this.refreshAdminCatalog();
+    } finally { this.setState({ swiftSyncAllBusy: false }); }
+  };
 
   onToggleSiteProductActive = async (p) => {
     const res = await catalog.updateSiteProduct(p.id, { active: !p.active });
@@ -3889,7 +3896,7 @@ class App extends Component {
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(p.updated_at),
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'site'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
-      onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p), onRefreshPrice: () => this.onRefreshSiteProductPrice(p), hasSwiftSource: !!p.swift_product_url, priceStatusLabel: ({ CURRENT: 'Preço atual', STALE: 'Preço desatualizado', SYNCING: 'Atualizando', ERROR: 'Erro na consulta', MISSING_SOURCE: 'Sem página Swift' })[p.price_status] || 'Sem página Swift', priceDetailsLabel: p.price_last_success_at ? `Última confirmação: ${this.formatDateTime(p.price_last_success_at)}` : (p.swift_product_url ? 'Aguardando a primeira confirmação' : 'Cadastre a URL oficial para ativar a atualização automática'),
+      onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p), onRefreshPrice: () => this.onRefreshSiteProductPrice(p), refreshPriceBusy: !!s.swiftSyncBusyIds[p.id], hasSwiftSource: !!p.swift_product_url, priceStatusLabel: ({ CURRENT: 'Preço atual', STALE: 'Preço desatualizado', SYNCING: 'Atualizando', ERROR: 'Erro na consulta', MISSING_SOURCE: 'Sem página Swift' })[p.effective_price_status || p.price_status] || 'Sem página Swift', priceDetailsLabel: p.price_last_success_at ? `Última confirmação: ${this.formatDateTime(p.price_last_success_at)}` : (p.swift_product_url ? 'Aguardando a primeira confirmação' : 'Cadastre a URL oficial para ativar a atualização automática'),
       onDelete: () => this.askDeleteSiteProduct(p.id),
       priceEditable: pricePolicy.editable, priceHelp: pricePolicy.reason, priceBusy: !!s.inlinePriceBusy[`site:${p.id}`],
       onPriceChange: this.onInlinePriceChange('site', p.id), onPriceBlur: () => this.saveInlinePrice('site', p), onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
@@ -4171,7 +4178,7 @@ class App extends Component {
       onCatalogPickerQuery: this.onCatalogPickerQuery, onCloseCatalogPicker: this.closeCatalogPicker, catalogEditorLayout: s.productLayout,
       hasSiteRecipeRows: siteRecipeRows.length > 0, hasSiteProductRows: siteProductRows.length > 0, hasSiteCategoryRows: siteCategoryRows.length > 0, homeSectionOrderBusy: s.homeSectionOrderBusy,
       hasSiteCategoryError: !!s.siteFormError && s.adminTab === 'categories', siteCategoryError: s.siteFormError,
-      onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onRefreshAllPrices: this.onRefreshAllPrices, onNewSiteCategory: this.onNewSiteCategory,
+      onNewSiteRecipe: this.onNewSiteRecipe, onNewSiteProduct: this.onNewSiteProduct, onRefreshAllPrices: this.onRefreshAllPrices, swiftSyncAllBusy: s.swiftSyncAllBusy, onNewSiteCategory: this.onNewSiteCategory,
       adminProductView: s.adminProductView, onAdminProductViewSet: this.onAdminProductViewSet,
       showSiteRecipeForm: s.showSiteRecipeForm, siteRecipeFormTitle: s.siteRecipeFormMode === 'new' ? 'Nova Receita do Catálogo' : 'Editar Receita do Catálogo', siteRecipeForm: s.siteRecipeForm || {},
       hasSiteFormError: !!s.siteFormError, siteFormError: s.siteFormError,
