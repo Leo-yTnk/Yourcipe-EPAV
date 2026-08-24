@@ -34,6 +34,13 @@ describe('Swift source regression', () => {
     expect(workflow).toContain('if [ -z "$USER_JWT" ] || [ -z "$ADMIN_JWT" ]; then');
   });
 
+  it('does not leave the function at 404 when only the database password is absent', () => {
+    const workflow = readFileSync('.github/workflows/deploy-swift-price-sync.yml', 'utf8');
+    expect(workflow).toContain('Database migration skipped');
+    expect(workflow).toMatch(/if \[ -z "\$SUPABASE_DB_PASSWORD" \]; then[\s\S]*exit 0/);
+    expect(workflow).not.toContain("Missing SUPABASE_DB_PASSWORD'; exit 1");
+  });
+
   it('preserves an opaque Edge Function network failure for diagnosis', async () => {
     const original = new Error('Failed to send a request to the Edge Function');
     const error = await normalizeSwiftSyncError(original);

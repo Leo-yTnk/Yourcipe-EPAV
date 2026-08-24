@@ -130,7 +130,10 @@ identifier and a partial batch returns HTTP 207 with `partial=true`, never HTTP 
 The admin reads `products_with_price_freshness`, so expiry is visible without a run.
 
 The production GitHub environment additionally needs `SUPABASE_DB_PASSWORD` so the
-pinned CLI can apply migrations before deploying code. For the controlled 401/403/
+pinned CLI can apply migrations before deploying code. When that optional deployment
+credential is absent, the workflow emits a warning and still deploys the function;
+this keeps the route and its CORS preflight from remaining at HTTP 404. An operator
+must then apply pending migrations before using synchronization. For the controlled 401/403/
 admin smoke, configure `SWIFT_SMOKE_USER_JWT`, `SWIFT_SMOKE_ADMIN_JWT`, and
 `SWIFT_SMOKE_PRODUCT_ID`; without those optional secrets the authenticated smoke step
 is intentionally skipped and must be performed by an operator. Configure
