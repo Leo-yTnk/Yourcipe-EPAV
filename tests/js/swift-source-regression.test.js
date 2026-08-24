@@ -33,6 +33,13 @@ describe('Swift source regression', () => {
     expect(error.message).toContain('swift-price-sync está implantada');
   });
 
+  it('retries transient Edge Function transport failures', () => {
+    const catalog = readFileSync('catalog.js', 'utf8');
+    expect(catalog).toMatch(/async function invokeSwiftPriceSync[\s\S]*attempt < 2/);
+    expect(catalog).toMatch(/catch \(error\)[\s\S]*normalizeSwiftSyncError\(lastError\)/);
+    expect(catalog).toContain('setTimeout(resolve, 400)');
+  });
+
   it('does not invoke the function for a product without a Swift source', () => {
     const app = readFileSync('app.js', 'utf8');
     expect(app).toMatch(/onRefreshSiteProductPrice[\s\S]*if \(!p\.swift_product_url\)[\s\S]*onEditSiteProduct\(p\)/);
@@ -41,8 +48,12 @@ describe('Swift source regression', () => {
 
   it('renders catalog products as a card grid with four icon-only actions', () => {
     const template = readFileSync('template.js', 'utf8');
+    const styles = readFileSync('styles.css', 'utf8');
     expect(template).toContain('className="yc-admin-product-grid"');
     expect(template).toContain("[['grid', 'Cards'], ['spreadsheet', 'Planilha']]");
     expect(template).toMatch(/yc-admin-card-actions[\s\S]*aria-label=\$\{row\.toggleActiveLabel\}[\s\S]*aria-label=\$\{row\.hasSwiftSource \? 'Atualizar preço'/);
+    expect(styles).toMatch(/\.yc-admin-product-grid \{[^}]*repeat\(auto-fit,minmax\(min\(100%,238px\),1fr\)\)/);
+    expect(styles).toMatch(/\.yc-admin-product-grid \.yc-admin-product-card \.yc-admin-product-image \{[^}]*width:calc\(100% \+ 32px\)[^}]*margin:-16px -16px 0/);
+    expect(styles).toMatch(/\.yc-admin-product-grid \.yc-admin-product-card \{[^}]*border-radius:var\(--radius-lg\)/);
   });
 });
