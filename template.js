@@ -1539,11 +1539,12 @@ function renderSiteProductsTab(app, v) {
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <img className="yc-admin-product-image" loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
           <div className="yc-admin-card-info" style="flex:1;min-width:0">
-            <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.categoryName} · por ${row.unit} · ${row.code} · ${row.priceStatusLabel}</div><div style="font-size:11px;color:var(--neutral-600)">${row.priceDetailsLabel}</div>
+            <div className="yc-admin-product-title">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
+            <div className="yc-admin-product-meta">${row.categoryName} · por ${row.unit} · ${row.code}</div>
+            <div className=${`yc-admin-price-status ${row.hasSwiftSource ? '' : 'is-missing'}`}><strong>${row.priceStatusLabel}</strong><span>${row.priceDetailsLabel}</span></div>
           </div>
           <label className="yc-admin-price" style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
-          <button type="button" className="yc-admin-price-refresh" onClick=${row.onRefreshPrice}>Atualizar preço</button>
+          <button type="button" className=${`yc-admin-price-refresh ${row.hasSwiftSource ? '' : 'is-source-cta'}`} onClick=${row.onRefreshPrice}>${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'}</button>
           <div className="yc-admin-primary-action" onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
           <div className="yc-admin-edit" onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>

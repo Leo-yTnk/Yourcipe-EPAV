@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { normalizeSwiftSyncError } from '../../swift-sync-ui.js';
 
 describe('Swift source regression', () => {
   it('casts every CASE branch to the product price status enum', () => {
@@ -19,5 +20,16 @@ describe('Swift source regression', () => {
     expect(handler).toContain("if (req.method === 'OPTIONS')");
     expect(handler).toContain('authorization, x-client-info, apikey, content-type');
     expect(handler).toContain("'access-control-allow-origin': '*'");
+  });
+
+  it('turns an opaque Edge Function network failure into deployment guidance', () => {
+    const error = normalizeSwiftSyncError(new Error('Failed to send a request to the Edge Function'));
+    expect(error.message).toContain('swift-price-sync está implantada');
+  });
+
+  it('does not invoke the function for a product without a Swift source', () => {
+    const app = readFileSync('app.js', 'utf8');
+    expect(app).toMatch(/onRefreshSiteProductPrice[\s\S]*if \(!p\.swift_product_url\)[\s\S]*onEditSiteProduct\(p\)/);
+    expect(app).toContain("MISSING_SOURCE: 'Sem página Swift'");
   });
 });
