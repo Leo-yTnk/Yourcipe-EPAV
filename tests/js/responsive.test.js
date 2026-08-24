@@ -84,6 +84,13 @@ describe('the YSH share code never overflows its container', () => {
 });
 
 describe('mobile-first layout primitives cover pages, navigation and overlays', () => {
+  it('keeps grid recipe images edge-to-edge while padding only their text content', () => {
+    expect(templateJs).toContain("item.grid ? 'yc-recipe-card is-grid' : 'yc-recipe-card'");
+    expect(templateJs).toContain('grid: true, carouselStyle: item.gridCardStyle');
+    expect(stylesCss).toMatch(/\.yc-recipe-card\.is-grid \.yc-recipe-card__image\s*\{[^}]*border-radius:\s*0[^}]*box-shadow:\s*none/);
+    expect(stylesCss).toMatch(/\.yc-recipe-card\.is-grid \.yc-recipe-card__content\s*\{[^}]*padding:\s*10px 12px 12px/);
+  });
+
   it('keeps landscape layouts isolated from the portrait-tablet adaptations', () => {
     expect(stylesCss).toMatch(/@media \(orientation: portrait\) and \(max-width: 900px\)/);
     expect(stylesCss).toMatch(/--yc-page-gutter:\s*clamp\(/);

@@ -103,13 +103,15 @@ export function renderApp(app) {
 
 function recipeCard(item) {
   return html`
-    <div className="yc-recipe-card" key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
-      <div style="position:relative;border-radius:var(--radius-lg);overflow:hidden;height:160px;box-shadow:var(--shadow-sm)">
+    <div className=${item.grid ? 'yc-recipe-card is-grid' : 'yc-recipe-card'} key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
+      <div className="yc-recipe-card__image" style="position:relative;border-radius:var(--radius-lg);overflow:hidden;height:160px;box-shadow:var(--shadow-sm)">
         <img loading="lazy" decoding="async" src=${item.imagem} alt=${item.nome} style="width:100%;height:100%;object-fit:cover"/>
         <div style="position:absolute;top:10px;left:10px;background:rgba(14,12,11,0.55);color:#F4F2F1;padding:5px 11px;border-radius:var(--radius-full);font-size:11px;font-weight:600">${item.tempoLabel}</div>
       </div>
-      <div style="font-size:15px;font-weight:600;margin-top:10px;color:var(--neutral-900)">${item.nome}</div>
-      <div style="font-size:13px;color:var(--neutral-600);margin-top:2px">${item.categoria} · ${item.dificuldade}</div>
+      <div className="yc-recipe-card__content">
+        <div style="font-size:15px;font-weight:600;color:var(--neutral-900)">${item.nome}</div>
+        <div style="font-size:13px;color:var(--neutral-600);margin-top:2px">${item.categoria} · ${item.dificuldade}</div>
+      </div>
     </div>
   `;
 }
@@ -134,7 +136,7 @@ function carouselSection(icon, title, list, onSeeAll, layout) {
 }
 function recipeGridSection(icon, title, list, onSeeAll) {
   if (!list.length) return null;
-  return html`<section className="yc-grid-section" style="padding:18px 40px"><div className="yc-section-heading" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="display:flex;align-items:center;gap:8px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div></div><div className="yc-product-grid">${list.map(item => recipeCard({ ...item, carouselStyle: item.gridCardStyle }))}</div></section>`;
+  return html`<section className="yc-grid-section" style="padding:18px 40px"><div className="yc-section-heading" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="display:flex;align-items:center;gap:8px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div></div><div className="yc-product-grid">${list.map(item => recipeCard({ ...item, grid: true, carouselStyle: item.gridCardStyle }))}</div></section>`;
 }
 
 // Shared "Receita do Dia" hero carousel — used by both renderHome (Receitas)
