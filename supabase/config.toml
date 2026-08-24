@@ -1,0 +1,5 @@
+# The function validates the signed-in administrator inside the handler. Disable
+# legacy gateway JWT verification so projects using Supabase publishable keys can
+# reach it; authorization is still enforced by the `is_admin` RPC before sync.
+[functions.swift-price-sync]
+verify_jwt = false

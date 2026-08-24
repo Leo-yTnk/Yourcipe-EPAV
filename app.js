@@ -107,7 +107,7 @@ class App extends Component {
       darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize, productLayout,
       productSectionPickerKey: null, productSectionPickerQuery: '', adminSearchQuery: '',
       catalogEditorPage: 'home', catalogPicker: null, catalogPickerQuery: '',
-      ingredientProductPicker: null, ingredientProductPickerQuery: '', adminProductView: 'list',
+      ingredientProductPicker: null, ingredientProductPickerQuery: '', adminProductView: 'grid',
       inlinePriceDrafts: {}, inlinePriceBusy: {},
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
       saleSelectionMode: false, selectedSaleIds: [],
@@ -2553,7 +2553,7 @@ class App extends Component {
     this.persist(LS_KEYS.productLayout, productLayout);
   };
   onAdminProductViewSet = (adminProductView) => {
-    if (!['list', 'spreadsheet'].includes(adminProductView)) return;
+    if (!['grid', 'spreadsheet'].includes(adminProductView)) return;
     this.setState({ adminProductView });
   };
   toggleFullscreen = () => {

@@ -1527,14 +1527,14 @@ function renderSiteProductsTab(app, v) {
       <div onClick=${v.onRefreshAllPrices} style="text-align:center;padding:10px;margin-bottom:12px;border:1px solid var(--brand-500);border-radius:var(--radius-md);color:var(--brand-700);font-weight:700;cursor:pointer">Atualizar todos os preços na Swift</div>
       <div className="yc-admin-product-view" aria-label="Exibição dos produtos">
         <span><strong>Exibição dos produtos</strong><small>Use a planilha para editar preços com Tab, setas e Ctrl+C/Ctrl+V.</small></span>
-        <div>${[['list', 'Lista'], ['spreadsheet', 'Planilha']].map(([value, label]) => html`<button type="button" aria-pressed=${v.adminProductView === value} className=${v.adminProductView === value ? 'is-active' : ''} onClick=${() => v.onAdminProductViewSet(value)}>${label}</button>`)}</div>
+        <div>${[['grid', 'Cards'], ['spreadsheet', 'Planilha']].map(([value, label]) => html`<button type="button" aria-pressed=${v.adminProductView === value} className=${v.adminProductView === value ? 'is-active' : ''} onClick=${() => v.onAdminProductViewSet(value)}>${label}</button>`)}</div>
       </div>
       ${adminSearchBar(v)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
       ${v.adminProductView === 'spreadsheet' && v.siteProductRows.length > 0 && html`<div className="yc-product-sheet-wrap yc-admin-product-sheet-wrap"><table className="yc-product-sheet yc-admin-product-sheet"><thead><tr><th>Produto</th><th>Categoria</th><th>Unidade</th><th>Preço</th></tr></thead><tbody>${v.siteProductRows.map(row => html`<tr key=${row.id}><td>${row.name}<small>${row.code}</small></td><td>${row.categoryName}</td><td>${row.unit}</td><td><label className="yc-sheet-price"><span>R$</span><input aria-label=${`Preço de ${row.name}`} inputmode="decimal" value=${row.priceValue} disabled=${!row.priceEditable || row.priceBusy} title=${row.priceEditable ? 'Use Tab ou as setas para navegar; Ctrl+C e Ctrl+V para copiar e colar.' : row.priceHelp} data-price-row-index=${row.priceRowIndex} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown}/></label></td></tr>`)}</tbody></table></div>`}
-      ${v.adminProductView !== 'spreadsheet' && v.siteProductRows.map((row) => html`
+      ${v.adminProductView !== 'spreadsheet' && html`<div className="yc-admin-product-grid">${v.siteProductRows.map((row) => html`
         <div className="yc-admin-card yc-admin-product-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <img className="yc-admin-product-image" loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
@@ -1544,16 +1544,22 @@ function renderSiteProductsTab(app, v) {
             <div className=${`yc-admin-price-status ${row.hasSwiftSource ? '' : 'is-missing'}`}><strong>${row.priceStatusLabel}</strong><span>${row.priceDetailsLabel}</span></div>
           </div>
           <label className="yc-admin-price" style="display:flex;align-items:center;gap:4px;color:var(--brand-700);font-size:13px;font-weight:700" onClick=${e => e.stopPropagation()}>R$ <input aria-label=${`Preço de ${row.name}`} type="number" min="0" step="0.01" value=${row.priceValue} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown} style="width:82px;padding:7px 6px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-sm);background:var(--neutral-0);color:var(--brand-700);font-weight:700"/></label>
-          <button type="button" className=${`yc-admin-price-refresh ${row.hasSwiftSource ? '' : 'is-source-cta'}`} onClick=${row.onRefreshPrice}>${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'}</button>
-          <div className="yc-admin-primary-action" onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
-          <div className="yc-admin-edit" onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          <div className="yc-admin-card-actions">
+          <button type="button" className="yc-admin-icon-action yc-admin-primary-action" onClick=${row.onToggleActive} title=${row.toggleActiveLabel} aria-label=${row.toggleActiveLabel}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10"></path><path d="M18.4 6.6a9 9 0 11-12.8 0"></path></svg>
+          </button>
+          <button type="button" className=${`yc-admin-icon-action yc-admin-price-refresh ${row.hasSwiftSource ? '' : 'is-source-cta'}`} onClick=${row.onRefreshPrice} title=${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'} aria-label=${row.hasSwiftSource ? 'Atualizar preço' : 'Cadastrar página Swift'}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6v5h-5"></path><path d="M4 18v-5h5"></path><path d="M18.5 9A7 7 0 006 6.5L4 11"></path><path d="M5.5 15A7 7 0 0018 17.5l2-4.5"></path></svg>
+          </button>
+          <button type="button" className="yc-admin-icon-action yc-admin-edit" onClick=${row.onEdit} title="Editar" aria-label="Editar">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
-          </div>
-          <div className="yc-admin-delete" onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
+          </button>
+          <button type="button" className="yc-admin-icon-action yc-admin-delete" onClick=${row.onDelete} title="Excluir permanentemente" aria-label="Excluir permanentemente">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
+          </button>
           </div>
         </div>
-      `)}
+      `)}</div>`}
     </div>
   `;
 }

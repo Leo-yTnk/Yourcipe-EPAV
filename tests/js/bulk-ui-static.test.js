@@ -21,7 +21,7 @@ describe('connected bulk-selection UI', () => {
     expect(template).toContain("[['carousel', 'Carrossel'], ['grid', 'Grid']]");
     expect(template).toContain('Tab, setas e Ctrl+C/Ctrl+V');
     expect(template).toContain('onBlur=${row.onPriceBlur}');
-    expect(app).toContain("!['list', 'spreadsheet'].includes(adminProductView)");
+    expect(app).toContain("!['grid', 'spreadsheet'].includes(adminProductView)");
     expect(app).not.toContain("spl === 'spreadsheet'");
   });
 });
