@@ -41,6 +41,14 @@ secret produces an actionable annotation rather than a generic CLI authenticatio
 message. Environment protection rules may also require an authorized reviewer
 before GitHub releases the secret to the job.
 
+The authenticated post-deploy checks are optional. When
+`SWIFT_SMOKE_USER_JWT` and `SWIFT_SMOKE_ADMIN_JWT` are absent, their shell step logs
+that it was skipped instead of using the `secrets` context in a step-level `if`
+expression (which GitHub Actions rejects while parsing the workflow). If both JWTs
+are configured, also configure `SWIFT_SMOKE_PRODUCT_ID`; the user JWT must belong to
+a non-admin account and the admin JWT to an administrator. The unauthenticated POST
+and browser `OPTIONS` checks always run.
+
 For an audited manual recovery, an operator with Supabase CLI access can run:
 
 ```sh
