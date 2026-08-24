@@ -27,11 +27,19 @@ anon key, service-role key, database password, or a repository variable: those a
 different credentials, and GitHub variables are not exposed through the `secrets`
 context.
 
+A key beginning with `sb_publishable_` is the public browser credential. It is
+already configured in `supabase-client.js` and is safe to send with frontend API
+requests, but it cannot authorize a CLI deployment. Do not save it as
+`SUPABASE_ACCESS_TOKEN`; create a personal access token from the Supabase account
+dashboard instead. Never commit or paste that personal access token into source
+code, issues, or workflow logs.
+
 After saving the environment secret, rerun the failed job from GitHub Actions. The
-workflow validates that the credential is present before invoking the Supabase CLI,
-so a missing or misspelled secret produces an actionable annotation rather than the
-CLI's generic “Access token not provided” message. Environment protection rules may
-also require an authorized reviewer before GitHub releases the secret to the job.
+workflow validates that the credential is present and is not a publishable browser
+key before invoking the Supabase CLI, so a missing, misspelled, or obviously invalid
+secret produces an actionable annotation rather than a generic CLI authentication
+message. Environment protection rules may also require an authorized reviewer
+before GitHub releases the secret to the job.
 
 For an audited manual recovery, an operator with Supabase CLI access can run:
 

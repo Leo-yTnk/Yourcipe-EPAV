@@ -31,6 +31,10 @@ jobs:
             echo "::error title=Missing Supabase access token::Add SUPABASE_ACCESS_TOKEN to the production environment secrets before deploying. See supabase/SWIFT_PRICE_SYNC.md#github-actions-credential."
             exit 1
           fi
+          if [[ "$SUPABASE_ACCESS_TOKEN" == sb_publishable_* ]]; then
+            echo "::error title=Invalid Supabase deploy credential::SUPABASE_ACCESS_TOKEN is a browser publishable key, not a personal access token. Create a personal access token in the Supabase dashboard and save that token as the production environment secret. See supabase/SWIFT_PRICE_SYNC.md#github-actions-credential."
+            exit 1
+          fi
       - uses: supabase/setup-cli@v1
         with:
           version: latest
