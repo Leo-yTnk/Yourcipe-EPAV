@@ -2350,7 +2350,7 @@ function renderSiteProductFormModal(app, v) {
   const f = v.siteProductForm;
   return html`
     <div className="yc-modal-overlay" style="position:absolute;inset:0;background:rgba(14,12,11,0.5);display:flex;align-items:center;justify-content:center;z-index:20;animation:ycFadeIn 0.2s ease;padding:20px;box-sizing:border-box">
-      <div style="width:440px;max-width:100%;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
+      <div className="yc-scroll" style="width:440px;max-width:100%;max-height:calc(100dvh - 40px);overflow-y:auto;overflow-x:hidden;box-sizing:border-box;background:var(--neutral-0);border-radius:var(--radius-xl);padding:28px;box-shadow:var(--shadow-lg);animation:ycPopIn 0.25s ease">
         <div style="font-size:20px;font-weight:700;margin-bottom:18px">${v.siteProductFormTitle}</div>
         ${v.hasSiteFormError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-bottom:14px">${v.siteFormError}</div>`}
         <div style="display:flex;flex-direction:column;gap:14px">
@@ -2358,7 +2358,7 @@ function renderSiteProductFormModal(app, v) {
           ${field('Categoria (proteína/produto)', html`<${CustomSelect} options=${v.siteProteinCategoryOptions} value=${f.categoryId} onChange=${v.siteProductFormOnCategorySet} />`, { required: true })}
           ${field('Unidade', html`<${CustomSelect} options=${v.unidadeOptionsSite} value=${f.unit} onChange=${v.siteProductFormOnUnitSet} />`, { required: true })}
           ${field('Preço (R$)', html`<input type="number" step="0.01" value=${f.price} onInput=${v.siteProductFormOnPrice} style=${FORM_INPUT_STYLE}/>`, { required: true })}
-          ${field('Página oficial do produto na Swift', html`<input type="url" placeholder="https://www.swift.com.br/produto" value=${f.swiftUrl} onInput=${v.siteProductFormOnSwiftUrl} style=${FORM_INPUT_STYLE}/>`)}
+          ${field('Página oficial do produto na Swift', html`<input type="url" placeholder="https://www.swift.com.br/detail/nome-do-produto" value=${f.swiftUrl} onInput=${v.siteProductFormOnSwiftUrl} style=${FORM_INPUT_STYLE}/>`)}
           ${field('URL da imagem (opcional)', html`<input type="text" value=${f.imageUrl} onInput=${v.siteProductFormOnImageUrl} style=${FORM_INPUT_STYLE}/>`)}
           ${checkbox({ checked: !!f.active, onChange: v.siteProductFormOnActive, label: 'Ativo (visível publicamente)' })}
         </div>
