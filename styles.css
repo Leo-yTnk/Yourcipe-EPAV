@@ -370,6 +370,12 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
 }
 .yc-admin-product-card .yc-admin-product-image { width:48px !important;height:48px !important;border-radius:12px !important; }
 .yc-admin-product-card .yc-admin-card-info { line-height:1.35; }
+.yc-admin-product-title { display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:15px;font-weight:700;color:var(--neutral-950); }
+.yc-admin-product-meta { margin-top:3px;color:var(--neutral-600);font-size:12px; }
+.yc-admin-price-status { display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:8px;font-size:11px;color:var(--neutral-600); }
+.yc-admin-price-status strong { color:var(--green-600); }
+.yc-admin-price-status.is-missing strong { color:var(--brand-700); }
+.yc-admin-price-status span { overflow-wrap:anywhere; }
 .yc-admin-product-card .yc-admin-price input { min-height:40px; }
 .yc-admin-price-refresh {
   min-height:40px;padding:8px 12px;border:0;border-radius:var(--radius-sm);
@@ -377,6 +383,8 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
   font:700 12px var(--font-sans);white-space:nowrap;cursor:pointer;
 }
 .yc-admin-price-refresh:hover { background:color-mix(in srgb,var(--brand-500) 18%,transparent); }
+.yc-admin-price-refresh.is-source-cta { border:1px solid var(--brand-500);background:transparent; }
+.yc-admin-price-refresh:focus-visible { outline:3px solid color-mix(in srgb,var(--brand-500) 30%,transparent);outline-offset:2px; }
 .yc-sheet-product-link { border:0;padding:0;background:transparent;color:var(--neutral-900);font:700 14px var(--font-sans);cursor:pointer;text-align:left; }
 .yc-sheet-product-link:hover { color:var(--brand-700);text-decoration:underline; }
 .yc-sheet-price { display:grid;grid-template-columns:auto minmax(82px,110px);align-items:center;justify-content:end;gap:4px; }

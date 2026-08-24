@@ -2265,7 +2265,16 @@ class App extends Component {
     this.setState({ showSiteProductForm: false, siteProductForm: null });
     this.refreshAdminCatalog();
   };
-  onRefreshSiteProductPrice = async (p) => { const res = await catalog.refreshProductPrice(p.id); this.flashAdmin(res.error ? `Falha ao atualizar: ${res.error.message}` : 'Preço consultado na Swift.'); await this.refreshAdminCatalog(); };
+  onRefreshSiteProductPrice = async (p) => {
+    if (!p.swift_product_url) {
+      this.flashAdmin('Cadastre a página do produto na Swift antes de atualizar o preço.');
+      this.onEditSiteProduct(p);
+      return;
+    }
+    const res = await catalog.refreshProductPrice(p.id);
+    this.flashAdmin(res.error ? `Falha ao atualizar: ${res.error.message}` : 'Preço consultado na Swift.');
+    await this.refreshAdminCatalog();
+  };
   onRefreshAllPrices = async () => { const res = await catalog.refreshAllProductPrices(); this.flashAdmin(res.error ? `Falha na sincronização: ${res.error.message}` : `Sincronização concluída: ${res.data.products_synced} consultados, ${res.data.products_failed} falhas.`); await this.refreshAdminCatalog(); };
 
   onToggleSiteProductActive = async (p) => {
@@ -3880,7 +3889,7 @@ class App extends Component {
       toggleActiveLabel: p.active ? 'Desativar' : 'Ativar',
       updatedAtLabel: this.formatDateTime(p.updated_at),
       showCheckbox: s.productSelectionMode && s.productSelectionScope === 'site', showActions: !(s.productSelectionMode && s.productSelectionScope === 'site'), checkMark: selected ? '✓' : '', checkboxStyle: `width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:${selected ? 'var(--brand-700)' : 'transparent'};color:#F4F2F1;font-size:13px;font-weight:700`, rowStyle: `display:flex;align-items:center;gap:14px;background:${selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px;cursor:${s.productSelectionMode && s.productSelectionScope === 'site' ? 'pointer' : 'default'};user-select:none`, onPressStart: () => this.startScopedProductRowPress(p.id, 'site'), onPressEnd: this.endProductRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.productSelectionMode && this.state.productSelectionScope === 'site') this.toggleProductSelected(p.id); },
-      onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p), onRefreshPrice: () => this.onRefreshSiteProductPrice(p), priceStatusLabel: p.price_status || 'MISSING_SOURCE', priceDetailsLabel: p.price_last_success_at ? `Última confirmação: ${this.formatDateTime(p.price_last_success_at)}` : 'Sem preço confirmado na Swift',
+      onToggleActive: () => this.onToggleSiteProductActive(p), onEdit: () => this.onEditSiteProduct(p), onRefreshPrice: () => this.onRefreshSiteProductPrice(p), hasSwiftSource: !!p.swift_product_url, priceStatusLabel: ({ CURRENT: 'Preço atual', STALE: 'Preço desatualizado', SYNCING: 'Atualizando', ERROR: 'Erro na consulta', MISSING_SOURCE: 'Sem página Swift' })[p.price_status] || 'Sem página Swift', priceDetailsLabel: p.price_last_success_at ? `Última confirmação: ${this.formatDateTime(p.price_last_success_at)}` : (p.swift_product_url ? 'Aguardando a primeira confirmação' : 'Cadastre a URL oficial para ativar a atualização automática'),
       onDelete: () => this.askDeleteSiteProduct(p.id),
       priceEditable: pricePolicy.editable, priceHelp: pricePolicy.reason, priceBusy: !!s.inlinePriceBusy[`site:${p.id}`],
       onPriceChange: this.onInlinePriceChange('site', p.id), onPriceBlur: () => this.saveInlinePrice('site', p), onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
