@@ -128,12 +128,12 @@ Deno.serve(async req => {
   }
   const started = Date.now();
   const metrics = { products_synced: 0, products_updated: 0, products_unchanged: 0, products_failed: 0, products_stale: 0 };
-  const failures: Array<{ product_id: string; code: string }> = [];
+  const failures: Array<{ product_id: string; product_name: string; code: string }> = [];
 
   async function refresh(product: Record<string, any>) {
     if (!product.swift_product_url) {
       const { error: missingError } = await supabase.rpc('mark_swift_price_failure', { p_product_id: product.id, p_message: 'Página Swift não cadastrada', p_checked_at: new Date().toISOString(), p_missing: true });
-      failures.push({ product_id: product.id, code: missingError ? `database_missing_source_failed:${missingError.code}` : 'missing_source' });
+      failures.push({ product_id: product.id, product_name: product.name, code: missingError ? `database_missing_source_failed:${missingError.code}` : 'missing_source' });
       metrics.products_failed++; return;
     }
     if (body.staleOnly && isFresh(product.price_last_success_at, MAX_AGE)) return;
@@ -141,7 +141,7 @@ Deno.serve(async req => {
     const checkedAt = new Date().toISOString();
     const { error: syncingError } = await supabase.from('products').update({ price_status: 'SYNCING', price_last_checked_at: checkedAt }).eq('id', product.id);
     if (syncingError) {
-      failures.push({ product_id: product.id, code: `database_syncing_failed:${syncingError.code}` });
+      failures.push({ product_id: product.id, product_name: product.name, code: `database_syncing_failed:${syncingError.code}` });
       metrics.products_failed++; return;
     }
     try {
@@ -165,7 +165,7 @@ Deno.serve(async req => {
       log('product_synced', { product_id: product.id, changed, pricing_type: parsed.pricingType });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      failures.push({ product_id: product.id, code: message });
+      failures.push({ product_id: product.id, product_name: product.name, code: message });
       const stale = !!product.price_last_success_at;
       const { error: failureError } = await supabase.rpc('mark_swift_price_failure', { p_product_id: product.id, p_message: message, p_checked_at: checkedAt, p_missing: false });
       if (failureError) log('failure_persistence_failed', { product_id: product.id, code: failureError.code });

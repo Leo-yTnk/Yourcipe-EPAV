@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeSwiftSyncError } from '../../swift-sync-ui.js';
+import { buildSwiftSyncReport, normalizeSwiftSyncError } from '../../swift-sync-ui.js';
 
 function httpError(status, payload) {
   const original = new Error(`Edge Function returned a non-2xx status code (${status})`);
@@ -32,5 +32,20 @@ describe('Swift sync diagnostics', () => {
   it('distinguishes a handler product 404 from a missing deployed function', async () => {
     await expect(normalizeSwiftSyncError(httpError(404, { code: 'product_not_found', correlation_id: 'trace-1' })))
       .resolves.toMatchObject({ code: 'product_not_found', correlationId: 'trace-1' });
+  });
+});
+
+describe('Swift sync step report', () => {
+  it('details successful and failed stages in a partial batch', () => {
+    const data = { run_id: 7, correlation_id: 'trace', products_synced: 3, products_updated: 1, products_unchanged: 1, products_failed: 1, failures: [{ product_name: 'Picanha', code: 'price_not_found' }] };
+    const report = buildSwiftSyncReport({ data, error: { code: 'partial_sync', message: 'Uma falha', runId: 7 } });
+    expect(report.steps).toHaveLength(6);
+    expect(report.steps.map(step => step.status)).toEqual(['success', 'success', 'success', 'warning', 'warning', 'success']);
+    expect(report.failures).toEqual([{ product: 'Picanha', code: 'price_not_found' }]);
+  });
+
+  it('marks all downstream stages as skipped after a network error', () => {
+    const report = buildSwiftSyncReport({ data: null, error: { code: 'network_error', message: 'Sem conexão' } });
+    expect(report.steps.map(step => step.status)).toEqual(['success', 'error', 'skipped', 'skipped', 'skipped', 'success']);
   });
 });

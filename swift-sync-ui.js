@@ -36,7 +36,7 @@ async function readHttpDiagnostic(error) {
   try {
     const payload = await response.clone().json();
     return { status, providerCode: payload?.code || payload?.error, providerMessage: payload?.message,
-      runId: payload?.run_id, correlationId: payload?.correlation_id };
+      runId: payload?.run_id, correlationId: payload?.correlation_id, payload };
   } catch {
     return { status };
   }
@@ -56,11 +56,55 @@ export async function normalizeSwiftSyncError(error) {
     message: FRIENDLY_BY_CODE[code],
     retryable: code === 'network_error' || code === 'swift_unavailable' || (status >= 500 && status !== 503),
     runId: diagnostic.runId, correlationId: diagnostic.correlationId,
+    metrics: diagnostic.payload && {
+      products_synced: diagnostic.payload.products_synced,
+      products_updated: diagnostic.payload.products_updated,
+      products_unchanged: diagnostic.payload.products_unchanged,
+      products_failed: diagnostic.payload.products_failed,
+      products_stale: diagnostic.payload.products_stale,
+      duration_ms: diagnostic.payload.duration_ms,
+    },
+    failures: Array.isArray(diagnostic.payload?.failures) ? diagnostic.payload.failures : [],
     technical: {
       message: technicalMessage,
       providerCode: diagnostic.providerCode,
       providerMessage: diagnostic.providerMessage,
       original: error,
     },
+  };
+}
+
+const count = (value) => Number.isFinite(value) ? value : 0;
+
+// Creates a stable, user-facing audit trail for the expandable sync result.
+// It intentionally describes stages that did not run as well as successful
+// ones, so "Ver detalhes" never hides where execution stopped.
+export function buildSwiftSyncReport(result, { catalogReloaded = true } = {}) {
+  const error = result?.error || null;
+  const data = result?.data || error?.metrics || {};
+  const failures = result?.data?.failures || error?.failures || [];
+  const reachedService = !['session_expired', 'network_error', 'function_not_found'].includes(error?.code);
+  const runStarted = !!(data.run_id || error?.runId);
+  const synced = count(data.products_synced);
+  const failed = count(data.products_failed);
+  const updated = count(data.products_updated);
+  const unchanged = count(data.products_unchanged);
+  const steps = [
+    { label: 'Validar sessão de administrador', status: error?.code === 'session_expired' ? 'error' : 'success', detail: error?.code === 'session_expired' ? error.message : 'Sessão válida para iniciar a atualização.' },
+    { label: 'Conectar ao serviço de preços', status: reachedService ? 'success' : 'error', detail: reachedService ? 'O serviço recebeu e processou a solicitação.' : (error?.message || 'Não foi possível acessar o serviço.') },
+    { label: 'Iniciar execução da sincronização', status: runStarted ? 'success' : (reachedService ? 'error' : 'skipped'), detail: runStarted ? `Execução ${data.run_id || error.runId} iniciada${(data.correlation_id || error?.correlationId) ? ` · referência ${data.correlation_id || error.correlationId}` : ''}.` : (reachedService ? 'A execução não chegou a ser iniciada.' : 'Etapa não executada porque a conexão falhou.') },
+    { label: 'Consultar páginas de produtos na Swift', status: runStarted ? (failed && !synced ? 'error' : (failed ? 'warning' : 'success')) : 'skipped', detail: runStarted ? `${synced} produto(s) consultado(s); ${failed} falha(s).` : 'Etapa não executada.' },
+    { label: 'Validar e gravar os preços', status: runStarted ? (failed ? (updated || unchanged ? 'warning' : 'error') : 'success') : 'skipped', detail: runStarted ? `${updated} preço(s) alterado(s), ${unchanged} confirmado(s) sem alteração e ${failed} não atualizado(s).` : 'Etapa não executada.' },
+    { label: 'Recarregar o catálogo', status: catalogReloaded ? 'success' : 'error', detail: catalogReloaded ? 'O catálogo foi recarregado com os resultados disponíveis.' : 'Não foi possível recarregar o catálogo após a sincronização.' },
+  ];
+  return {
+    title: error ? (error.code === 'partial_sync' ? 'Atualização concluída com falhas' : 'Não foi possível atualizar os preços') : 'Preços atualizados com sucesso',
+    summary: error?.message || `${synced} produto(s) consultado(s), sem falhas.`,
+    kind: error ? 'error' : 'success',
+    steps,
+    failures: failures.map(item => ({
+      product: item.product_name || item.product_id || 'Produto não identificado',
+      code: item.code || 'erro desconhecido',
+    })),
   };
 }

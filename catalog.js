@@ -574,6 +574,7 @@ async function invokeSwiftPriceSync(body) {
         if (result.data.products_failed > 0) return { data: result.data, error: {
           code: 'partial_sync', message: `Sincronização parcial: ${result.data.products_failed} produto(s) falharam.`,
           runId: result.data.run_id, correlationId: result.data.correlation_id,
+          metrics: result.data, failures: result.data.failures || [],
         } };
         return { data: result.data, error: null };
       }
