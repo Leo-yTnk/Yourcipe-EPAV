@@ -189,6 +189,9 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
 
 .yc-stage { min-width: 0; }
 .yc-recipe-card { min-width: 0; overflow-wrap: anywhere; cursor: pointer; }
+.yc-recipe-card__content { margin-top: 10px; }
+.yc-recipe-card.is-grid .yc-recipe-card__image { border-radius: 0; box-shadow: none; }
+.yc-recipe-card.is-grid .yc-recipe-card__content { margin-top: 0; padding: 10px 12px 12px; }
 .yc-card-strip { overscroll-behavior-inline: contain; scroll-snap-type: inline proximity; scroll-padding-inline: var(--yc-page-gutter); -webkit-overflow-scrolling: touch; }
 .yc-card-strip > * { scroll-snap-align: start; }
 .yc-section-heading > :first-child { min-width: 0; }
