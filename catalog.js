@@ -545,15 +545,25 @@ export async function updateSiteProduct(id, patch) {
 export async function setProductSwiftSource(id, url) {
   return unwrap(await supabase.rpc('set_product_swift_source', { p_product_id: id, p_url: url || null }), 'setProductSwiftSource');
 }
+async function invokeSwiftPriceSync(body) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const result = await supabase.functions.invoke('swift-price-sync', { body });
+      if (!result.error) return { data: result.data, error: null };
+      lastError = result.error;
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  return { data: null, error: normalizeSwiftSyncError(lastError) };
+}
 export async function refreshProductPrice(productId) {
-  const result = await supabase.functions.invoke('swift-price-sync', { body: { productId } });
-  if (result.error) return { data: null, error: normalizeSwiftSyncError(result.error) };
-  return { data: result.data, error: null };
+  return invokeSwiftPriceSync({ productId });
 }
 export async function refreshAllProductPrices() {
-  const result = await supabase.functions.invoke('swift-price-sync', { body: {} });
-  if (result.error) return { data: null, error: normalizeSwiftSyncError(result.error) };
-  return { data: result.data, error: null };
+  return invokeSwiftPriceSync({});
 }
 
 export async function createSiteRecipe(fields) {
