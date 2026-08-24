@@ -10,7 +10,16 @@ const RETRIES = Number(env('SWIFT_PRICE_MAX_RETRIES', '3'));
 const CONCURRENCY = Number(env('SWIFT_PRICE_SYNC_CONCURRENCY', '3'));
 const WARNING_PERCENT = Number(env('SWIFT_PRICE_CHANGE_WARNING_PERCENT', '50'));
 const REGION_COOKIE = env('SWIFT_REGION_COOKIE_NAME', 'postalCode');
-const allowedCors = { 'content-type': 'application/json' };
+// Browser calls to an Edge Function are preflighted because Supabase sends
+// Authorization/apikey headers.  Without an OPTIONS response the SDK reports
+// the rather opaque "Failed to send a request to the Edge Function" before
+// this handler ever gets a chance to run.
+const responseHeaders = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': 'authorization, x-client-info, apikey, content-type',
+  'access-control-allow-methods': 'POST, OPTIONS',
+  'content-type': 'application/json',
+};
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const log = (event: string, fields = {}) => console.log(JSON.stringify({ provider: 'swift', event, ...fields }));
 
@@ -50,7 +59,9 @@ async function fetchPage(url: string) {
 }
 
 Deno.serve(async req => {
-  if (!ZIP || ZIP.length !== 8) return new Response(JSON.stringify({ error: 'SWIFT_REFERENCE_ZIP_CODE must contain 8 digits' }), { status: 503, headers: allowedCors });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: responseHeaders });
+  if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'method_not_allowed' }), { status: 405, headers: responseHeaders });
+  if (!ZIP || ZIP.length !== 8) return new Response(JSON.stringify({ error: 'SWIFT_REFERENCE_ZIP_CODE must contain 8 digits' }), { status: 503, headers: responseHeaders });
   const supabase = createClient(env('SUPABASE_URL')!, env('SUPABASE_SERVICE_ROLE_KEY')!);
   const auth = req.headers.get('authorization') || '';
   const cronAuthorized = req.headers.get('x-cron-secret') === env('SWIFT_PRICE_CRON_SECRET');
@@ -59,18 +70,18 @@ Deno.serve(async req => {
     const userClient = createClient(env('SUPABASE_URL')!, env('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } });
     const { data } = await userClient.rpc('is_admin'); adminAuthorized = data === true;
   }
-  if (!cronAuthorized && !adminAuthorized) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: allowedCors });
+  if (!cronAuthorized && !adminAuthorized) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: responseHeaders });
   let body: { productId?: string; staleOnly?: boolean } = {};
   try { body = await req.json(); } catch { /* cron may have no body */ }
   if (cronAuthorized && !body.productId) {
     const { data: lastRun } = await supabase.from('swift_price_sync_runs').select('started_at').not('finished_at', 'is', null).order('started_at', { ascending: false }).limit(1).maybeSingle();
     if (lastRun && Date.now() - Date.parse(lastRun.started_at) < SYNC_INTERVAL * 60_000)
-      return new Response(JSON.stringify({ skipped: 'sync_interval_not_elapsed' }), { headers: allowedCors });
+      return new Response(JSON.stringify({ skipped: 'sync_interval_not_elapsed' }), { headers: responseHeaders });
   }
   let query = supabase.from('products').select('*').eq('scope', 'site').eq('active', true);
   if (body.productId) query = query.eq('id', body.productId);
   const { data: products, error } = await query;
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: allowedCors });
+  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: responseHeaders });
   const started = Date.now();
   const metrics = { products_synced: 0, products_updated: 0, products_unchanged: 0, products_failed: 0, products_stale: 0 };
   const { data: run } = await supabase.from('swift_price_sync_runs').insert({}).select('id').single();
@@ -118,5 +129,5 @@ Deno.serve(async req => {
   const duration_ms = Date.now() - started;
   if (run) await supabase.from('swift_price_sync_runs').update({ ...metrics, duration_ms, finished_at: new Date().toISOString() }).eq('id', run.id);
   if (metrics.products_failed >= 3) log('provider_alert', { reason: 'consecutive_batch_failures', ...metrics });
-  return new Response(JSON.stringify({ ...metrics, duration_ms }), { headers: allowedCors });
+  return new Response(JSON.stringify({ ...metrics, duration_ms }), { headers: responseHeaders });
  });

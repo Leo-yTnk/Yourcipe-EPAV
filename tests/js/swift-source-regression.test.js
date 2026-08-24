@@ -13,4 +13,11 @@ describe('Swift source regression', () => {
     expect(template).toContain('placeholder="https://www.swift.com.br/detail/nome-do-produto"');
     expect(template).toMatch(/renderSiteProductFormModal[\s\S]*className="yc-scroll"[\s\S]*max-height:calc\(100dvh - 40px\);overflow-y:auto/);
   });
+
+  it('answers browser preflight requests with the Supabase client headers', () => {
+    const handler = readFileSync('supabase/functions/swift-price-sync/index.ts', 'utf8');
+    expect(handler).toContain("if (req.method === 'OPTIONS')");
+    expect(handler).toContain('authorization, x-client-info, apikey, content-type');
+    expect(handler).toContain("'access-control-allow-origin': '*'");
+  });
 });
