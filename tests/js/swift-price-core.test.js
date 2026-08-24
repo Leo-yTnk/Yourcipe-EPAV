@@ -12,6 +12,21 @@ describe('Swift price parser', () => {
   it('handles BRL formats and no promotion', () => { expect(parseBRLCents('R$ 1.234,56')).toBe(123456); expect(parseSwiftProductPage(page()).promoPriceCents).toBeNull(); });
   it.each(['', '<html>bad</html>', '<html>'.padEnd(100, 'x') + '</html>'] )('rejects incomplete/missing price pages', html => expect(() => parseSwiftProductPage(html)).toThrow());
   it('rejects the wrong product', () => expect(() => parseSwiftProductPage(page(), { expectedName: 'Costela bovina' })).toThrow('product_name_mismatch'));
+  it('never accepts a different product merely because both names contain Swift', () =>
+    expect(() => parseSwiftProductPage(page({ name: 'Linguiça Toscana Swift' }), { expectedName: 'Picanha bovina Swift' })).toThrow('product_name_mismatch'));
+  it('requires an expected SKU to be present, not merely non-conflicting', () =>
+    expect(() => parseSwiftProductPage(page({ sku: null }), { expectedSku: '123' })).toThrow('product_sku_not_found'));
+  it('selects an available priced offer rather than the first offer', () => {
+    const html = `<!doctype html><html><head><script type="application/ld+json">${JSON.stringify({ '@type': 'Product', name: 'Filé de Peito de Frango Swift', sku: '123', offers: [
+      { price: '1.00', priceCurrency: 'BRL', availability: 'https://schema.org/OutOfStock', description: '/ Embalagem' },
+      { price: '18.90', priceCurrency: 'BRL', availability: 'https://schema.org/InStock', description: '/ Embalagem' },
+    ] })}</script></head><body><h1>Filé de Peito de Frango Swift</h1><p>R$ 18,90 / Embalagem</p></body></html>`;
+    expect(parseSwiftProductPage(html, { expectedSku: '123' }).regularPriceCents).toBe(1890);
+  });
+  it('does not use prices hidden in scripts as the visible fallback', () => {
+    const html = '<html><body><h1>Filé de Peito de Frango Swift</h1><script>window.price="R$ 1,00 / kg"</script><p>R$ 18,90 / kg</p></body></html>'.padEnd(160, ' ');
+    expect(parseSwiftProductPage(html).regularPriceCents).toBe(1890);
+  });
 });
 
 describe('Swift safety and freshness', () => {

@@ -110,3 +110,37 @@ order by name;
 Optional real smoke test (not CI): set `SWIFT_SMOKE_URLS` to a small comma-separated
 set of reviewed detail URLs and run `deno run --allow-env --allow-net
 supabase/functions/swift-price-sync/smoke.ts`.
+
+## Transaction, locking, deployment verification and rollback (V0.42.1)
+
+Apply migrations through `028_harden_swift_price_sync.sql` before deploying the
+function. `apply_swift_price_observation` inserts history and updates the product in
+one PostgreSQL transaction; a constraint/history failure rolls both operations back.
+History rejects UPDATE/DELETE. `begin_swift_price_sync` supplies the database-backed
+batch lock and request-key idempotency; every response exposes a run and correlation
+identifier and a partial batch returns HTTP 207 with `partial=true`, never HTTP 200.
+The admin reads `products_with_price_freshness`, so expiry is visible without a run.
+
+The production GitHub environment additionally needs `SUPABASE_DB_PASSWORD` so the
+pinned CLI can apply migrations before deploying code. For the controlled 401/403/
+admin smoke, configure `SWIFT_SMOKE_USER_JWT`, `SWIFT_SMOKE_ADMIN_JWT`, and
+`SWIFT_SMOKE_PRODUCT_ID`; without those optional secrets the authenticated smoke step
+is intentionally skipped and must be performed by an operator. Configure
+`SWIFT_PRICE_ALERT_WEBHOOK_URL` as an Edge secret to deliver threshold alerts.
+
+Scheduler provisioning remains an external Supabase operation because its cron
+secret must not be stored in a migration. Create one scheduled POST every 30 minutes
+with `x-cron-secret`, then observe one complete staging cycle and confirm a finished
+row in `swift_price_sync_runs`. This observation, real Swift regional behavior, and
+revocation of the leaked browser session cannot be accomplished by repository code.
+
+Rollback: disable the scheduler first, redeploy the preceding function version, and
+leave migration 028 in place (its atomicity and immutable audit guarantees are
+backward-safe). Never roll back by deleting history. Reconcile with:
+
+```sql
+select p.id, p.price_last_success_at, max(h.fetched_at) history_at
+from public.products p left join public.product_price_history h on h.product_id=p.id
+where p.price_source='SWIFT' group by p.id
+having p.price_last_success_at is distinct from max(h.fetched_at);
+```

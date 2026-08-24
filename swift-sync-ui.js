@@ -11,12 +11,16 @@ const FRIENDLY_BY_CODE = {
   invalid_swift_page: 'A página cadastrada na Swift é inválida ou não corresponde ao produto.',
   price_not_found: 'Não foi possível encontrar um preço válido na página da Swift.',
   sync_internal_error: 'O sincronizador encontrou um erro interno.',
+  product_not_found: 'O produto foi removido ou está inativo.',
+  sync_already_running: 'Já existe uma sincronização em andamento.',
 };
 
 function inferCode(message, status, providerCode) {
   if (providerCode === 'service_misconfigured' || status === 503) return 'service_misconfigured';
   if (providerCode === 'forbidden' || status === 403) return 'forbidden';
   if (providerCode === 'unauthorized' || status === 401) return 'unauthorized';
+  if (providerCode === 'product_not_found') return 'product_not_found';
+  if (providerCode === 'sync_already_running' || status === 409) return 'sync_already_running';
   if (status === 404) return 'function_not_found';
   if (/failed to send a request|fetch failed|networkerror|cors/i.test(message)) return 'network_error';
   if (/swift_(?:unavailable|http_429|http_5\d\d)|abort/i.test(providerCode || message)) return 'swift_unavailable';
@@ -31,7 +35,8 @@ async function readHttpDiagnostic(error) {
   const status = response.status;
   try {
     const payload = await response.clone().json();
-    return { status, providerCode: payload?.code || payload?.error, providerMessage: payload?.message };
+    return { status, providerCode: payload?.code || payload?.error, providerMessage: payload?.message,
+      runId: payload?.run_id, correlationId: payload?.correlation_id };
   } catch {
     return { status };
   }
@@ -50,6 +55,7 @@ export async function normalizeSwiftSyncError(error) {
     status,
     message: FRIENDLY_BY_CODE[code],
     retryable: code === 'network_error' || code === 'swift_unavailable' || (status >= 500 && status !== 503),
+    runId: diagnostic.runId, correlationId: diagnostic.correlationId,
     technical: {
       message: technicalMessage,
       providerCode: diagnostic.providerCode,

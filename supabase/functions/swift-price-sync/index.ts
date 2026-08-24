@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { buildSwiftFailureUpdate, buildSwiftSuccessUpdate, canonicalizeSwiftUrl, isFresh, isSuspiciousChange, parseSwiftProductPage } from '../_shared/swift-price-core.js';
+import { buildSwiftSuccessUpdate, canonicalizeSwiftUrl, isFresh, isSuspiciousChange, parseSwiftProductPage } from '../_shared/swift-price-core.js';
 
 const env = (key: string, fallback?: string) => Deno.env.get(key) || fallback;
 const ZIP = (env('SWIFT_REFERENCE_ZIP_CODE') || '').replace(/\D/g, '');
@@ -10,6 +10,7 @@ const RETRIES = Number(env('SWIFT_PRICE_MAX_RETRIES', '3'));
 const CONCURRENCY = Number(env('SWIFT_PRICE_SYNC_CONCURRENCY', '3'));
 const WARNING_PERCENT = Number(env('SWIFT_PRICE_CHANGE_WARNING_PERCENT', '50'));
 const REGION_COOKIE = env('SWIFT_REGION_COOKIE_NAME', 'postalCode');
+const ALERT_WEBHOOK = env('SWIFT_PRICE_ALERT_WEBHOOK_URL');
 // Browser calls to an Edge Function are preflighted because Supabase sends
 // Authorization/apikey headers.  Without an OPTIONS response the SDK reports
 // the rather opaque "Failed to send a request to the Edge Function" before
@@ -101,58 +102,73 @@ Deno.serve(async req => {
   }
   if (!cronAuthorized && !authenticated) return json({ error: 'unauthorized', code: 'unauthorized' }, 401);
   if (!cronAuthorized && !adminAuthorized) return json({ error: 'forbidden', code: 'forbidden' }, 403);
-  let body: { productId?: string; staleOnly?: boolean } = {};
+  let body: { productId?: string; staleOnly?: boolean; requestId?: string } = {};
   try { body = await req.json(); } catch { /* cron may have no body */ }
   if (cronAuthorized && !body.productId) {
-    const { data: lastRun } = await supabase.from('swift_price_sync_runs').select('started_at').not('finished_at', 'is', null).order('started_at', { ascending: false }).limit(1).maybeSingle();
+    const { data: lastRun, error: intervalError } = await supabase.from('swift_price_sync_runs').select('started_at').not('finished_at', 'is', null).order('started_at', { ascending: false }).limit(1).maybeSingle();
+    if (intervalError) return json({ error: 'interval_check_failed', code: 'sync_internal_error' }, 500);
     if (lastRun && Date.now() - Date.parse(lastRun.started_at) < SYNC_INTERVAL * 60_000)
       return new Response(JSON.stringify({ skipped: 'sync_interval_not_elapsed' }), { headers: responseHeaders });
   }
+  const requestKey = body.requestId ? `${body.productId || 'batch'}:${body.requestId}` : null;
+  const { data: begun, error: beginError } = await supabase.rpc('begin_swift_price_sync', { p_request_key: requestKey });
+  if (beginError) return json({ error: 'sync_lock_failed', code: 'sync_internal_error' }, 500);
+  const run = begun?.[0];
+  if (!run) return json({ error: 'sync_already_running', code: 'sync_already_running' }, 409);
   let query = supabase.from('products').select('*').eq('scope', 'site').eq('active', true);
   if (body.productId) query = query.eq('id', body.productId);
   const { data: products, error } = await query;
-  if (error) return json({ error: 'product_query_failed', code: 'sync_internal_error' }, 500);
-  if (body.productId && !products?.length) return json({ error: 'product_not_found', code: 'product_not_found' }, 404);
+  if (error) {
+    await supabase.rpc('finish_swift_price_sync', { p_run_id: run.id, p_metrics: {}, p_errors: { query: error.code } });
+    return json({ error: 'product_query_failed', code: 'sync_internal_error', run_id: run.id, correlation_id: run.correlation_id }, 500);
+  }
+  if (body.productId && !products?.length) {
+    await supabase.rpc('finish_swift_price_sync', { p_run_id: run.id, p_metrics: {}, p_errors: { product: 'not_found' } });
+    return json({ error: 'product_not_found', code: 'product_not_found', run_id: run.id, correlation_id: run.correlation_id }, 404);
+  }
   const started = Date.now();
   const metrics = { products_synced: 0, products_updated: 0, products_unchanged: 0, products_failed: 0, products_stale: 0 };
-  let productFailureCode = '';
-  const { data: run } = await supabase.from('swift_price_sync_runs').insert({}).select('id').single();
+  const failures: Array<{ product_id: string; code: string }> = [];
 
   async function refresh(product: Record<string, any>) {
     if (!product.swift_product_url) {
-      await supabase.from('products').update({ price_status: 'MISSING_SOURCE', price_error: 'Página Swift não cadastrada' }).eq('id', product.id);
+      const { error: missingError } = await supabase.rpc('mark_swift_price_failure', { p_product_id: product.id, p_message: 'Página Swift não cadastrada', p_checked_at: new Date().toISOString(), p_missing: true });
+      failures.push({ product_id: product.id, code: missingError ? `database_missing_source_failed:${missingError.code}` : 'missing_source' });
       metrics.products_failed++; return;
     }
     if (body.staleOnly && isFresh(product.price_last_success_at, MAX_AGE)) return;
     metrics.products_synced++;
     const checkedAt = new Date().toISOString();
-    await supabase.from('products').update({ price_status: 'SYNCING', price_last_checked_at: checkedAt }).eq('id', product.id);
+    const { error: syncingError } = await supabase.from('products').update({ price_status: 'SYNCING', price_last_checked_at: checkedAt }).eq('id', product.id);
+    if (syncingError) {
+      failures.push({ product_id: product.id, code: `database_syncing_failed:${syncingError.code}` });
+      metrics.products_failed++; return;
+    }
     try {
       const url = canonicalizeSwiftUrl(product.swift_product_url);
-      let parsed = parseSwiftProductPage(await fetchPage(url), { expectedName: product.name, expectedSku: product.swift_sku, canonicalUrl: url });
+      let parsed = parseSwiftProductPage(await fetchPage(url), { expectedName: product.name, expectedSku: product.swift_sku, expectedProductId: product.swift_product_id, canonicalUrl: url });
       if (isSuspiciousChange(product.regular_price_cents, parsed.regularPriceCents, WARNING_PERCENT)) {
         await sleep(500 + Math.random() * 500);
-        const confirmation = parseSwiftProductPage(await fetchPage(url), { expectedName: product.name, expectedSku: product.swift_sku, canonicalUrl: url });
+        const confirmation = parseSwiftProductPage(await fetchPage(url), { expectedName: product.name, expectedSku: product.swift_sku, expectedProductId: product.swift_product_id, canonicalUrl: url });
         if (JSON.stringify(parsed) !== JSON.stringify(confirmation)) throw new Error('suspicious_price_not_confirmed');
         parsed = confirmation;
       }
       const sourceHash = await hashObservation({ ...parsed, zip: ZIP });
       parsed.canonicalUrl = url;
-      const { changed, update } = buildSwiftSuccessUpdate(product, parsed, {
+      const { update } = buildSwiftSuccessUpdate(product, parsed, {
         checkedAt, region: env('SWIFT_REFERENCE_REGION') || null, zip: ZIP, sourceHash,
       });
-      const { error: updateError } = await supabase.from('products').update(update).eq('id', product.id);
-      if (updateError) throw updateError;
-      await supabase.from('product_price_history').insert({ product_id: product.id, regular_price_cents: parsed.regularPriceCents,
-        promo_price_cents: parsed.promoPriceCents, promo_min_quantity: parsed.promoMinQuantity, pricing_type: parsed.pricingType,
-        price_unit: parsed.priceUnit, reference_zip_code: ZIP, region: update.price_region, source: 'SWIFT', source_hash: sourceHash });
+      const observation = { ...update, checked_at: checkedAt, reference_zip_code: ZIP };
+      const { data: changed, error: observationError } = await supabase.rpc('apply_swift_price_observation', { p_product_id: product.id, p_observation: observation });
+      if (observationError) throw new Error(`atomic_observation_failed:${observationError.code}`);
       metrics[changed ? 'products_updated' : 'products_unchanged']++;
       log('product_synced', { product_id: product.id, changed, pricing_type: parsed.pricingType });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      productFailureCode = message;
+      failures.push({ product_id: product.id, code: message });
       const stale = !!product.price_last_success_at;
-      await supabase.from('products').update(buildSwiftFailureUpdate(product, message, checkedAt)).eq('id', product.id);
+      const { error: failureError } = await supabase.rpc('mark_swift_price_failure', { p_product_id: product.id, p_message: message, p_checked_at: checkedAt, p_missing: false });
+      if (failureError) log('failure_persistence_failed', { product_id: product.id, code: failureError.code });
       metrics.products_failed++; if (stale) metrics.products_stale++;
       log('product_failed', { product_id: product.id, error: message, last_success_at: product.price_last_success_at });
     }
@@ -160,12 +176,25 @@ Deno.serve(async req => {
   const queue = [...(products || [])];
   await Promise.all(Array.from({ length: Math.max(1, Math.min(CONCURRENCY, 10)) }, async () => { while (queue.length) await refresh(queue.shift()!); }));
   const duration_ms = Date.now() - started;
-  if (run) await supabase.from('swift_price_sync_runs').update({ ...metrics, duration_ms, finished_at: new Date().toISOString() }).eq('id', run.id);
-  if (metrics.products_failed >= 3) log('provider_alert', { reason: 'consecutive_batch_failures', ...metrics });
-  if (body.productId && metrics.products_failed) {
-    const code = /price_not_found|invalid_price/.test(productFailureCode) ? 'price_not_found'
-      : /invalid|mismatch|redirect|swift_http_4/.test(productFailureCode) ? 'invalid_swift_page' : 'swift_unavailable';
-    return json({ ...metrics, duration_ms, error: 'product_sync_failed', code }, 502);
+  const { error: finishError } = await supabase.rpc('finish_swift_price_sync', { p_run_id: run.id, p_metrics: { ...metrics, duration_ms }, p_errors: failures });
+  if (finishError) return json({ error: 'run_finalize_failed', code: 'sync_internal_error', run_id: run.id, correlation_id: run.correlation_id }, 500);
+  if (metrics.products_failed >= 3) {
+    log('provider_alert', { reason: 'batch_failure_threshold', run_id: run.id, correlation_id: run.correlation_id, ...metrics });
+    if (ALERT_WEBHOOK) {
+      try {
+        const alert = await fetch(ALERT_WEBHOOK, { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ provider: 'swift', reason: 'batch_failure_threshold', run_id: run.id, correlation_id: run.correlation_id, ...metrics }) });
+        if (!alert.ok) log('alert_delivery_failed', { run_id: run.id, status: alert.status });
+      } catch (cause) { log('alert_delivery_failed', { run_id: run.id, error: String(cause) }); }
+    }
   }
-  return json({ ...metrics, duration_ms });
+  if (body.productId && metrics.products_failed) {
+    const failureCode = failures[0]?.code || '';
+    const code = /price_not_found|invalid_price/.test(failureCode) ? 'price_not_found'
+      : /invalid|mismatch|not_found|redirect|swift_http_4/.test(failureCode) ? 'invalid_swift_page' : 'swift_unavailable';
+    return json({ ...metrics, failures, duration_ms, error: 'product_sync_failed', code, run_id: run.id, correlation_id: run.correlation_id }, 502);
+  }
+  const payload = { ...metrics, failures, duration_ms, run_id: run.id, correlation_id: run.correlation_id,
+    partial: metrics.products_failed > 0 };
+  return json(payload, metrics.products_failed > 0 ? 207 : 200);
  });

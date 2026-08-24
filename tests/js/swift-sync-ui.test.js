@@ -29,4 +29,8 @@ describe('Swift sync diagnostics', () => {
     expect(result).toMatchObject({ code: 'network_error', retryable: true });
     expect(result.technical.message).toBe('fetch failed');
   });
+  it('distinguishes a handler product 404 from a missing deployed function', async () => {
+    await expect(normalizeSwiftSyncError(httpError(404, { code: 'product_not_found', correlation_id: 'trace-1' })))
+      .resolves.toMatchObject({ code: 'product_not_found', correlationId: 'trace-1' });
+  });
 });

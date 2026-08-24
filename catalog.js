@@ -54,6 +54,7 @@ const CATEGORY_SELECT = 'id, category_code, owner_id, scope, type, name, slug, s
 // one place to fix if a shape or FK hint ever needs to change.
 // ---------------------------------------------------------------------
 const CATEGORY_MINI_SELECT = 'id, name';
+const ADMIN_PRODUCT_SELECT = `${PRODUCT_SELECT}, effective_price_status, category:categories!products_category_id_fkey(${CATEGORY_MINI_SELECT})`;
 const CATEGORY_DETAIL_SELECT = 'id, name, type, owner_id, scope, active';
 
 export const PRODUCT_WITH_CATEGORY_SELECT =
@@ -518,7 +519,7 @@ export async function fetchAdminCategories() {
 }
 export async function fetchAdminProducts() {
   return fetchAllPages(
-    (from, to) => supabase.from('products').select(PRODUCT_WITH_CATEGORY_SELECT).eq('scope', 'site').order('name').range(from, to),
+    (from, to) => supabase.from('products_with_price_freshness').select(ADMIN_PRODUCT_SELECT).eq('scope', 'site').order('name').range(from, to),
     'fetchAdminProducts',
   );
 }
@@ -545,7 +546,16 @@ export async function updateSiteProduct(id, patch) {
 export async function setProductSwiftSource(id, url) {
   return unwrap(await supabase.rpc('set_product_swift_source', { p_product_id: id, p_url: url || null }), 'setProductSwiftSource');
 }
+export async function saveSiteProductAtomic(id, fields, sectionIds) {
+  return unwrap(await supabase.rpc('save_site_product_atomic', {
+    p_product_id: id || null, p_fields: fields, p_section_ids: sectionIds || [],
+  }), 'saveSiteProductAtomic');
+}
+const syncInFlight = new Map();
 async function invokeSwiftPriceSync(body) {
+  const key = body.productId || 'batch';
+  if (syncInFlight.has(key)) return syncInFlight.get(key);
+  const operation = (async () => {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError || !sessionData?.session?.access_token) {
     const error = await normalizeSwiftSyncError({
@@ -556,10 +566,20 @@ async function invokeSwiftPriceSync(body) {
     return { data: null, error };
   }
   let lastError = null;
+  const requestBody = { ...body, requestId: body.requestId || crypto.randomUUID() };
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const result = await supabase.functions.invoke('swift-price-sync', { body });
-      if (!result.error) return { data: result.data, error: null };
+      const result = await supabase.functions.invoke('swift-price-sync', { body: requestBody });
+      if (!result.error && result.data && Number.isFinite(result.data.products_failed)) {
+        if (result.data.products_failed > 0) return { data: result.data, error: {
+          code: 'partial_sync', message: `Sincronização parcial: ${result.data.products_failed} produto(s) falharam.`,
+          runId: result.data.run_id, correlationId: result.data.correlation_id,
+        } };
+        return { data: result.data, error: null };
+      }
+      if (!result.error) {
+        return { data: result.data, error: { code: 'invalid_sync_response', message: 'O sincronizador retornou métricas inválidas.' } };
+      }
       lastError = result.error;
     } catch (error) {
       lastError = error;
@@ -578,6 +598,9 @@ async function invokeSwiftPriceSync(body) {
     providerCode: error.technical.providerCode, providerMessage: error.technical.providerMessage,
   });
   return { data: null, error };
+  })();
+  syncInFlight.set(key, operation);
+  try { return await operation; } finally { syncInFlight.delete(key); }
 }
 export async function refreshProductPrice(productId) {
   return invokeSwiftPriceSync({ productId });
