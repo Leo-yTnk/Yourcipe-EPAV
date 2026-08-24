@@ -286,7 +286,7 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
      own a deliberate grid area instead of fighting in a desktop flex row. */
   .yc-admin-card { display:grid !important;gap:12px !important;padding:16px !important;align-items:center !important; }
   .yc-admin-recipe-card { grid-template-columns:minmax(0,1fr) 44px 44px;grid-template-areas:"info info info" "primary edit delete"; }
-  .yc-admin-product-card { grid-template-columns:56px minmax(0,1fr) 44px 44px;grid-template-areas:"image info info info" "price price price price" "primary primary edit delete"; }
+  .yc-admin-product-card { grid-template-columns:56px minmax(0,1fr) 44px 44px;grid-template-areas:"image info info info" "price price price price" "refresh refresh refresh refresh" "primary primary edit delete"; }
   .yc-admin-card-info { grid-area:info;min-width:0; }
   .yc-admin-card-info > div:first-child { line-height:1.35; }
   .yc-admin-card-info > div:last-child { line-height:1.55;margin-top:5px;overflow-wrap:break-word; }
@@ -297,6 +297,7 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
   .yc-admin-request { grid-area:request;min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center; }
   .yc-admin-product-card:has(.yc-admin-request) { grid-template-areas:"image info info info" "status price price price" "request request request request" "primary primary edit delete"; }
   .yc-admin-primary-action { grid-area:primary;min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center; }
+  .yc-admin-price-refresh { grid-area:refresh;min-height:44px;width:100%; }
   .yc-admin-edit { grid-area:edit;width:44px !important;height:44px !important; }
   .yc-admin-delete { grid-area:delete;width:44px !important;height:44px !important; }
 
@@ -359,6 +360,23 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
 .yc-admin-product-sheet-wrap { padding:0 0 24px; }
 .yc-admin-product-sheet th:nth-child(3),.yc-admin-product-sheet td:nth-child(3) { width:90px; }
 .yc-admin-product-sheet .yc-sheet-price input:disabled { cursor:not-allowed; opacity:.55; }
+.yc-admin-product-card {
+  display:grid !important;
+  grid-template-columns:48px minmax(220px,1fr) minmax(104px,auto) auto auto 40px 40px;
+  gap:10px 14px !important;
+  align-items:center !important;
+  min-height:76px;
+  padding:12px 16px !important;
+}
+.yc-admin-product-card .yc-admin-product-image { width:48px !important;height:48px !important;border-radius:12px !important; }
+.yc-admin-product-card .yc-admin-card-info { line-height:1.35; }
+.yc-admin-product-card .yc-admin-price input { min-height:40px; }
+.yc-admin-price-refresh {
+  min-height:40px;padding:8px 12px;border:0;border-radius:var(--radius-sm);
+  background:color-mix(in srgb,var(--brand-500) 10%,transparent);color:var(--brand-700);
+  font:700 12px var(--font-sans);white-space:nowrap;cursor:pointer;
+}
+.yc-admin-price-refresh:hover { background:color-mix(in srgb,var(--brand-500) 18%,transparent); }
 .yc-sheet-product-link { border:0;padding:0;background:transparent;color:var(--neutral-900);font:700 14px var(--font-sans);cursor:pointer;text-align:left; }
 .yc-sheet-product-link:hover { color:var(--brand-700);text-decoration:underline; }
 .yc-sheet-price { display:grid;grid-template-columns:auto minmax(82px,110px);align-items:center;justify-content:end;gap:4px; }
@@ -367,3 +385,8 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
 .yc-sheet-price em { grid-column:1/-1;color:var(--neutral-500);font-size:10px;font-style:normal;font-weight:500; }
 .yc-row-checkbox { width:24px;height:24px;border-radius:8px;border:2px solid var(--brand-700);display:flex;align-items:center;justify-content:center;flex:0 0 24px;background:var(--brand-700);color:#F4F2F1;font-size:13px;font-weight:700; }
 @media (max-width:600px) { .yc-product-sheet-wrap { padding:14px var(--yc-page-gutter) 30px; } .yc-product-sheet th:last-child,.yc-product-sheet td:last-child { width:110px; } }
+@media (max-width:900px) and (min-width:601px) {
+  .yc-admin-product-card { grid-template-columns:48px minmax(0,1fr) auto 40px 40px; }
+  .yc-admin-product-card .yc-admin-card-info { grid-column:2 / -1; }
+  .yc-admin-product-card .yc-admin-price { grid-column:2; }
+}
