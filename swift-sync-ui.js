@@ -13,6 +13,9 @@ const FRIENDLY_BY_CODE = {
   sync_internal_error: 'O sincronizador encontrou um erro interno.',
   product_not_found: 'O produto foi removido ou está inativo.',
   sync_already_running: 'Já existe uma sincronização em andamento.',
+  sync_batch_in_progress: 'Outro lote de preços está realmente em andamento.',
+  sync_request_in_progress: 'Esta mesma solicitação ainda está sendo processada.',
+  sync_request_already_completed: 'Esta solicitação já foi processada e não será executada novamente.',
 };
 
 function inferCode(message, status, providerCode) {
@@ -20,6 +23,7 @@ function inferCode(message, status, providerCode) {
   if (providerCode === 'forbidden' || status === 403) return 'forbidden';
   if (providerCode === 'unauthorized' || status === 401) return 'unauthorized';
   if (providerCode === 'product_not_found') return 'product_not_found';
+  if (['sync_batch_in_progress', 'sync_request_in_progress', 'sync_request_already_completed'].includes(providerCode)) return providerCode;
   if (providerCode === 'sync_already_running' || status === 409) return 'sync_already_running';
   if (status === 404) return 'function_not_found';
   if (/failed to send a request|fetch failed|networkerror|cors/i.test(message)) return 'network_error';
@@ -54,7 +58,7 @@ export async function normalizeSwiftSyncError(error) {
     code,
     status,
     message: FRIENDLY_BY_CODE[code],
-    retryable: code === 'network_error' || code === 'swift_unavailable' || (status >= 500 && status !== 503),
+    retryable: code === 'network_error' || code === 'swift_unavailable',
     runId: diagnostic.runId, correlationId: diagnostic.correlationId,
     metrics: diagnostic.payload && {
       products_synced: diagnostic.payload.products_synced,

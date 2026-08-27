@@ -62,6 +62,21 @@ describe('Swift source regression', () => {
     expect(app).toContain("MISSING_SOURCE: 'Sem página Swift'");
   });
 
+  it('finalizes every acquired run from a finally block and heartbeats its lease', () => {
+    const handler = readFileSync('supabase/functions/swift-price-sync/index.ts', 'utf8');
+    expect(handler).toMatch(/try \{[\s\S]*finally \{[\s\S]*finish_swift_price_sync/);
+    expect(handler).toContain('heartbeat_swift_price_sync');
+    expect(handler).toContain("internal_code: 'run_finalize_failed'");
+  });
+
+  it('ships an auditable global leased lock migration', () => {
+    const migration = readFileSync('supabase/029_swift_price_sync_leases.sql', 'utf8');
+    expect(migration).toContain('swift_price_sync_one_active_run');
+    expect(migration).toContain("'recovered_and_started'");
+    expect(migration).toContain("outcome='abandoned'");
+    expect(migration).not.toMatch(/delete\s+from\s+public\.swift_price_sync_runs/i);
+  });
+
   it('renders catalog products as a card grid with four icon-only actions', () => {
     const template = readFileSync('template.js', 'utf8');
     const styles = readFileSync('styles.css', 'utf8');

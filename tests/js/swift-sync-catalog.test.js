@@ -75,6 +75,15 @@ describe('Swift sync catalog calls', () => {
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
 
+  it('does not retry a backend 500 after the backend acquired its lock', async () => {
+    const error = new Error('non-2xx');
+    error.context = new Response('{"code":"sync_internal_error","run_id":9,"stage":"sync_products"}', { status: 500 });
+    mocks.invoke.mockResolvedValue({ data: null, error });
+    const result = await refreshAllProductPrices();
+    expect(result.error).toMatchObject({ code: 'sync_internal_error', runId: 9 });
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a response without trustworthy metrics', async () => {
     mocks.invoke.mockResolvedValue({ data: { ok: true }, error: null });
     expect((await refreshAllProductPrices()).error.code).toBe('invalid_sync_response');

@@ -155,3 +155,94 @@ from public.products p left join public.product_price_history h on h.product_id=
 where p.price_source='SWIFT' group by p.id
 having p.price_last_success_at is distinct from max(h.fetched_at);
 ```
+
+## Leased lock and incident diagnostics (V0.42.2)
+
+The observed `500 → OPTIONS 200 → 409` sequence has two separate causes in the
+pre-V0.42.2 code. `catalog.js` retried every HTTP 500 once with the same `requestId`;
+the OPTIONS is merely that retry's normal browser preflight. Migration 028's begin
+function collapsed both unique constraints into an empty result, so the replay then
+became the generic `sync_already_running` 409 whether the first run was still open
+**or had already finished**. Thus the 409 alone is not evidence of an orphan. The
+first 500 could be returned after acquisition by a product-query failure, a failed
+`finish_swift_price_sync`, or an uncaught exception in the worker/queue; the query path attempted
+finalization, the finalize-failure path proves it failed, and the uncaught path
+skipped it. The old response/log must be matched
+by correlation id to distinguish the production event. V0.42.2 removes that
+ambiguity: no automatic retry of an internal 500, structured stage/internal code,
+and guaranteed finalization attempt after acquisition.
+
+Apply `029_swift_price_sync_leases.sql` before deploying the matching function.
+There is one global active run regardless of whether it is a batch or a single
+product. The function renews a five-minute lease (configurable with
+`SWIFT_PRICE_SYNC_LEASE_SECONDS`, minimum 60 seconds) at product boundaries. A new
+caller never takes a live lease; under an advisory transaction lock it marks an
+expired run `abandoned`, links it to its successor, and retains both audit rows.
+Normal and exceptional handler exits call `finish_swift_price_sync` from `finally`.
+An abrupt process death or database outage is recovered only after lease expiry.
+
+The 409 codes are intentionally distinct: `sync_batch_in_progress` means a different
+run owns the lease, `sync_request_in_progress` is the same request key still running,
+and `sync_request_already_completed` is a replay of a finished request. A successful
+recovery starts the new request and is logged as `abandoned_run_recovered`; it is not
+reported as a conflict. Unexpected HTTP 500 responses are not automatically retried
+by the browser, so the original stage/run diagnostic is not replaced by a follow-up
+idempotency response.
+
+Safe read-only incident queries:
+
+```sql
+-- 1/2: open runs and their age/lease state
+select id, correlation_id, request_key, started_at, heartbeat_at, lease_expires_at,
+       now()-started_at as age, lease_expires_at <= now() as lease_expired
+from public.swift_price_sync_runs where finished_at is null order by started_at;
+
+-- 3: most recent completed run
+select * from public.swift_price_sync_runs where finished_at is not null
+order by finished_at desc limit 1;
+
+-- 4: recorded failures/recoveries
+select id, correlation_id, started_at, finished_at, outcome, internal_error_code,
+       error_summary, recovered_at, recovered_by_run_id
+from public.swift_price_sync_runs
+where outcome in ('failed','partial','abandoned') or internal_error_code is not null
+order by started_at desc limit 50;
+
+-- 5: orphan candidate (diagnostic only; expiry is the required evidence)
+select id, correlation_id, now()-coalesce(heartbeat_at,started_at) as time_without_heartbeat,
+       lease_expires_at, lease_expires_at <= now() as confirmed_expired
+from public.swift_price_sync_runs
+where finished_at is null and lease_expires_at <= now();
+```
+
+The next legitimate request automatically recovers a confirmed expired lease. If an
+operator must close one immediately, first verify its `id`, expired lease, function
+logs and absence of a working invocation, then substitute that single id below. The
+predicate prevents changing a live or already-finished run and no history is deleted:
+
+```sql
+begin;
+update public.swift_price_sync_runs
+set finished_at=now(), outcome='abandoned', recovered_at=now(),
+    internal_error_code='manual_confirmed_abandoned_recovery',
+    error_summary=coalesce(error_summary,'{}'::jsonb)
+      || '{"lifecycle":"manual_confirmed_abandoned_recovery"}'::jsonb
+where id = 12345 and finished_at is null and lease_expires_at <= now()
+returning id, correlation_id, started_at, finished_at, outcome;
+-- Commit only if exactly the reviewed row was returned; otherwise ROLLBACK.
+commit;
+```
+
+Deploy in this exact order: (1) disable the scheduler/admin trigger during the short
+migration window; (2) `supabase link --project-ref ytvztfvypiwgnslisxep`; (3)
+`supabase db push --linked`; (4) deploy with `supabase functions deploy
+swift-price-sync --project-ref ytvztfvypiwgnslisxep --no-verify-jwt`; (5) run the
+workflow's OPTIONS/401/403 checks; (6) re-enable the scheduler. Roll back by disabling
+callers, deploying the previous function, restoring the migration-028 RPC/index
+definitions, and retaining the added columns and audit rows.
+
+In production, start one controlled admin sync and confirm one POST, a changing
+`heartbeat_at`, and then `finished_at/outcome`. During a longer controlled run, a
+different request must receive `sync_batch_in_progress`; replaying its request id must
+receive the corresponding idempotency code. In staging only, expire a test lease and
+confirm that the next request logs recovery and links `recovered_by_run_id`.

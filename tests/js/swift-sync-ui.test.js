@@ -16,12 +16,19 @@ describe('Swift sync diagnostics', () => {
     [502, { code: 'swift_unavailable' }, 'swift_unavailable'],
     [502, { code: 'invalid_swift_page' }, 'invalid_swift_page'],
     [502, { code: 'price_not_found' }, 'price_not_found'],
+    [409, { code: 'sync_batch_in_progress' }, 'sync_batch_in_progress'],
+    [409, { code: 'sync_request_in_progress' }, 'sync_request_in_progress'],
+    [409, { code: 'sync_request_already_completed' }, 'sync_request_already_completed'],
   ])('maps HTTP %s/%s without discarding its response', async (status, payload, code) => {
     const original = httpError(status, payload);
     const result = await normalizeSwiftSyncError(original);
     expect(result).toMatchObject({ status, code });
     expect(result.technical.original).toBe(original);
     expect(result.technical.providerCode).toBe(payload.code || payload.error);
+  });
+  it('does not retry an unexpected HTTP 500 and therefore preserves the first failure', async () => {
+    const result = await normalizeSwiftSyncError(httpError(500, { code: 'sync_internal_error', stage: 'sync_products' }));
+    expect(result).toMatchObject({ code: 'sync_internal_error', retryable: false });
   });
 
   it('classifies transport errors and retains their exact technical message', async () => {
