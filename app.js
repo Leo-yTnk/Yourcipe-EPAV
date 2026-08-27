@@ -1,30 +1,30 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260827-1';
-import { CustomSelect } from './custom-select.js?v=20260827-1';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260827-2';
+import { CustomSelect } from './custom-select.js?v=20260827-2';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260827-1';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260827-1';
-import { supabase } from './supabase-client.js?v=20260827-1';
-import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260827-1';
-import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260827-1';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260827-1';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260827-1';
-import { normalizeDisplayName } from './display-name.js?v=20260827-1';
-import * as catalog from './catalog.js?v=20260827-1';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260827-1';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260827-1';
-import { createLoadGuard } from './load-guard.js?v=20260827-1';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260827-1';
-import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260827-1';
+} from './data.js?v=20260827-2';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260827-2';
+import { supabase } from './supabase-client.js?v=20260827-2';
+import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260827-2';
+import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260827-2';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260827-2';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260827-2';
+import { normalizeDisplayName } from './display-name.js?v=20260827-2';
+import * as catalog from './catalog.js?v=20260827-2';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260827-2';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260827-2';
+import { createLoadGuard } from './load-guard.js?v=20260827-2';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260827-2';
+import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260827-2';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260827-1';
+const FRONTEND_VERSION = '20260827-2';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -154,6 +154,7 @@ class App extends Component {
       showProfileSetup: false,
       profileForm: { idade: '', genero: 'Prefiro não informar', cargo: '', productLayout: 'carousel' },
       searchQuery: '',
+      homeSearchQuery: '', recipeSearchQuery: '', productSearchQuery: '', productFiltersOpen: false,
       activeFilter: 'Todas',
       productsCategoryFilter: 'Todas',
       selectedRecipeId: null,
@@ -875,6 +876,10 @@ class App extends Component {
   };
 
   onSearchChange = (e) => this.setState({ searchQuery: e.target.value });
+  onHomeSearchChange = (e) => this.setState({ homeSearchQuery: e.target.value });
+  onRecipeSearchChange = (e) => this.setState({ recipeSearchQuery: e.target.value });
+  onProductSearchChange = (e) => this.setState({ productSearchQuery: e.target.value });
+  toggleProductFilters = () => this.setState(s => ({ productFiltersOpen: !s.productFiltersOpen }));
   setFilter = (cat) => this.setState({ activeFilter: cat });
   setProductsCategoryFilter = (cat) => this.setState({ productsCategoryFilter: cat });
 
@@ -3389,7 +3394,9 @@ class App extends Component {
     const productOptions = s.products.map(p => ({ value: p.id, label: `${p.nome} (${this.formatBRL(p.preco)}/${p.unidade})` }));
 
     const visibleRecipes = s.recipes.filter(r => !s.hiddenRecipeIds.includes(r.id));
-    const byTag = (tag) => visibleRecipes.filter(r => r.tags.includes(tag)).map((r, i) => this.makeRecipeCard(r, 'home', i));
+    const recipePageNeedle = s.recipeSearchQuery.trim().toLowerCase();
+    const recipePageRecipes = visibleRecipes.filter(r => !recipePageNeedle || r.nome.toLowerCase().includes(recipePageNeedle));
+    const byTag = (tag) => recipePageRecipes.filter(r => r.tags.includes(tag)).map((r, i) => this.makeRecipeCard(r, 'home', i));
     // Public section visibility is role-independent. Local preferences may
     // disable a known section, but an admin is never routed to a different
     // loader and a newly-created public section defaults to visible.
@@ -3420,7 +3427,9 @@ class App extends Component {
     // custom icon override, or — when the live catalog has no public
     // product sections at all (e.g. offline/demo fallback) — the fallback
     // default list, exactly like sectionOn/homeSectionSource do for recipes.
-    const byProductTag = (tag) => s.products.filter(p => p.tags && p.tags.includes(tag)).map((p, i) => this.makeProductCard(p, i));
+    const productPageNeedle = s.productSearchQuery.trim().toLowerCase();
+    const productPageProducts = s.products.filter(p => !productPageNeedle || p.nome.toLowerCase().includes(productPageNeedle));
+    const byProductTag = (tag) => productPageProducts.filter(p => p.tags && p.tags.includes(tag)).map((p, i) => this.makeProductCard(p, i));
     const productSectionOn = (key) => { const h = s.productSections.find(x => x.key === key); return h ? h.enabled : this.publicProductSectionCategories().some(c => c.slug === key); };
     const publicProductHomeSections = this.publicProductSectionCategories();
     const productSectionSource = publicProductHomeSections.length
@@ -3444,7 +3453,7 @@ class App extends Component {
     // empty/hidden when a specific chip other than its own is selected).
     const categoryBlocks = s.productCategories.filter(c => c.enabled).map(c => ({
       key: 'cat_' + c.key, label: c.label,
-      items: s.products.filter(p => p.categoria === c.label && (s.productsCategoryFilter === 'Todas' || p.categoria === s.productsCategoryFilter)).map((p, i) => this.makeProductCard(p, i)),
+      items: productPageProducts.filter(p => p.categoria === c.label && (s.productsCategoryFilter === 'Todas' || p.categoria === s.productsCategoryFilter)).map((p, i) => this.makeProductCard(p, i)),
     })).filter(b => b.items.length > 0);
     const productSectionBlocksFiltered = productHomeSectionBlocks.map(b => ({
       ...b, items: b.items.filter(it => s.productsCategoryFilter === 'Todas' || it.categoria === s.productsCategoryFilter),
@@ -3452,6 +3461,9 @@ class App extends Component {
     const productPageBlocks = [...productSectionBlocksFiltered, ...categoryBlocks];
     const inicioProductItems = s.products.slice(0, 12).map((p, i) => this.makeProductCard(p, i));
     const inicioProductBlock = { key: 'inicio_produtos', label: 'Produtos em Destaque', items: (byProductTag('recomendado').length ? byProductTag('recomendado') : inicioProductItems) };
+    const homeNeedle = s.homeSearchQuery.trim().toLowerCase();
+    const homeRecipeResults = homeNeedle ? visibleRecipes.filter(r => r.nome.toLowerCase().includes(homeNeedle)).map((r, i) => this.makeRecipeCard(r, 'home', i)) : [];
+    const homeProductResults = homeNeedle ? s.products.filter(p => p.nome.toLowerCase().includes(homeNeedle)).map((p, i) => this.makeProductCard(p, i)) : [];
     let selectedProduct = null;
     if (s.selectedProductId) {
       const p = s.products.find(x => x.id === s.selectedProductId);
@@ -4130,13 +4142,18 @@ class App extends Component {
       userGreetingName, profileInitial,
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
       homeSectionBlocks, homeCategoryChips, homeCategoriesEmpty,
+      recipeSearchQuery: s.recipeSearchQuery, onRecipeSearchChange: this.onRecipeSearchChange,
+      recipeSearchActive: !!recipePageNeedle, recipeSearchEmpty: !!recipePageNeedle && homeSectionBlocks.length === 0,
+      homeSearchQuery: s.homeSearchQuery, onHomeSearchChange: this.onHomeSearchChange, homeRecipeResults, homeProductResults, homeSearchActive: !!homeNeedle,
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       onInicioSearchSubmit: this.onInicioSearchSubmit,
       favoritesList, favoritesEmpty: favoritesList.length === 0,
       // Produtos page + Início aggregator
       productHomeSectionBlocks, productCategoryChips, productPageBlocks, inicioProductBlock,
+      productSearchQuery: s.productSearchQuery, onProductSearchChange: this.onProductSearchChange,
+      productFiltersOpen: s.productFiltersOpen, onToggleProductFilters: this.toggleProductFilters,
       productLayout: s.productLayout,
-      productsEmpty: s.products.length === 0,
+      productsEmpty: productPageProducts.length === 0,
       showProductDetailModal: !!s.selectedProductId && !!selectedProduct, productDetailData: selectedProduct || { nome: '', categoria: '', unidade: '', precoLabel: '', imagem: FALLBACK_IMG, relatedRecipes: [] },
       onOpenProductDetail: (id) => this.openProductDetail(id), onCloseProductDetail: this.closeProductDetail,
       // "Seções de Produtos" click-to-add-products picker (#1).
@@ -4498,7 +4515,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260827-1';
+import { renderApp } from './template.js?v=20260827-2';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

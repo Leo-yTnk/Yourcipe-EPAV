@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260827-1';
-import { CustomSelect } from './custom-select.js?v=20260827-1';
+import { html } from './vendor/htm-preact-standalone.js?v=20260827-2';
+import { CustomSelect } from './custom-select.js?v=20260827-2';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -204,9 +204,10 @@ function renderHome(app, v) {
           <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
         </div>
       `}
+      ${catalogSearchInput(v.recipeSearchQuery, v.onRecipeSearchChange, 'Buscar receitas...', 'Pesquisar receitas')}
     </div>
 
-    ${heroSection(app, v)}
+    ${!v.recipeSearchActive && heroSection(app, v)}
 
     <div style="padding:20px 0 4px">
       <div className="yc-scroll" style="display:flex;gap:10px;overflow-x:auto;padding:0 40px">
@@ -218,6 +219,7 @@ function renderHome(app, v) {
     </div>
 
     ${v.homeSectionBlocks.map((sec) => carouselSection(resolveSectionIcon(sec.icon, sec.key, false), sec.label, sec.items, v.goSearch, v.productLayout))}
+    ${v.recipeSearchEmpty && html`<div className="yc-catalog-empty">Nenhuma receita encontrada.</div>`}
   `;
 }
 
@@ -241,20 +243,27 @@ function renderInicio(app, v) {
           <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
         </div>
       `}
-      <div style="position:relative;margin-top:20px">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-400)" stroke-width="2" style="position:absolute;left:18px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
-        <input type="text" value=${v.searchQuery} onInput=${v.onSearchChange} onKeyDown=${v.onInicioSearchSubmit} placeholder="Buscar receitas..." style="color:var(--neutral-900);width:100%;padding:16px 20px 16px 46px;border-radius:var(--radius-md);border:1.5px solid var(--neutral-200);font-size:16px;font-family:var(--font-sans);background:var(--neutral-0);outline:none;box-sizing:border-box"/>
-      </div>
+      ${catalogSearchInput(v.homeSearchQuery, v.onHomeSearchChange, 'Buscar produtos e receitas...', 'Pesquisar produtos e receitas')}
     </div>
 
-    ${heroSection(app, v)}
-
-    ${(() => {
-      const recommended = v.homeSectionBlocks.find((b) => b.key === 'recomendado') || v.homeSectionBlocks[0];
-      return recommended ? carouselSection(resolveSectionIcon(recommended.icon, recommended.key, false), recommended.label, recommended.items, v.goHome, v.productLayout) : null;
-    })()}
-    ${carouselSection(productSectionIcon(), v.inicioProductBlock.label, v.inicioProductBlock.items, v.goProducts, v.productLayout)}
+    ${!v.homeSearchActive && heroSection(app, v)}
+    ${v.homeSearchActive ? html`
+      ${carouselSection(homeSectionIcon('recomendado'), 'Receitas', v.homeRecipeResults, v.goHome, v.productLayout)}
+      ${productCarouselSection(productSectionIcon(), 'Produtos', v.homeProductResults)}
+      ${!v.homeRecipeResults.length && !v.homeProductResults.length && html`<div className="yc-catalog-empty">Nenhum produto ou receita encontrado.</div>`}
+    ` : html`
+      ${v.homeSectionBlocks.map((sec) => carouselSection(resolveSectionIcon(sec.icon, sec.key, false), sec.label, sec.items, v.goHome, v.productLayout))}
+      ${carouselSection(productSectionIcon(), v.inicioProductBlock.label, v.inicioProductBlock.items, v.goProducts, v.productLayout)}
+    `}
   `;
+}
+
+function catalogSearchInput(value, onInput, placeholder, label) {
+  return html`<label className="yc-catalog-search">
+    <span className="yc-sr-only">${label}</span>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+    <input type="search" value=${value} onInput=${onInput} placeholder=${placeholder}/>
+  </label>`;
 }
 
 function homeSectionIcon(key) {
@@ -359,13 +368,17 @@ function renderProducts(app, v) {
           <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
         </div>
       `}
+      <div className="yc-product-tools">
+        ${catalogSearchInput(v.productSearchQuery, v.onProductSearchChange, 'Buscar produtos...', 'Pesquisar produtos')}
+        <button type="button" className="yc-filter-button" aria-expanded=${v.productFiltersOpen} onClick=${v.onToggleProductFilters}>☷ Filtros</button>
+      </div>
     </div>
 
-    <div style="padding:20px 0 4px">
+    ${v.productFiltersOpen && html`<div className="yc-product-filters" aria-label="Filtros de produtos">
       <div className="yc-scroll" style="display:flex;gap:10px;overflow-x:auto;padding:0 40px">
         ${v.productCategoryChips.map((chip) => html`<div key=${chip.label} onClick=${chip.onClick} style=${chip.style}>${chip.label}</div>`)}
       </div>
-    </div>
+    </div>`}
 
     ${v.productPageBlocks.map((sec) => (v.productLayout === 'grid' ? productGridSection : productCarouselSection)(resolveSectionIcon(sec.icon, sec.key, true), sec.label, sec.items))}
     ${v.productsEmpty && html`<div style="padding:60px 40px;text-align:center;color:var(--neutral-600);font-size:15px">Nenhum produto cadastrado ainda.</div>`}
