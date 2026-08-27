@@ -43,7 +43,7 @@ export function renderApp(app) {
   return html`
     <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--neutral-800)">
       <a className="yc-skip-link" href="#yc-main-content">Ir para o conteúdo principal</a>
-      <div ref=${(el) => { app.frameRef.current = el; }} className=${`${v.appThemeClass} yc-app-frame`} style=${`width:100%;max-width:${v.frameMaxWidth};height:100%;max-height:${v.frameMaxHeight};min-height:480px;margin:0 auto;background:var(--neutral-0);position:relative;overflow:hidden;font-family:var(--font-sans);color:var(--neutral-900);box-shadow:var(--shadow-lg);transition:background 0.2s ease,color 0.2s ease,max-width 0.2s ease,max-height 0.2s ease`}>
+      <div ref=${(el) => { app.frameRef.current = el; }} className=${`${v.appThemeClass} yc-app-frame`} style=${`width:100%;max-width:${v.frameMaxWidth};height:100%;max-height:${v.frameMaxHeight};min-height:480px;margin:0 auto;background:var(--neutral-0);position:relative;overflow:hidden;font-family:var(--font-sans);color:var(--neutral-900);box-shadow:var(--shadow-lg);transition:background 0.2s ease,color 0.2s ease,max-height 0.2s ease`}>
 
         <main id="yc-main-content" ref=${(el) => { app.scrollRef.current = el; }} className="yc-scroll" tabindex="-1" style=${`position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding-bottom:${v.scrollBottomPad}px`}>
           <h1 className="yc-sr-only">${pageTitle}</h1>
