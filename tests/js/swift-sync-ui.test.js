@@ -31,6 +31,11 @@ describe('Swift sync diagnostics', () => {
     expect(result).toMatchObject({ code: 'sync_internal_error', retryable: false });
   });
 
+  it('does not classify a Swift 502 response as retryable', async () => {
+    const result = await normalizeSwiftSyncError(httpError(502, { code: 'swift_unavailable', run_id: 7 }));
+    expect(result).toMatchObject({ code: 'swift_unavailable', status: 502, retryable: false, runId: 7 });
+  });
+
   it('classifies transport errors and retains their exact technical message', async () => {
     const result = await normalizeSwiftSyncError(new TypeError('fetch failed'));
     expect(result).toMatchObject({ code: 'network_error', retryable: true });

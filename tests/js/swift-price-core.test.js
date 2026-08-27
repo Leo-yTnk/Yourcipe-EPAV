@@ -40,9 +40,17 @@ describe('Swift safety and freshness', () => {
 
 describe('Swift persistence policy', () => {
   const parsed = { canonicalUrl: 'https://www.swift.com.br/produto', swiftProductId: 'p1', swiftSku: 's1', regularPriceCents: 1890, promoPriceCents: 1690, promoMinQuantity: 2, pricingType: 'FIXED_PACKAGE', priceUnit: 'EMBALAGEM' };
-  it('fills confirmed cents and CURRENT only after a successful provider observation', () => {
-    const { update } = buildSwiftSuccessUpdate({}, parsed, { checkedAt: '2026-08-17T12:00:00Z', zip: '01001000', sourceHash: 'hash' });
-    expect(update).toMatchObject({ regular_price_cents: 1890, promo_price_cents: 1690, price_status: 'CURRENT', price_source: 'SWIFT', price_last_success_at: '2026-08-17T12:00:00Z' });
+  it('builds the RPC contract with non-null source_hash and the persisted region', () => {
+    const { update } = buildSwiftSuccessUpdate({}, parsed, { checkedAt: '2026-08-17T12:00:00Z', region: 'SP', zip: '01001000', sourceHash: 'hash' });
+    expect(update).toMatchObject({
+      regular_price_cents: 1890, promo_price_cents: 1690, price_status: 'CURRENT', price_source: 'SWIFT',
+      price_last_success_at: '2026-08-17T12:00:00Z', price_region: 'SP', price_source_hash: 'hash',
+      region: 'SP', source_hash: 'hash',
+    });
+  });
+  it('rejects a successful observation without its required source hash', () => {
+    expect(() => buildSwiftSuccessUpdate({}, parsed, { checkedAt: '2026-08-17T12:00:00Z', region: 'SP', zip: '01001000' }))
+      .toThrow('missing_source_hash');
   });
   it('keeps an unconfirmed product without success metadata and marks ERROR', () => {
     expect(buildSwiftFailureUpdate({}, 'offline', '2026-08-17T12:00:00Z')).toEqual({ price_status: 'ERROR', price_error: 'offline', price_last_checked_at: '2026-08-17T12:00:00Z' });

@@ -58,7 +58,7 @@ export async function normalizeSwiftSyncError(error) {
     code,
     status,
     message: FRIENDLY_BY_CODE[code],
-    retryable: code === 'network_error' || code === 'swift_unavailable',
+    retryable: !status && code === 'network_error',
     runId: diagnostic.runId, correlationId: diagnostic.correlationId,
     metrics: diagnostic.payload && {
       products_synced: diagnostic.payload.products_synced,

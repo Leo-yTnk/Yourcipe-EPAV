@@ -84,6 +84,16 @@ describe('Swift sync catalog calls', () => {
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
   });
 
+  it('does not retry a Swift 502 response and preserves the original server failure', async () => {
+    const error = new Error('non-2xx');
+    error.context = new Response('{"code":"swift_unavailable","run_id":10,"correlation_id":"swift-run-10"}', { status: 502 });
+    mocks.invoke.mockResolvedValue({ data: null, error });
+    const result = await refreshProductPrice('product-1');
+    expect(result.error).toMatchObject({ code: 'swift_unavailable', status: 502, runId: 10, correlationId: 'swift-run-10' });
+    expect(result.error.technical.original).toBe(error);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a response without trustworthy metrics', async () => {
     mocks.invoke.mockResolvedValue({ data: { ok: true }, error: null });
     expect((await refreshAllProductPrices()).error.code).toBe('invalid_sync_response');

@@ -587,7 +587,8 @@ async function invokeSwiftPriceSync(body) {
     }
     if (attempt === 0) {
       const normalized = await normalizeSwiftSyncError(lastError);
-      if (!normalized.retryable) break;
+      const receivedHttpResponse = Number.isFinite(lastError?.context?.status);
+      if (receivedHttpResponse || !normalized.retryable) break;
       await new Promise(resolve => setTimeout(resolve, 400));
     }
   }
