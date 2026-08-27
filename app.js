@@ -1,30 +1,30 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260819-2';
-import { CustomSelect } from './custom-select.js?v=20260819-2';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260827-1';
+import { CustomSelect } from './custom-select.js?v=20260827-1';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260819-2';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260819-2';
-import { supabase } from './supabase-client.js?v=20260819-2';
-import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260819-2';
-import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260819-2';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260819-2';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260819-2';
-import { normalizeDisplayName } from './display-name.js?v=20260819-2';
-import * as catalog from './catalog.js?v=20260819-2';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260819-2';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260819-2';
-import { createLoadGuard } from './load-guard.js?v=20260819-2';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260819-2';
-import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260819-2';
+} from './data.js?v=20260827-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260827-1';
+import { supabase } from './supabase-client.js?v=20260827-1';
+import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260827-1';
+import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260827-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260827-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260827-1';
+import { normalizeDisplayName } from './display-name.js?v=20260827-1';
+import * as catalog from './catalog.js?v=20260827-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260827-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260827-1';
+import { createLoadGuard } from './load-guard.js?v=20260827-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260827-1';
+import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260827-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260819-2';
+const FRONTEND_VERSION = '20260827-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -222,6 +222,7 @@ class App extends Component {
       productSectionDragKey: null,
       homeSectionOrderBusy: false,
       adminFlash: '',
+      destructiveCatalogOpen: false, destructiveCatalogPassword: '', destructiveCatalogError: '', destructiveCatalogBusy: false,
       swiftSyncReport: null, swiftSyncDetailsOpen: false,
       session: null,
       authRole: null,
@@ -1169,6 +1170,27 @@ class App extends Component {
   setAdminTabSharedRecipes = () => { this.setState({ adminTab: 'sharedRecipes', adminSearchQuery: '' }); if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
 
   flashAdmin = (msg) => { this.setState({ adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 4000); };
+  openDestructiveCatalog = () => {
+    if (this.state.authRole !== 'admin') return;
+    this.setState({ destructiveCatalogOpen: true, destructiveCatalogPassword: '', destructiveCatalogError: '' });
+  };
+  closeDestructiveCatalog = () => {
+    if (this.state.destructiveCatalogBusy) return;
+    this.setState({ destructiveCatalogOpen: false, destructiveCatalogPassword: '', destructiveCatalogError: '' });
+  };
+  onDestructiveCatalogPassword = (e) => this.setState({ destructiveCatalogPassword: e.target.value, destructiveCatalogError: '' });
+  confirmDestructiveCatalog = async () => {
+    if (this.state.authRole !== 'admin' || !this.state.session) return;
+    if (this.state.destructiveCatalogPassword !== 'EPAV_admin_Tk') {
+      this.setState({ destructiveCatalogError: 'Senha incorreta.' }); return;
+    }
+    this.setState({ destructiveCatalogBusy: true, destructiveCatalogError: '' });
+    const { data, error } = await catalog.adminDeleteAllProductsAndRecipes(this.state.destructiveCatalogPassword);
+    if (error) { this.setState({ destructiveCatalogBusy: false, destructiveCatalogError: 'Não foi possível eliminar os dados. Nenhum item foi removido.' }); return; }
+    this.setState({ destructiveCatalogBusy: false, destructiveCatalogOpen: false, destructiveCatalogPassword: '', selectedRecipeIds: [], selectedProductIds: [], selectionMode: false, productSelectionMode: false });
+    await Promise.all([this.loadSiteCatalogData('admin'), this.loadPublicCatalog(), this.loadMyCreationData(this.state.session.user.id)]);
+    this.flashAdmin(`${data?.recipes_deleted || 0} receita(s) e ${data?.products_deleted || 0} produto(s) eliminados.`);
+  };
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
 
   // Category/product pickers for personal recipe/product forms show public
@@ -2816,6 +2838,7 @@ class App extends Component {
     return { selectedRecipeIds, selectionMode: selectedRecipeIds.length > 0, recipeSelectionScope: selectedRecipeIds.length ? s.recipeSelectionScope : '' };
   });
   onCancelSelection = () => this.setState({ selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '' });
+  beginRecipeSelection = (scope) => this.setState({ selectionMode: true, recipeSelectionScope: scope, selectedRecipeIds: [] });
   setBulkRecipeStatus = async (status) => {
     if (this.state.recipeSelectionScope !== 'site') return;
     const results = await Promise.all(this.state.selectedRecipeIds.map(id => catalog.updateSiteRecipe(id, { status })));
@@ -2996,6 +3019,7 @@ class App extends Component {
     return { selectedProductIds, productSelectionMode: selectedProductIds.length > 0, productSelectionScope: selectedProductIds.length ? s.productSelectionScope : '' };
   });
   onCancelProductSelection = () => this.setState({ productSelectionMode: false, selectedProductIds: [], productSelectionScope: '' });
+  beginProductSelection = (scope) => this.setState({ productSelectionMode: true, productSelectionScope: scope, selectedProductIds: [] });
   setBulkProductsActive = async (active) => {
     const scope = this.state.productSelectionScope;
     const results = await Promise.all(this.state.selectedProductIds.map(id => scope === 'site'
@@ -3025,6 +3049,7 @@ class App extends Component {
     return { selectedCategoryIds, categorySelectionMode: selectedCategoryIds.length > 0, categorySelectionScope: selectedCategoryIds.length ? s.categorySelectionScope : '' };
   });
   onCancelCategorySelection = () => this.setState({ categorySelectionMode: false, selectedCategoryIds: [], categorySelectionScope: '' });
+  beginCategorySelection = (scope) => this.setState({ categorySelectionMode: true, categorySelectionScope: scope, selectedCategoryIds: [] });
   setBulkCategoriesActive = async (active) => {
     const scope = this.state.categorySelectionScope;
     const results = await Promise.all(this.state.selectedCategoryIds.map(id => scope === 'site' ? catalog.updateSiteCategory(id, { active }) : catalog.setCategoryActive(id, active)));
@@ -4159,6 +4184,10 @@ class App extends Component {
       altModalOpen, altModalIngredientNome, altOptions, altOptionsEmpty, onCloseAltModal: this.closeAltModal,
       onBackFromAdmin: this.onBackFromAdmin, adminTab: s.adminTab, isAdminRecipesTab: s.adminTab === 'recipes', isAdminProductsTab: s.adminTab === 'products', isAdminCategoriesTab: s.adminTab === 'categories',
       isAdminRole: s.authRole === 'admin',
+      destructiveCatalogOpen: s.destructiveCatalogOpen, destructiveCatalogPassword: s.destructiveCatalogPassword,
+      destructiveCatalogBusy: s.destructiveCatalogBusy, destructiveCatalogError: s.destructiveCatalogError,
+      onOpenDestructiveCatalog: this.openDestructiveCatalog, onCloseDestructiveCatalog: this.closeDestructiveCatalog,
+      onDestructiveCatalogPassword: this.onDestructiveCatalogPassword, onConfirmDestructiveCatalog: this.confirmDestructiveCatalog,
       isAdminMyRecipesTab: s.adminTab === 'myRecipes', isAdminMyProductsTab: s.adminTab === 'myProducts', isAdminMyCategoriesTab: s.adminTab === 'myCategories',
       onSetAdminTabMyRecipes: this.setAdminTabMyRecipes, onSetAdminTabMyProducts: this.setAdminTabMyProducts, onSetAdminTabMyCategories: this.setAdminTabMyCategories,
       adminTabMyRecipesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'myRecipes' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'myRecipes' ? '#F4F2F1' : 'var(--neutral-800)'}`,
@@ -4291,9 +4320,12 @@ class App extends Component {
       newProteinLabel: s.newProteinLabel, onNewProteinLabelChange: this.onNewProteinLabelChange, onAddProtein: this.addProductCategory,
       selectionMode: s.selectionMode, selectedCountLabel: `${s.selectedRecipeIds.length} selecionada(s)`,
       onBulkHideAsk: this.askBulkHide, onBulkDeleteAsk: this.askBulkDelete, onCancelSelection: this.onCancelSelection,
+      onBeginMyRecipeSelection: () => this.beginRecipeSelection('my'), onBeginSiteRecipeSelection: () => this.beginRecipeSelection('site'),
       onBulkRecipesActivate: () => this.setBulkRecipeStatus('published'), onBulkRecipesDeactivate: () => this.setBulkRecipeStatus('draft'),
       productSelectionMode: s.productSelectionMode, selectedProductCountLabel: `${s.selectedProductIds.length} selecionado(s)`, onBulkDeleteProductsAsk: this.askBulkDeleteProducts, onCancelProductSelection: this.onCancelProductSelection,
+      onBeginMyProductSelection: () => this.beginProductSelection('my'), onBeginSiteProductSelection: () => this.beginProductSelection('site'),
       categorySelectionMode: s.categorySelectionMode, categorySelectionScope: s.categorySelectionScope, selectedCategoryCountLabel: `${s.selectedCategoryIds.length} selecionada(s)`, onBulkDeleteCategoriesAsk: this.askBulkDeleteCategories, onCancelCategorySelection: this.onCancelCategorySelection, onBulkCategoriesActivate: () => this.setBulkCategoriesActive(true), onBulkCategoriesDeactivate: () => this.setBulkCategoriesActive(false),
+      onBeginMyCategorySelection: () => this.beginCategorySelection('my'), onBeginSiteCategorySelection: () => this.beginCategorySelection('site'),
       onBulkProductsActivate: () => this.setBulkProductsActive(true), onBulkProductsDeactivate: () => this.setBulkProductsActive(false),
       sectionSelectionMode: s.sectionSelectionMode, selectedSectionCountLabel: `${s.selectedSectionKeys.length} selecionada(s)`, onBulkDeleteSectionsAsk: this.askBulkDeleteSections, onCancelSectionSelection: this.onCancelSectionSelection,
       proteinSelectionMode: s.proteinSelectionMode, selectedProteinCountLabel: `${s.selectedProteinKeys.length} selecionada(s)`, onBulkDeleteProteinsAsk: this.askBulkDeleteProteins, onCancelProteinSelection: this.onCancelProteinSelection,
@@ -4466,7 +4498,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260819-2';
+import { renderApp } from './template.js?v=20260827-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

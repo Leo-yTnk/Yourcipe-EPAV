@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260819-2';
-import { CustomSelect } from './custom-select.js?v=20260819-2';
+import { html } from './vendor/htm-preact-standalone.js?v=20260827-1';
+import { CustomSelect } from './custom-select.js?v=20260827-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -1407,6 +1407,10 @@ function selectionBar(count, onDelete, onCancel, extraAction) {
   `;
 }
 
+function beginSelectionButton(onClick) {
+  return html`<button type="button" className="yc-begin-selection" onClick=${onClick}>☑ Selecionar itens</button>`;
+}
+
 function bulkStatusActions(onActivate, onDeactivate, activateLabel = 'Ativar', deactivateLabel = 'Desativar') {
   return html`
     <div onClick=${onActivate} style="font-size:13px;font-weight:700;cursor:pointer;padding:8px 14px;border-radius:var(--radius-full);background:rgba(244,242,241,0.18)">${activateLabel}</div>
@@ -1496,6 +1500,7 @@ function renderSiteRecipesTab(app, v) {
         </div>
       </div>
       ${adminSearchBar(v)}
+      ${!v.selectionMode && beginSelectionButton(v.onBeginSiteRecipeSelection)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.selectionMode && v.recipeSelectionScope === 'site' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection, bulkStatusActions(v.onBulkRecipesActivate, v.onBulkRecipesDeactivate, 'Publicar', 'Despublicar'))}
       ${!v.siteCatalogLoading && !v.hasSiteRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma receita no catálogo público ainda.</div>`}
@@ -1536,11 +1541,12 @@ function renderSiteProductsTab(app, v) {
         <div>${[['grid', 'Cards'], ['spreadsheet', 'Planilha']].map(([value, label]) => html`<button type="button" aria-pressed=${v.adminProductView === value} className=${v.adminProductView === value ? 'is-active' : ''} onClick=${() => v.onAdminProductViewSet(value)}>${label}</button>`)}</div>
       </div>
       ${adminSearchBar(v)}
+      ${!v.productSelectionMode && beginSelectionButton(v.onBeginSiteProductSelection)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.productSelectionMode && v.productSelectionScope === 'site' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhum produto no catálogo público ainda.</div>`}
-      ${v.adminProductView === 'spreadsheet' && v.siteProductRows.length > 0 && html`<div className="yc-product-sheet-wrap yc-admin-product-sheet-wrap"><table className="yc-product-sheet yc-admin-product-sheet"><thead><tr><th>Produto</th><th>Categoria</th><th>Unidade</th><th>Preço</th></tr></thead><tbody>${v.siteProductRows.map(row => html`<tr key=${row.id}><td>${row.name}<small>${row.code}</small></td><td>${row.categoryName}</td><td>${row.unit}</td><td><label className="yc-sheet-price"><span>R$</span><input aria-label=${`Preço de ${row.name}`} inputmode="decimal" value=${row.priceValue} disabled=${!row.priceEditable || row.priceBusy} title=${row.priceEditable ? 'Use Tab ou as setas para navegar; Ctrl+C e Ctrl+V para copiar e colar.' : row.priceHelp} data-price-row-index=${row.priceRowIndex} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown}/></label></td></tr>`)}</tbody></table></div>`}
-      ${v.adminProductView !== 'spreadsheet' && html`<div className="yc-admin-product-grid">${v.siteProductRows.map((row) => html`
+      ${v.adminProductView === 'spreadsheet' && !v.productSelectionMode && v.siteProductRows.length > 0 && html`<div className="yc-product-sheet-wrap yc-admin-product-sheet-wrap"><table className="yc-product-sheet yc-admin-product-sheet"><thead><tr><th>Produto</th><th>Categoria</th><th>Unidade</th><th>Preço</th></tr></thead><tbody>${v.siteProductRows.map(row => html`<tr key=${row.id}><td>${row.name}<small>${row.code}</small></td><td>${row.categoryName}</td><td>${row.unit}</td><td><label className="yc-sheet-price"><span>R$</span><input aria-label=${`Preço de ${row.name}`} inputmode="decimal" value=${row.priceValue} disabled=${!row.priceEditable || row.priceBusy} title=${row.priceEditable ? 'Use Tab ou as setas para navegar; Ctrl+C e Ctrl+V para copiar e colar.' : row.priceHelp} data-price-row-index=${row.priceRowIndex} onInput=${row.onPriceChange} onBlur=${row.onPriceBlur} onKeyDown=${row.onPriceKeyDown}/></label></td></tr>`)}</tbody></table></div>`}
+      ${(v.adminProductView !== 'spreadsheet' || v.productSelectionMode) && html`<div className="yc-admin-product-grid">${v.siteProductRows.map((row) => html`
         <div className="yc-admin-card yc-admin-product-card" key=${row.id} style=${row.rowStyle || "display:flex;align-items:center;gap:14px;background:var(--neutral-0);border:1px solid var(--neutral-100);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px"} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
           ${row.showCheckbox && html`<div style=${row.checkboxStyle}>${row.checkMark}</div>`}
           <img className="yc-admin-product-image" loading="lazy" decoding="async" src=${row.imagem} alt="" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0"/>
@@ -1578,6 +1584,7 @@ function renderSiteCategoriesTab(app, v) {
         Nova Categoria no Catálogo
       </div>
       ${adminSearchBar(v)}
+      ${!v.categorySelectionMode && beginSelectionButton(v.onBeginSiteCategorySelection)}
       ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.categorySelectionMode && v.categorySelectionScope === 'site' && selectionBar(v.selectedCategoryCountLabel, v.onBulkDeleteCategoriesAsk, v.onCancelCategorySelection, bulkStatusActions(v.onBulkCategoriesActivate, v.onBulkCategoriesDeactivate))}
       ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
@@ -1655,6 +1662,17 @@ function renderAdmin(app, v) {
     ${v.isAdminRole && v.isAdminCategoriesTab && renderSiteCategoriesTab(app, v)}
     ${v.isAdminRole && v.isAdminProductsTab && renderSiteProductsTab(app, v)}
     ${v.isAdminRole && v.isAdminRequestsInboxTab && renderRequestsInboxTab(app, v)}
+    ${v.isAdminRole && html`
+      <section className="yc-danger-zone" aria-label="Zona de perigo"><div><strong>Zona de perigo</strong><span>Elimina permanentemente todos os Produtos e Receitas, pessoais e públicos. Categorias e demais dados são preservados.</span></div><button type="button" onClick=${v.onOpenDestructiveCatalog}>Eliminar Produtos e Receitas</button></section>
+    `}
+    ${v.isAdminRole && v.destructiveCatalogOpen && html`
+      <div className="yc-modal-overlay"><div className="yc-danger-dialog" role="dialog" aria-modal="true" aria-label="Eliminar todos os produtos e receitas">
+        <h2>Eliminar tudo?</h2><p>Esta ação permanente elimina <strong>todos os Produtos e Receitas</strong>, inclusive dados pessoais de usuários. Categorias e outros registros serão preservados.</p>
+        <label>Digite a senha administrativa para confirmar<input type="password" autocomplete="off" value=${v.destructiveCatalogPassword} onInput=${v.onDestructiveCatalogPassword} disabled=${v.destructiveCatalogBusy}/></label>
+        ${v.destructiveCatalogError && html`<div className="yc-danger-error" role="alert">${v.destructiveCatalogError}</div>`}
+        <div className="yc-danger-actions"><button type="button" onClick=${v.onCloseDestructiveCatalog} disabled=${v.destructiveCatalogBusy}>Cancelar</button><button type="button" onClick=${v.onConfirmDestructiveCatalog} disabled=${v.destructiveCatalogBusy || !v.destructiveCatalogPassword}>${v.destructiveCatalogBusy ? 'Eliminando…' : 'Eliminar permanentemente'}</button></div>
+      </div></div>
+    `}
   `;
 }
 
@@ -1666,6 +1684,7 @@ function renderMyRecipesTab(app, v) {
         Nova Receita
       </div>
       ${adminSearchBar(v)}
+      ${!v.selectionMode && beginSelectionButton(v.onBeginMyRecipeSelection)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.selectionMode && v.recipeSelectionScope === 'my' && selectionBar(v.selectedCountLabel, v.onBulkDeleteAsk, v.onCancelSelection)}
       ${!v.myCreationLoading && !v.hasMyRecipeRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem receitas próprias.</div>`}
@@ -1699,6 +1718,7 @@ function renderMyProductsTab(app, v) {
         Novo Produto
       </div>
       ${adminSearchBar(v)}
+      ${!v.productSelectionMode && beginSelectionButton(v.onBeginMyProductSelection)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.productSelectionMode && v.productSelectionScope === 'my' && selectionBar(v.selectedProductCountLabel, v.onBulkDeleteProductsAsk, v.onCancelProductSelection, bulkStatusActions(v.onBulkProductsActivate, v.onBulkProductsDeactivate))}
       ${!v.myCreationLoading && !v.hasMyProductRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem produtos próprios.</div>`}
@@ -1734,6 +1754,7 @@ function renderMyCategoriesTab(app, v) {
         Nova Categoria
       </div>
       ${adminSearchBar(v)}
+      ${!v.categorySelectionMode && beginSelectionButton(v.onBeginMyCategorySelection)}
       ${v.myCreationLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
       ${v.categorySelectionMode && v.categorySelectionScope === 'my' && selectionBar(v.selectedCategoryCountLabel, v.onBulkDeleteCategoriesAsk, v.onCancelCategorySelection, bulkStatusActions(v.onBulkCategoriesActivate, v.onBulkCategoriesDeactivate))}
       ${!v.myCreationLoading && !v.hasMyCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Você ainda não tem categorias próprias.</div>`}
