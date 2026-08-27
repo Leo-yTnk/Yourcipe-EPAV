@@ -132,6 +132,7 @@ export function isSuspiciousChange(previous, next, warningPercent) {
 // Persistence policies are pure so success/failure semantics stay testable and
 // identical in the Edge Function. Spreadsheet imports never call these helpers.
 export function buildSwiftSuccessUpdate(product, parsed, { checkedAt, region = null, zip, sourceHash }) {
+  if (!sourceHash) throw new Error('missing_source_hash');
   const changed = product.regular_price_cents !== parsed.regularPriceCents
     || product.promo_price_cents !== parsed.promoPriceCents
     || product.pricing_type !== parsed.pricingType;
@@ -144,6 +145,7 @@ export function buildSwiftSuccessUpdate(product, parsed, { checkedAt, region = n
     price_last_success_at: checkedAt,
     price_last_changed_at: changed || !product.price_last_changed_at ? checkedAt : product.price_last_changed_at,
     price_region: region, price_reference_zip_code: zip, price_source_hash: sourceHash,
+    region, source_hash: sourceHash,
   } };
 }
 
