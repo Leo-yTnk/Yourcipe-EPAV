@@ -13,8 +13,8 @@
 // ownerId argument) always receives it from the caller's own
 // session.user.id, never from anywhere else; the server independently
 // re-validates it via RLS/RPC regardless.
-import { supabase } from './supabase-client.js?v=20260827-1';
-import { normalizeSwiftSyncError } from './swift-sync-ui.js?v=20260827-1';
+import { supabase } from './supabase-client.js?v=20260827-2';
+import { normalizeSwiftSyncError } from './swift-sync-ui.js?v=20260827-2';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, image_url, version, created_at, updated_at, swift_product_url, swift_product_id, swift_sku, price_cents, regular_price_cents, promo_price_cents, promo_min_quantity, pricing_type, price_unit, price_source, price_last_checked_at, price_last_changed_at, price_last_success_at, price_status, price_error, price_region, price_reference_zip_code, price_source_hash';

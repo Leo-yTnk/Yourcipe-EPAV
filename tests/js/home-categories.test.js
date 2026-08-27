@@ -66,7 +66,7 @@ describe('Home sections use the public ordering from Supabase', () => {
 describe('the card display preference applies throughout the public catalog', () => {
   it('passes the selected layout to recipe sections on both Receitas and Início', () => {
     expect(templateJs).toMatch(/homeSectionBlocks\.map\(\(sec\) => carouselSection\([\s\S]*?v\.productLayout\)\)/);
-    expect(templateJs).toMatch(/recommended \? carouselSection\([\s\S]*?v\.goHome, v\.productLayout\)/);
+    expect(templateJs).toMatch(/homeSectionBlocks\.map\(\(sec\) => carouselSection\([\s\S]*?v\.goHome, v\.productLayout\)/);
   });
 
   it('passes the selected layout to the product section on Início', () => {
