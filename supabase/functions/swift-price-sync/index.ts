@@ -9,6 +9,7 @@ const TIMEOUT = Number(env('SWIFT_PRICE_REQUEST_TIMEOUT_MS', '10000'));
 const RETRIES = Number(env('SWIFT_PRICE_MAX_RETRIES', '3'));
 const CONCURRENCY = Number(env('SWIFT_PRICE_SYNC_CONCURRENCY', '3'));
 const WARNING_PERCENT = Number(env('SWIFT_PRICE_CHANGE_WARNING_PERCENT', '50'));
+const LEASE_SECONDS = Number(env('SWIFT_PRICE_SYNC_LEASE_SECONDS', '300'));
 const REGION_COOKIE = env('SWIFT_REGION_COOKIE_NAME', 'postalCode');
 const ALERT_WEBHOOK = env('SWIFT_PRICE_ALERT_WEBHOOK_URL');
 // Browser calls to an Edge Function are preflighted because Supabase sends
@@ -31,7 +32,8 @@ function configurationError() {
   if (!ZIP || ZIP.length !== 8) missing.push('SWIFT_REFERENCE_ZIP_CODE');
   const numeric = { SWIFT_PRICE_MAX_AGE_MINUTES: MAX_AGE, SWIFT_PRICE_SYNC_INTERVAL_MINUTES: SYNC_INTERVAL,
     SWIFT_PRICE_REQUEST_TIMEOUT_MS: TIMEOUT, SWIFT_PRICE_MAX_RETRIES: RETRIES,
-    SWIFT_PRICE_SYNC_CONCURRENCY: CONCURRENCY, SWIFT_PRICE_CHANGE_WARNING_PERCENT: WARNING_PERCENT };
+    SWIFT_PRICE_SYNC_CONCURRENCY: CONCURRENCY, SWIFT_PRICE_CHANGE_WARNING_PERCENT: WARNING_PERCENT,
+    SWIFT_PRICE_SYNC_LEASE_SECONDS: LEASE_SECONDS };
   const invalid = Object.entries(numeric).filter(([, value]) => !Number.isFinite(value) || value < 0).map(([key]) => key);
   return { missing: [...new Set(missing)], invalid };
 }
@@ -111,26 +113,44 @@ Deno.serve(async req => {
       return new Response(JSON.stringify({ skipped: 'sync_interval_not_elapsed' }), { headers: responseHeaders });
   }
   const requestKey = body.requestId ? `${body.productId || 'batch'}:${body.requestId}` : null;
-  const { data: begun, error: beginError } = await supabase.rpc('begin_swift_price_sync', { p_request_key: requestKey });
+  const { data: begun, error: beginError } = await supabase.rpc('begin_swift_price_sync', { p_request_key: requestKey, p_lease_seconds: LEASE_SECONDS });
   if (beginError) return json({ error: 'sync_lock_failed', code: 'sync_internal_error' }, 500);
   const run = begun?.[0];
-  if (!run) return json({ error: 'sync_already_running', code: 'sync_already_running' }, 409);
+  if (!run) return json({ error: 'sync_lock_invalid_response', code: 'sync_internal_error', stage: 'begin' }, 500);
+  if (run.disposition !== 'started' && run.disposition !== 'recovered_and_started') {
+    const code = run.disposition === 'duplicate_active' ? 'sync_request_in_progress'
+      : run.disposition === 'duplicate_finished' ? 'sync_request_already_completed' : 'sync_batch_in_progress';
+    log('sync_conflict', { run_id: run.id, correlation_id: run.correlation_id, stage: 'begin', code });
+    return json({ error: code, code, run_id: run.id, correlation_id: run.correlation_id }, 409);
+  }
+  if (run.disposition === 'recovered_and_started') log('abandoned_run_recovered', { run_id: run.id, correlation_id: run.correlation_id, recovered_run_id: run.recovered_run_id, stage: 'begin' });
+  let stage = 'query_products';
+  let finalMetrics: Record<string, number> = {};
+  let finalErrors: unknown = {};
+  let finalOutcome = 'failed';
+  let internalErrorCode: string | null = null;
+  try {
   let query = supabase.from('products').select('*').eq('scope', 'site').eq('active', true);
   if (body.productId) query = query.eq('id', body.productId);
   const { data: products, error } = await query;
   if (error) {
-    await supabase.rpc('finish_swift_price_sync', { p_run_id: run.id, p_metrics: {}, p_errors: { query: error.code } });
+    stage = 'query_products';
+    internalErrorCode = 'product_query_failed'; finalErrors = { query: error.code };
     return json({ error: 'product_query_failed', code: 'sync_internal_error', run_id: run.id, correlation_id: run.correlation_id }, 500);
   }
   if (body.productId && !products?.length) {
-    await supabase.rpc('finish_swift_price_sync', { p_run_id: run.id, p_metrics: {}, p_errors: { product: 'not_found' } });
+    stage = 'product_not_found';
+    internalErrorCode = 'product_not_found'; finalErrors = { product: 'not_found' };
     return json({ error: 'product_not_found', code: 'product_not_found', run_id: run.id, correlation_id: run.correlation_id }, 404);
   }
   const started = Date.now();
+  stage = 'sync_products';
   const metrics = { products_synced: 0, products_updated: 0, products_unchanged: 0, products_failed: 0, products_stale: 0 };
   const failures: Array<{ product_id: string; product_name: string; code: string }> = [];
 
   async function refresh(product: Record<string, any>) {
+    const { data: leaseAlive, error: heartbeatError } = await supabase.rpc('heartbeat_swift_price_sync', { p_run_id: run.id, p_lease_seconds: LEASE_SECONDS });
+    if (heartbeatError || !leaseAlive) throw new Error('sync_lease_lost');
     if (!product.swift_product_url) {
       const { error: missingError } = await supabase.rpc('mark_swift_price_failure', { p_product_id: product.id, p_message: 'Página Swift não cadastrada', p_checked_at: new Date().toISOString(), p_missing: true });
       failures.push({ product_id: product.id, product_name: product.name, code: missingError ? `database_missing_source_failed:${missingError.code}` : 'missing_source' });
@@ -176,8 +196,9 @@ Deno.serve(async req => {
   const queue = [...(products || [])];
   await Promise.all(Array.from({ length: Math.max(1, Math.min(CONCURRENCY, 10)) }, async () => { while (queue.length) await refresh(queue.shift()!); }));
   const duration_ms = Date.now() - started;
-  const { error: finishError } = await supabase.rpc('finish_swift_price_sync', { p_run_id: run.id, p_metrics: { ...metrics, duration_ms }, p_errors: failures });
-  if (finishError) return json({ error: 'run_finalize_failed', code: 'sync_internal_error', run_id: run.id, correlation_id: run.correlation_id }, 500);
+  finalMetrics = { ...metrics, duration_ms }; finalErrors = failures;
+  finalOutcome = metrics.products_failed ? 'partial' : 'completed';
+  stage = 'completed';
   if (metrics.products_failed >= 3) {
     log('provider_alert', { reason: 'batch_failure_threshold', run_id: run.id, correlation_id: run.correlation_id, ...metrics });
     if (ALERT_WEBHOOK) {
@@ -197,4 +218,17 @@ Deno.serve(async req => {
   const payload = { ...metrics, failures, duration_ms, run_id: run.id, correlation_id: run.correlation_id,
     partial: metrics.products_failed > 0 };
   return json(payload, metrics.products_failed > 0 ? 207 : 200);
+  } catch (cause) {
+    internalErrorCode = cause instanceof Error && cause.message === 'sync_lease_lost' ? 'sync_lease_lost' : `unexpected_${stage}`;
+    finalErrors = { lifecycle: internalErrorCode };
+    log('sync_internal_failure', { run_id: run.id, correlation_id: run.correlation_id, stage, code: internalErrorCode });
+    return json({ error: 'sync_internal_failure', code: 'sync_internal_error', internal_code: internalErrorCode, stage, run_id: run.id, correlation_id: run.correlation_id }, 500);
+  } finally {
+    const { error: finishError } = await supabase.rpc('finish_swift_price_sync', { p_run_id: run.id, p_metrics: finalMetrics, p_errors: finalErrors, p_outcome: internalErrorCode ? 'failed' : finalOutcome, p_internal_error_code: internalErrorCode });
+    if (finishError) {
+      log('run_finalize_failed', { run_id: run.id, correlation_id: run.correlation_id, stage: 'finalize', code: finishError.code });
+      return json({ error: 'run_finalize_failed', code: 'sync_internal_error', internal_code: 'run_finalize_failed',
+        stage: 'finalize', run_id: run.id, correlation_id: run.correlation_id }, 500);
+    }
+  }
  });
