@@ -1,31 +1,31 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260831-3';
-import { CustomSelect } from './custom-select.js?v=20260831-3';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260831-4';
+import { CustomSelect } from './custom-select.js?v=20260831-4';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260831-3';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260831-3';
-import { supabase } from './supabase-client.js?v=20260831-3';
-import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260831-3';
-import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260831-3';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260831-3';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260831-3';
-import { normalizeDisplayName } from './display-name.js?v=20260831-3';
-import * as catalog from './catalog.js?v=20260831-3';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260831-3';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260831-3';
-import { createLoadGuard } from './load-guard.js?v=20260831-3';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260831-3';
-import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260831-3';
-import { parseCatalogSectionLinkRow } from './import-contract.js?v=20260831-3';
+} from './data.js?v=20260831-4';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260831-4';
+import { supabase } from './supabase-client.js?v=20260831-4';
+import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260831-4';
+import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260831-4';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260831-4';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260831-4';
+import { normalizeDisplayName } from './display-name.js?v=20260831-4';
+import * as catalog from './catalog.js?v=20260831-4';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260831-4';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260831-4';
+import { createLoadGuard } from './load-guard.js?v=20260831-4';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260831-4';
+import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260831-4';
+import { parseCatalogSectionLinkRow } from './import-contract.js?v=20260831-4';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260831-3';
+const FRONTEND_VERSION = '20260831-4';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -294,6 +294,7 @@ class App extends Component {
       // publicSectionCategories()) — populated by _loadPublicCatalog,
       // never by data.js's static constants or localStorage.
       publicCategories: [],
+      publicCatalogStructure: { pages: [], sections: [], recipes: [], products: [] },
 
       // ---- Modo de Criação: "Catálogo Público" (admin-only direct authoring
       // of scope='site' rows — supabase/006_admin_catalog_publishing.sql).
@@ -2063,7 +2064,7 @@ class App extends Component {
   // =========================================================================
   loadPublicCatalog = () => this._guardedLoad('publicCatalog', (runId) => this._loadPublicCatalog(runId), () => this.setState({
     publicCatalogSource: 'demo-fallback', publicCatalogError: 'Tempo de carregamento esgotado. Tente novamente.',
-    products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
+    products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [], publicCatalogStructure: { pages: [], sections: [], recipes: [], products: [] },
   }));
   _loadPublicCatalog = async (runId) => {
     // Reset to 'loading' on every call (not just the very first, initial
@@ -2071,10 +2072,10 @@ class App extends Component {
     // again instead of leaving the stale fallback banner up mid-request.
     if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({ publicCatalogSource: 'loading', publicCatalogError: '' });
     try {
-      const [catsRes, prodsRes, recsRes] = await Promise.all([
-        catalog.fetchPublicCategories(), catalog.fetchPublicProducts(), catalog.fetchPublicRecipes(),
+      const [catsRes, prodsRes, recsRes, structureRes] = await Promise.all([
+        catalog.fetchPublicCategories(), catalog.fetchPublicProducts(), catalog.fetchPublicRecipes(), catalog.fetchPublicCatalogStructure(),
       ]);
-      const firstError = catsRes.error || prodsRes.error || recsRes.error;
+      const firstError = catsRes.error || prodsRes.error || recsRes.error || structureRes.error;
       if (firstError) {
         // Fallback is explicit and visible (see hasPublicCatalogFallback/
         // publicCatalogError in computeViewModel + the banner in
@@ -2083,7 +2084,7 @@ class App extends Component {
         if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${firstError.message || 'erro desconhecido'}${firstError.code ? ` (${firstError.code})` : ''}`,
-          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
+          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [], publicCatalogStructure: { pages: [], sections: [], recipes: [], products: [] },
         });
         return;
       }
@@ -2098,7 +2099,7 @@ class App extends Component {
         if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
           publicCatalogSource: 'demo-fallback',
           publicCatalogError: `${secondError.message || 'erro desconhecido'}${secondError.code ? ` (${secondError.code})` : ''}`,
-          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
+          products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [], publicCatalogStructure: { pages: [], sections: [], recipes: [], products: [] },
         });
         return;
       }
@@ -2137,7 +2138,7 @@ class App extends Component {
       // publicRecipeCategories()/publicProteinCategories()/
       // publicSectionCategories() below stay the single place that splits
       // by type — see the comment there for why the three must never mix.
-      if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes, publicCategories: catsRes.data || [] });
+      if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({ publicCatalogSource: 'supabase', publicCatalogError: '', products, recipes, publicCategories: catsRes.data || [], publicCatalogStructure: structureRes.data });
     } catch (e) {
       // Same defensive net as loadMyCreationData: an unexpected synchronous
       // throw here (not a normal Supabase `{ error }` response, which is
@@ -2146,7 +2147,7 @@ class App extends Component {
       if (this._loadGuard.isCurrent('publicCatalog', runId)) this.setState({
         publicCatalogSource: 'demo-fallback',
         publicCatalogError: (e && e.message) || 'erro inesperado',
-        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [],
+        products: DEFAULT_PRODUCTS, recipes: DEFAULT_RECIPES, publicCategories: [], publicCatalogStructure: { pages: [], sections: [], recipes: [], products: [] },
       });
     }
   };
@@ -3245,6 +3246,29 @@ class App extends Component {
     const recipePageNeedle = s.recipeSearchQuery.trim().toLowerCase();
     const recipePageRecipes = visibleRecipes.filter(r => !recipePageNeedle || r.nome.toLowerCase().includes(recipePageNeedle));
     const byTag = (tag) => recipePageRecipes.filter(r => r.tags.includes(tag)).map((r, i) => this.makeRecipeCard(r, 'home', i));
+    const byHomeTag = (tag) => visibleRecipes.filter(r => r.tags.includes(tag)).map((r, i) => this.makeRecipeCard(r, 'home', i));
+    const publicStructure = s.publicCatalogStructure || { pages: [], sections: [], recipes: [], products: [] };
+    const normalizedSectionsFor = (pageKey, itemType, recipeSource = recipePageRecipes) => {
+      const page = publicStructure.pages.find(p => p.key === pageKey && p.active !== false);
+      if (!page) return [];
+      const links = itemType === 'product' ? publicStructure.products : publicStructure.recipes;
+      const source = itemType === 'product'
+        ? productPageProducts.filter(product => s.productsCategoryFilter === 'Todas' || product.categoria === s.productsCategoryFilter)
+        : recipeSource;
+      return publicStructure.sections
+        .filter(sec => sec.page_id === page.id && sec.active !== false)
+        .map(sec => {
+          const ids = links.filter(link => link.section_id === sec.id).map(link => link[itemType === 'product' ? 'product_id' : 'recipe_id']);
+          const items = ids.map(id => source.find(item => item.id === id)).filter(Boolean)
+            .map((item, index) => itemType === 'product' ? this.makeProductCard(item, index) : this.makeRecipeCard(item, 'home', index));
+          return { key: sec.slug, label: sec.name, items };
+        })
+        .filter(sec => sec.items.length > 0);
+    };
+    const hasNormalizedSectionsFor = (pageKey) => {
+      const page = publicStructure.pages.find(p => p.key === pageKey && p.active !== false);
+      return !!page && publicStructure.sections.some(sec => sec.page_id === page.id && sec.active !== false);
+    };
     // Public section visibility is role-independent. Local preferences may
     // disable a known section, but an admin is never routed to a different
     // loader and a newly-created public section defaults to visible.
@@ -3262,11 +3286,18 @@ class App extends Component {
     // resolveSectionIcon in template.js, falling back to the key-based
     // lookup when a section (default or public-catalog) has none.
     const sectionIconByKey = {}; s.homeSections.forEach(h => { if (h.icon) sectionIconByKey[h.key] = h.icon; });
-    const homeSectionBlocks = homeSectionSource
+    const legacyHomeSectionBlocks = homeSectionSource
       .filter(sec => sectionOn(sec.key))
-      .map(sec => ({ key: sec.key, label: sec.label, items: byTag(sec.key) }))
+      .map(sec => ({ key: sec.key, label: sec.label, items: byHomeTag(sec.key) }))
       .filter(b => b.items.length > 0)
       .map(b => ({ ...b, icon: sectionIconByKey[b.key] }));
+    const normalizedHomeSectionBlocks = normalizedSectionsFor('home', 'recipe', visibleRecipes);
+    const normalizedRecipeSectionBlocks = normalizedSectionsFor('recipes', 'recipe');
+    const homeSectionBlocks = hasNormalizedSectionsFor('home') ? normalizedHomeSectionBlocks : legacyHomeSectionBlocks;
+    const legacyRecipeSectionBlocks = homeSectionSource.filter(sec => sectionOn(sec.key))
+      .map(sec => ({ key: sec.key, label: sec.label, items: byTag(sec.key) })).filter(sec => sec.items.length > 0)
+      .map(sec => ({ ...sec, icon: sectionIconByKey[sec.key] }));
+    const recipeSectionBlocks = hasNormalizedSectionsFor('recipes') ? normalizedRecipeSectionBlocks : legacyRecipeSectionBlocks;
     // Produtos — exact mirror of homeSectionBlocks above: the public
     // catalog's type='secao_produto' categories (siteProductSectionCategories/
     // admin Categorias tab, replaceProductCategories on the site product
@@ -3306,7 +3337,8 @@ class App extends Component {
     const productSectionBlocksFiltered = productHomeSectionBlocks.map(b => ({
       ...b, items: b.items.filter(it => s.productsCategoryFilter === 'Todas' || it.categoria === s.productsCategoryFilter),
     })).filter(b => b.items.length > 0);
-    const productPageBlocks = [...productSectionBlocksFiltered, ...categoryBlocks];
+    const normalizedProductSectionBlocks = normalizedSectionsFor('products', 'product');
+    const productPageBlocks = hasNormalizedSectionsFor('products') ? normalizedProductSectionBlocks : [...productSectionBlocksFiltered, ...categoryBlocks];
     const inicioProductItems = s.products.slice(0, 12).map((p, i) => this.makeProductCard(p, i));
     const inicioProductBlock = { key: 'inicio_produtos', label: 'Produtos em Destaque', items: (byProductTag('recomendado').length ? byProductTag('recomendado') : inicioProductItems) };
     const homeNeedle = s.homeSearchQuery.trim().toLowerCase();
@@ -3991,9 +4023,9 @@ class App extends Component {
       showSplash: s.showSplash, onSplashContinue: this.onSplashContinue, splashButtonLabel: s.profile ? 'Bem-vindo de volta' : 'Criar meu perfil',
       userGreetingName, profileInitial,
       heroRecipes, heroDots, heroHasMultiple, onHeroPrev, onHeroNext, onHeroScroll: this.onHeroScroll,
-      homeSectionBlocks, homeCategoryChips, homeCategoriesEmpty,
+      homeSectionBlocks, recipeSectionBlocks, homeCategoryChips, homeCategoriesEmpty,
       recipeSearchQuery: s.recipeSearchQuery, onRecipeSearchChange: this.onRecipeSearchChange,
-      recipeSearchActive: !!recipePageNeedle, recipeSearchEmpty: !!recipePageNeedle && homeSectionBlocks.length === 0,
+      recipeSearchActive: !!recipePageNeedle, recipeSearchEmpty: !!recipePageNeedle && recipeSectionBlocks.length === 0,
       homeSearchQuery: s.homeSearchQuery, onHomeSearchChange: this.onHomeSearchChange, homeRecipeResults, homeProductResults, homeSearchActive: !!homeNeedle,
       searchQuery: s.searchQuery, onSearchChange: this.onSearchChange, categoryChips, filteredSearchResults, searchResultsEmpty: filteredSearchResults.length === 0,
       onInicioSearchSubmit: this.onInicioSearchSubmit,
@@ -4365,7 +4397,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260831-3';
+import { renderApp } from './template.js?v=20260831-4';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);

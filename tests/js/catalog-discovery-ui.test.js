@@ -28,4 +28,11 @@ describe('catalog discovery controls', () => {
   it('renders every configured recipe section on the aggregator home', () => {
     expect(template).toContain('v.homeSectionBlocks.map((sec) => carouselSection');
   });
+
+  it('keeps the three discovery tabs on their page-specific normalized sections', () => {
+    expect(app).toContain("normalizedSectionsFor('home', 'recipe', visibleRecipes)");
+    expect(app).toContain("normalizedSectionsFor('recipes', 'recipe')");
+    expect(app).toContain("normalizedSectionsFor('products', 'product')");
+    expect(template).toContain('v.recipeSectionBlocks.map((sec) => carouselSection');
+  });
 });
