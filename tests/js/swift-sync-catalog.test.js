@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), getSession: vi.fn() }));
-vi.mock('../../supabase-client.js?v=20260831-2', () => ({
+vi.mock('../../supabase-client.js?v=20260831-3', () => ({
   supabase: {
     auth: { getSession: mocks.getSession },
     functions: { invoke: mocks.invoke },
