@@ -1,30 +1,30 @@
-import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260827-2';
-import { CustomSelect } from './custom-select.js?v=20260827-2';
+import { h, html, render, Component } from './vendor/htm-preact-standalone.js?v=20260831-1';
+import { CustomSelect } from './custom-select.js?v=20260831-1';
 import {
   LS_KEYS, SECTION_DEFS, PRODUCT_SECTION_DEFS, FALLBACK_IMG,
   CATEGORIAS_PRODUTO, UNIDADES, CATEGORIAS_RECEITA, DIFICULDADES,
   DEFAULT_PRODUCTS, DEFAULT_RECIPES,
-} from './data.js?v=20260827-2';
-import { generateCredential, normalizeCredential } from './credential.js?v=20260827-2';
-import { supabase } from './supabase-client.js?v=20260827-2';
-import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260827-2';
-import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260827-2';
-import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260827-2';
-import { runSignupRetryLoop } from './signup-retry.js?v=20260827-2';
-import { normalizeDisplayName } from './display-name.js?v=20260827-2';
-import * as catalog from './catalog.js?v=20260827-2';
-import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260827-2';
-import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260827-2';
-import { createLoadGuard } from './load-guard.js?v=20260827-2';
-import { shouldApplyAuthEvent } from './auth-events.js?v=20260827-2';
-import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260827-2';
+} from './data.js?v=20260831-1';
+import { generateCredential, normalizeCredential } from './credential.js?v=20260831-1';
+import { supabase } from './supabase-client.js?v=20260831-1';
+import { parseNonNegativePrice, validateName, validateOptionalHttpUrl } from './input-validation.js?v=20260831-1';
+import { parseBRLPrice, priceEditPolicy, summarizeBulkResults, toggleSelected } from './bulk-actions.js?v=20260831-1';
+import { signUpAttempt, signInWithCredential, fetchProfile, updateDisplayName, signOut, AUTH_GENERIC_ERROR, MAX_SIGNUP_ATTEMPTS } from './auth.js?v=20260831-1';
+import { runSignupRetryLoop } from './signup-retry.js?v=20260831-1';
+import { normalizeDisplayName } from './display-name.js?v=20260831-1';
+import * as catalog from './catalog.js?v=20260831-1';
+import { getTopmostModal, isTextareaElement, resolveEscapeAction, resolveEnterAction, isDoubleSubmit } from './modal-keyboard.js?v=20260831-1';
+import { shouldShowWelcome, markWelcomeSeen } from './welcome.js?v=20260831-1';
+import { createLoadGuard } from './load-guard.js?v=20260831-1';
+import { shouldApplyAuthEvent } from './auth-events.js?v=20260831-1';
+import { buildSwiftSyncReport } from './swift-sync-ui.js?v=20260831-1';
 
 // Cache-busting version stamp — see the comment block at the top of
 // index.html for the full explanation and the bump procedure. This literal
 // must be identical to every `?v=...` query string in index.html and in
 // every local import specifier below/in catalog.js/auth.js/custom-select.js/
 // template.js (tests/js/cache-busting.test.js checks this can't drift).
-const FRONTEND_VERSION = '20260827-2';
+const FRONTEND_VERSION = '20260831-1';
 // eslint-disable-next-line no-console
 console.info(`Yourcipe frontend: ${FRONTEND_VERSION}`);
 
@@ -4361,7 +4361,7 @@ class App extends Component {
 }
 
 // Template is defined in template.js to keep this file focused on state/logic.
-import { renderApp } from './template.js?v=20260827-2';
+import { renderApp } from './template.js?v=20260831-1';
 
 const mountEl = document.getElementById('app');
 render(html`<${App} />`, mountEl);
