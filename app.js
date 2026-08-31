@@ -107,7 +107,7 @@ class App extends Component {
       deviceMode: (typeof window !== 'undefined' && window.innerWidth >= 1200 && window.innerHeight >= 700) ? 'desktop' : (typeof window !== 'undefined' && (window.innerWidth >= 768 || window.innerWidth > window.innerHeight)) ? 'tablet' : 'mobile',
       darkMode, hiddenRecipeIds, homeSections, productSections, productCategories, newSectionLabel: '', newProductSectionLabel: '', newProteinLabel: '', newSectionIcon: 'star', newProductSectionIcon: 'star', navRailSide, weekStartDay, fontSize, productLayout,
       productSectionPickerKey: null, productSectionPickerQuery: '', adminSearchQuery: '',
-      catalogEditorPage: 'home', catalogPicker: null, catalogPickerQuery: '',
+      catalogEditorPage: 'home', catalogStructure: { pages: [], sections: [], recipes: [], products: [] }, catalogPicker: null, catalogPickerQuery: '',
       ingredientProductPicker: null, ingredientProductPickerQuery: '', adminProductView: 'grid',
       inlinePriceDrafts: {}, inlinePriceBusy: {},
       selectionMode: false, selectedRecipeIds: [], recipeSelectionScope: '', recipeMenuOpenId: null,
@@ -2200,16 +2200,16 @@ class App extends Component {
     if (effectiveRole !== 'admin') return;
     if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogLoading: true, siteCatalogError: '' });
     try {
-      const [cats, prods, recs] = await Promise.all([
-        catalog.fetchAdminCategories(), catalog.fetchAdminProducts(), catalog.fetchAdminRecipes(),
+      const [cats, prods, recs, structure] = await Promise.all([
+        catalog.fetchAdminCategories(), catalog.fetchAdminProducts(), catalog.fetchAdminRecipes(), catalog.fetchAdminCatalogStructure(),
       ]);
-      const failed = cats.error || prods.error || recs.error;
+      const failed = cats.error || prods.error || recs.error || structure.error;
       if (failed) {
         const detail = failed.message ? `${failed.message}${failed.code ? ` (${failed.code})` : ''}` : 'erro desconhecido';
         if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${detail}` });
         return;
       }
-      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [] });
+      if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCategories: cats.data || [], siteProducts: prods.data || [], siteRecipes: recs.data || [], catalogStructure: structure.data });
     } catch (e) {
       if (this._loadGuard.isCurrent('siteCatalogData', runId)) this.setState({ siteCatalogError: `Não foi possível carregar o catálogo público: ${(e && e.message) || 'erro inesperado'}` });
     } finally {
@@ -2246,13 +2246,7 @@ class App extends Component {
   addCatalogItemToSection = async (item) => {
     const picker = this.state.catalogPicker;
     if (!picker) return;
-    const isProduct = picker.sectionType === 'secao_produto';
-    const detail = isProduct ? await catalog.fetchProductSections(item.id) : await catalog.fetchRecipeDetail(item.id);
-    if (detail.error) { this.flashAdmin('Não foi possível carregar as seções do item.'); return; }
-    const rows = isProduct ? (detail.data || []) : ((detail.data && detail.data.sections) || []);
-    const ids = rows.map(row => row.category_id).filter(Boolean);
-    if (!ids.includes(picker.sectionId)) ids.push(picker.sectionId);
-    const result = isProduct ? await catalog.replaceProductCategories(item.id, ids) : await catalog.replaceRecipeCategories(item.id, ids);
+    const result = await catalog.assignCatalogSectionItem(picker.sectionId, item.id);
     if (result.error) { this.flashAdmin('Não foi possível adicionar o item à seção.'); return; }
     this.closeCatalogPicker(); this.refreshAdminCatalog(); this.flashAdmin('Conteúdo adicionado à seção.');
   };
@@ -2781,6 +2775,20 @@ class App extends Component {
   onHomeSectionDrop = async (targetId) => {
     const sourceId = this.state.homeSectionDragKey;
     if (!sourceId || sourceId === targetId || this.state.authRole !== 'admin') { this.setState({ homeSectionDragKey: null }); return; }
+    const structure = this.state.catalogStructure;
+    const page = structure.pages.find(row => row.key === this.state.catalogEditorPage);
+    const normalizedSections = structure.sections.filter(row => page && row.page_id === page.id);
+    if (normalizedSections.some(row => row.id === sourceId)) {
+      const from = normalizedSections.findIndex(row => row.id === sourceId), to = normalizedSections.findIndex(row => row.id === targetId);
+      if (from < 0 || to < 0) { this.setState({ homeSectionDragKey: null }); return; }
+      const [moved] = normalizedSections.splice(from, 1); normalizedSections.splice(to, 0, moved);
+      const order = new Map(normalizedSections.map((row, index) => [row.id, index]));
+      this.setState({ catalogStructure: { ...structure, sections: structure.sections.map(row => order.has(row.id) ? { ...row, sort_order: order.get(row.id) } : row) }, homeSectionDragKey: null, homeSectionOrderBusy: true });
+      const { error } = await catalog.adminReorderCatalogSections(this.state.catalogEditorPage, normalizedSections.map((row, sort_order) => ({ id: row.id, sort_order })));
+      this.setState({ homeSectionOrderBusy: false });
+      if (error) { this.flashAdmin('Não foi possível sincronizar a ordem das seções.'); this.loadSiteCatalogData(); }
+      return;
+    }
     const siteCategories = [...this.state.siteCategories];
     const dragged = siteCategories.find(c => c.id === sourceId);
     if (!dragged || !['secao', 'secao_home', 'secao_receita', 'secao_produto'].includes(dragged.type)) { this.setState({ homeSectionDragKey: null }); return; }
@@ -3942,7 +3950,7 @@ class App extends Component {
       priceEditable: pricePolicy.editable, priceHelp: pricePolicy.reason, priceBusy: !!s.inlinePriceBusy[`site:${p.id}`],
       onPriceChange: this.onInlinePriceChange('site', p.id), onPriceBlur: () => this.saveInlinePrice('site', p), onPriceKeyDown: this.onInlinePriceKeyDown('site', p),
     }); }).filter(row => matchesSearch(row.name)).map((row, priceRowIndex) => ({ ...row, priceRowIndex }));
-    const siteCategoryRows = s.siteCategories.map(c => { const selected = s.categorySelectionScope === 'site' && s.selectedCategoryIds.includes(c.id); return ({
+    const siteCategoryRows = s.siteCategories.filter(c => c.type === 'receita' || c.type === 'proteina').map(c => { const selected = s.categorySelectionScope === 'site' && s.selectedCategoryIds.includes(c.id); return ({
       id: c.id, name: c.name, code: c.category_code, typeLabel: myCategoryTypeLabel(c.type),
       showCheckbox: s.categorySelectionMode && s.categorySelectionScope === 'site', showActions: !(s.categorySelectionMode && s.categorySelectionScope === 'site'), selected, onPressStart: () => this.startCategoryRowPress(c.id, 'site'), onPressEnd: this.endCategoryRowPress, onRowClick: () => { if (this.consumeSelectionClickSuppression()) return; if (this.state.categorySelectionMode && this.state.categorySelectionScope === 'site') this.toggleCategorySelected(c.id); },
       source: 'admin_site', sourceLabel: 'Pública', sourceBadgeStyle: statusBadge('Pública', SOURCE_BADGE_COLORS.public),
@@ -3958,18 +3966,20 @@ class App extends Component {
       type, label: myCategoryTypeLabel(type),
       rows: siteCategoryRows.filter(row => normalizedCategoryType(s.siteCategories.find(c => c.id === row.id)?.type) === type),
     })).filter(group => group.rows.length);
-    const editorTypes = s.catalogEditorPage === 'products' ? ['secao_produto'] : (s.catalogEditorPage === 'recipes' ? ['secao_receita'] : ['secao_home', 'secao']);
-    const catalogEditorSections = s.siteCategories.filter(c => editorTypes.includes(c.type) && c.active !== false).map(c => {
-      const source = c.type === 'secao_produto' ? s.products : s.recipes;
-      const items = source.filter(item => (item.tags || []).includes(c.slug)).map(item => ({
-        id: item.id, name: item.nome, image: item.imagem,
-        detail: c.type === 'secao_produto'
-          ? `${item.categoria || ''}${item.precoLabel ? ` · ${item.precoLabel}` : ''}`
-          : `${item.categoria || ''}${item.dificuldade ? ` · ${item.dificuldade}` : ''}`,
+    const structure = s.catalogStructure || { pages: [], sections: [], recipes: [], products: [] };
+    const editorPage = structure.pages.find(page => page.key === s.catalogEditorPage);
+    const catalogEditorSections = structure.sections.filter(section => editorPage && section.page_id === editorPage.id && section.active !== false).map(section => {
+      const isProduct = s.catalogEditorPage === 'products';
+      const links = isProduct ? structure.products : structure.recipes;
+      const source = isProduct ? s.siteProducts : s.siteRecipes;
+      const itemIds = new Set(links.filter(link => link.section_id === section.id).map(link => isProduct ? link.product_id : link.recipe_id));
+      const items = source.filter(item => itemIds.has(item.id)).map(item => ({
+        id: item.id, name: item.name, image: item.image_url || FALLBACK_IMG,
+        detail: (item.category && item.category.name) || '',
       }));
-      return { ...c, items, onEdit: () => this.onEditSiteCategory(c), onAdd: () => this.openCatalogPicker(c), onDragStart: () => this.onHomeSectionDragStart(c.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(c.id) };
+      return { ...section, type: isProduct ? 'product' : 'recipe', items, onEdit: null, onAdd: () => this.openCatalogPicker({ ...section, type: isProduct ? 'product' : 'recipe' }), onDragStart: () => this.onHomeSectionDragStart(section.id), onDragOver: this.onHomeSectionDragOver, onDrop: () => this.onHomeSectionDrop(section.id) };
     });
-    const pickerSource = s.catalogPicker && s.catalogPicker.sectionType === 'secao_produto' ? s.siteProducts : s.siteRecipes;
+    const pickerSource = s.catalogPicker && s.catalogPicker.sectionType === 'product' ? s.siteProducts : s.siteRecipes;
     const pickerNeedle = s.catalogPickerQuery.trim().toLocaleLowerCase('pt-BR');
     const catalogPickerItems = (s.catalogPicker ? pickerSource : []).filter(item => !pickerNeedle || item.name.toLocaleLowerCase('pt-BR').includes(pickerNeedle)).map(item => ({ id: item.id, name: item.name, image: item.image_url || FALLBACK_IMG, onAdd: () => this.addCatalogItemToSection(item) }));
     const siteRecipeCategoryOptions = this.siteRecipeCategories().map(c => ({ value: c.id, label: c.name }));
@@ -4249,7 +4259,7 @@ class App extends Component {
       onCancelSiteProductForm: this.onCancelSiteProductForm, onSaveSiteProductForm: this.onSaveSiteProductForm,
       showSiteCategoryForm: s.showSiteCategoryForm, siteCategoryFormTitle: s.siteCategoryFormMode === 'new' ? 'Nova Categoria do Catálogo' : 'Editar Categoria do Catálogo', siteCategoryForm: s.siteCategoryForm || {},
       siteCategoryFormOnName: this.siteCategoryFormField('name'), siteCategoryFormOnTypeSet: this.setFormField('siteCategoryForm', 'type'), siteCategoryFormOnActive: this.toggleSiteCategoryFormActive,
-      siteCategoryTypeOptions: [{ value: 'secao_home', label: 'Seção da Home' }, { value: 'secao_receita', label: 'Seção de Receitas' }, { value: 'secao_produto', label: 'Seção de Produtos' }, { value: 'receita', label: 'Categoria de Receita' }, { value: 'proteina', label: 'Categoria de Produtos' }],
+      siteCategoryTypeOptions: [{ value: 'receita', label: 'Categoria de Receita' }, { value: 'proteina', label: 'Categoria de Produtos' }],
       onCancelSiteCategoryForm: this.onCancelSiteCategoryForm, onSaveSiteCategoryForm: this.onSaveSiteCategoryForm,
       // "Solicitar publicação"
       publishRequestOpen: !!s.publishRequest, publishRequest: s.publishRequest || {}, publishRequestBusy: s.publishRequestBusy,
