@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260831-3';
-import { CustomSelect } from './custom-select.js?v=20260831-3';
+import { html } from './vendor/htm-preact-standalone.js?v=20260831-4';
+import { CustomSelect } from './custom-select.js?v=20260831-4';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -218,7 +218,7 @@ function renderHome(app, v) {
       `}
     </div>
 
-    ${v.homeSectionBlocks.map((sec) => carouselSection(resolveSectionIcon(sec.icon, sec.key, false), sec.label, sec.items, v.goSearch, v.productLayout))}
+    ${v.recipeSectionBlocks.map((sec) => carouselSection(resolveSectionIcon(sec.icon, sec.key, false), sec.label, sec.items, v.goSearch, v.productLayout))}
     ${v.recipeSearchEmpty && html`<div className="yc-catalog-empty">Nenhuma receita encontrada.</div>`}
   `;
 }

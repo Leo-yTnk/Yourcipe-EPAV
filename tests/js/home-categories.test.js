@@ -53,7 +53,7 @@ describe('Home sections use the public ordering from Supabase', () => {
   it('builds a single ordered Home section block list only from Home sections', () => {
     expect(appJs).toMatch(/const publicHomeSections = this\.publicHomeSectionCategories\(\)/);
     expect(appJs).toMatch(/publicHomeSections\.map\(c => \({ key: c\.slug, label: c\.name }\)\)/);
-    expect(appJs).toMatch(/const homeSectionBlocks = homeSectionSource[\s\S]*?\.map\(sec => \({ key: sec\.key, label: sec\.label, items: byTag\(sec\.key\) }\)\)/);
+    expect(appJs).toMatch(/const legacyHomeSectionBlocks = homeSectionSource[\s\S]*?\.map\(sec => \({ key: sec\.key, label: sec\.label, items: byHomeTag\(sec\.key\) }\)\)/);
   });
 
   it('renders Home sections only inside renderHome instead of an unconditional root dispatcher block', () => {

@@ -13,8 +13,8 @@
 // ownerId argument) always receives it from the caller's own
 // session.user.id, never from anywhere else; the server independently
 // re-validates it via RLS/RPC regardless.
-import { supabase } from './supabase-client.js?v=20260831-3';
-import { normalizeSwiftSyncError } from './swift-sync-ui.js?v=20260831-3';
+import { supabase } from './supabase-client.js?v=20260831-4';
+import { normalizeSwiftSyncError } from './swift-sync-ui.js?v=20260831-4';
 
 const RECIPE_SELECT = 'id, recipe_code, owner_id, scope, status, name, category_id, prep_time, servings, difficulty, image_url, featured, extras, instructions, tips, version, created_at, updated_at';
 const PRODUCT_SELECT = 'id, product_code, owner_id, scope, name, category_id, unit, price, active, image_url, version, created_at, updated_at, swift_product_url, swift_product_id, swift_sku, price_cents, regular_price_cents, promo_price_cents, promo_min_quantity, pricing_type, price_unit, price_source, price_last_checked_at, price_last_changed_at, price_last_success_at, price_status, price_error, price_region, price_reference_zip_code, price_source_hash';
@@ -501,6 +501,21 @@ export async function fetchRecipeSectionsBulk(recipeIds) {
 export async function fetchProductSectionsBulk(productIds) {
   if (!productIds.length) return { data: [] };
   return unwrap(await supabase.rpc('list_public_product_sections', { p_product_ids: productIds }), 'fetchProductSectionsBulk');
+}
+
+// The spreadsheet/editor section model lives in catalog_* tables (not in the
+// legacy category tags above). Keep this public query separate from the admin
+// editor query so inactive pages/sections can never leak into discovery, even
+// when the current visitor happens to be an administrator.
+export async function fetchPublicCatalogStructure() {
+  const [pages, sections, recipes, products] = await Promise.all([
+    unwrap(await supabase.from('catalog_pages').select('id, key, name, sort_order, active').eq('active', true).order('sort_order'), 'fetchPublicCatalogStructure:pages'),
+    unwrap(await supabase.from('catalog_sections').select('id, page_id, name, slug, sort_order, active').eq('active', true).order('sort_order'), 'fetchPublicCatalogStructure:sections'),
+    unwrap(await supabase.from('catalog_section_recipes').select('section_id, recipe_id, sort_order').order('sort_order'), 'fetchPublicCatalogStructure:recipes'),
+    unwrap(await supabase.from('catalog_section_products').select('section_id, product_id, sort_order').order('sort_order'), 'fetchPublicCatalogStructure:products'),
+  ]);
+  const error = pages.error || sections.error || recipes.error || products.error;
+  return error ? { data: null, error } : { data: { pages: pages.data || [], sections: sections.data || [], recipes: recipes.data || [], products: products.data || [] }, error: null };
 }
 
 // ---- Admin: full visibility into the public catalog (any status/active),
