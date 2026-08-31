@@ -517,6 +517,27 @@ export async function fetchAdminCategories() {
     'fetchAdminCategories',
   );
 }
+// Page layout is deliberately separate from the category taxonomy.  Keep the
+// four reads explicit: it avoids PostgREST relationship ambiguity and makes
+// the returned shape convenient for the visual editor.
+export async function fetchAdminCatalogStructure() {
+  const [pages, sections, recipes, products] = await Promise.all([
+    unwrap(await supabase.from('catalog_pages').select('id, key, name, sort_order, active').order('sort_order'), 'fetchAdminCatalogStructure:pages'),
+    unwrap(await supabase.from('catalog_sections').select('id, page_id, name, slug, sort_order, active').order('sort_order'), 'fetchAdminCatalogStructure:sections'),
+    unwrap(await supabase.from('catalog_section_recipes').select('section_id, recipe_id, sort_order').order('sort_order'), 'fetchAdminCatalogStructure:recipes'),
+    unwrap(await supabase.from('catalog_section_products').select('section_id, product_id, sort_order').order('sort_order'), 'fetchAdminCatalogStructure:products'),
+  ]);
+  const error = pages.error || sections.error || recipes.error || products.error;
+  return error ? { data: null, error } : { data: { pages: pages.data || [], sections: sections.data || [], recipes: recipes.data || [], products: products.data || [] }, error: null };
+}
+
+export async function assignCatalogSectionItem(sectionId, itemId) {
+  return unwrap(await supabase.rpc('admin_assign_catalog_section_item', { p_section_id: sectionId, p_item_id: itemId }), 'assignCatalogSectionItem');
+}
+
+export async function adminReorderCatalogSections(pageKey, sections) {
+  return unwrap(await supabase.rpc('admin_reorder_catalog_sections', { p_page_key: pageKey, p_sections: sections }), 'adminReorderCatalogSections');
+}
 export async function fetchAdminProducts() {
   return fetchAllPages(
     (from, to) => supabase.from('products_with_price_freshness').select(ADMIN_PRODUCT_SELECT).eq('scope', 'site').order('name').range(from, to),

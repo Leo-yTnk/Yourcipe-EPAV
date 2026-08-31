@@ -1490,8 +1490,8 @@ function renderLocalHomeCustomization(app, v) {
       <div className="yc-editor-page-title">${v.catalogEditorPage === 'home' ? 'O que vamos cozinhar hoje?' : v.catalogEditorPage === 'recipes' ? 'Receitas' : 'Produtos'}</div>
       ${v.catalogEditorLoading && html`<div className="yc-editor-loading" role="status" aria-live="polite"><span></span>Carregando a prévia do catálogo...</div>`}
       ${!v.catalogEditorLoading && v.catalogEditorSections.map(sec => html`<section key=${sec.id} className="yc-editor-section" draggable="true" onDragStart=${sec.onDragStart} onDragOver=${sec.onDragOver} onDrop=${sec.onDrop}>
-        <div className="yc-editor-section-toolbar"><span className="yc-drag-handle">⠿</span><button onClick=${sec.onEdit} title="Editar título">✎</button></div>
-        <div className="yc-editor-section-head"><h3 onClick=${sec.onEdit}>${sec.name}</h3><button onClick=${sec.onAdd}>＋ Adicionar</button></div>
+        <div className="yc-editor-section-toolbar"><span className="yc-drag-handle">⠿</span></div>
+        <div className="yc-editor-section-head"><h3>${sec.name}</h3><button onClick=${sec.onAdd}>＋ Adicionar</button></div>
         <div className=${v.catalogEditorLayout === 'grid' ? 'yc-editor-cards is-grid' : 'yc-editor-cards'}>${sec.items.map(item => html`<article><img loading="lazy" decoding="async" src=${item.image} alt=${item.name}/><b>${item.name}</b>${item.detail && html`<small>${item.detail}</small>`}</article>`)}${!sec.items.length && html`<div className="yc-editor-empty">Use “Adicionar” para preencher esta seção</div>`}</div>
       </section>`)}
     </div>
@@ -1592,6 +1592,7 @@ function renderSiteProductsTab(app, v) {
 function renderSiteCategoriesTab(app, v) {
   return html`
     <div style="padding:8px 40px 24px">
+      <p style="color:var(--neutral-600);font-size:14px;margin:0 0 14px">Categorias classificam receitas e produtos. A organização por página e seção é gerenciada separadamente no Editor visual abaixo.</p>
       <div onClick=${v.onNewSiteCategory} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
         Nova Categoria no Catálogo
