@@ -1,3 +1,14 @@
+# V0.100: normalized catalogue import contract
+
+Apply `supabase/033_catalog_import_contract_v0100.sql` after 032. It keeps the
+Portuguese spreadsheet headers (`receita`/`produto`) while the browser maps
+them to the RPC's `recipe`/`product` JSON properties. The migration replaces
+the seven-argument RPC to add explicit missing-reference and malformed-link
+preflight errors; it makes no table/data changes and preserves transactional
+execution. No other manual action is required after applying the migration.
+
+---
+
 # Round 022: catalog input constraints
 
 Apply `supabase/022_catalog_input_constraints.sql` after 021. The constraints

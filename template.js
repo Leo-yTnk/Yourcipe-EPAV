@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260831-2';
-import { CustomSelect } from './custom-select.js?v=20260831-2';
+import { html } from './vendor/htm-preact-standalone.js?v=20260831-3';
+import { CustomSelect } from './custom-select.js?v=20260831-3';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
