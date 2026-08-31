@@ -19,3 +19,11 @@ describe('createUnavailableSupabaseClient', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 });
+
+it('does not block the application module graph while the CDN client loads', async () => {
+  const source = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(new URL('../../supabase-client.js', import.meta.url), 'utf8'));
+
+  expect(source).not.toMatch(/export const supabase\s*=\s*await/);
+  expect(source).toContain('const clientPromise = loadSupabaseClient()');
+});
