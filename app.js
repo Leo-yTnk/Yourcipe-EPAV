@@ -214,7 +214,7 @@ class App extends Component {
       importWarnings: [],
       importNewProductCategories: [],
       importNewSections: [],
-      importModes: { recipes: 'add', products: 'add', categories: 'add' },
+      importModes: { recipes: 'add', products: 'add', categories: 'add', sections: 'add', recipeSections: 'add', productSections: 'add' },
       importSummary: null,
       importBusy: false,
       importResult: null,
@@ -3152,9 +3152,9 @@ class App extends Component {
 
   freshImportState = () => ({
     importStep: 'instructions', importFileName: '', importParseError: '',
-    importParsedProducts: [], importParsedRecipes: [], importParsedCategories: [],
+    importParsedProducts: [], importParsedRecipes: [], importParsedCategories: [], importParsedSections: [], importParsedRecipeSections: [], importParsedProductSections: [],
     importErrors: [], importWarnings: [], importNewProductCategories: [], importNewSections: [],
-    importModes: { recipes: 'add', products: 'add', categories: 'add' },
+    importModes: { recipes: 'add', products: 'add', categories: 'add', sections: 'add', recipeSections: 'add', productSections: 'add' },
     importSummary: null, importBusy: false, importResult: null,
     importFileInputKey: this.state.importFileInputKey + 1,
   });
@@ -3169,218 +3169,54 @@ class App extends Component {
 
   onDownloadTemplate = () => {
     if (!window.XLSX) return;
-    const produtosSheet = XLSX.utils.json_to_sheet([
-      { nome: 'Picanha', categoria: 'Bovinos', unidade: 'kg', imagem: 'https://picsum.photos/seed/picanha/900/650', swift_url: 'https://www.swift.com.br/picanha-exemplo', swift_sku: 'SWIFT-EXEMPLO-001' },
-      { nome: 'Sal Grosso', categoria: 'Mercearia', unidade: 'pacote', imagem: 'https://picsum.photos/seed/sal-grosso/900/650', swift_url: 'https://www.swift.com.br/sal-grosso-exemplo', swift_sku: 'SWIFT-EXEMPLO-002' },
-    ]);
-    const receitasSheet = XLSX.utils.json_to_sheet([
-      { nome: 'Picanha na Brasa', categoria: 'Bovina', tempo: 50, porcoes: 6, dificuldade: 'Fácil', imagem: 'https://picsum.photos/seed/exemplo/900/650', tags: 'destaque,ocasiao', ingredientes: 'Picanha:1.5; Sal Grosso:0.2', extras: 'Carvão para churrasqueira; Pimenta a gosto', modoPreparo: 'Tempere a carne com sal grosso.; Grelhe na churrasqueira até o ponto desejado.; Deixe descansar antes de fatiar.', dicas: 'Não fure a carne ao virar.' },
-    ]);
-    const categoriasSheet = XLSX.utils.json_to_sheet([
-      { tipo: 'proteina', nome: 'Caprinos' },
-      { tipo: 'receita', nome: 'Bovina' },
-      { tipo: 'secao_receita', nome: 'Receitas Veganas' },
-    ]);
+    const sheets = {
+      Produtos: [{ nome: 'Picanha', categoria: 'Bovinos', unidade: 'kg', imagem: 'https://picsum.photos/seed/picanha/900/650', swift_url: 'https://www.swift.com.br/picanha-exemplo', swift_sku: 'SWIFT-EXEMPLO-001' }, { nome: 'Sal Grosso', categoria: 'Mercearia', unidade: 'pacote', imagem: 'https://picsum.photos/seed/sal/900/650', swift_url: 'https://www.swift.com.br/sal-exemplo', swift_sku: 'SWIFT-EXEMPLO-002' }],
+      Receitas: [{ nome: 'Picanha na Brasa', categoria: 'Bovina', tempo: 50, porcoes: 6, dificuldade: 'Fácil', imagem: 'https://picsum.photos/seed/exemplo/900/650', destaque: true, ingredientes: 'Picanha:1.5; Sal Grosso:0.2', extras: 'Carvão; Pimenta', modoPreparo: 'Tempere a carne.; Grelhe até o ponto desejado.', dicas: 'Não fure a carne.' }],
+      Categorias: [{ tipo: 'proteina', nome: 'Bovinos' }, { tipo: 'proteina', nome: 'Mercearia' }, { tipo: 'receita', nome: 'Bovina' }],
+      'Seções': [{ pagina: 'home', secao: 'Destaques da Semana', ordem: 0, ativa: true }, { pagina: 'home', secao: 'Direto da Churrasqueira', ordem: 1, ativa: true }, { pagina: 'recipes', secao: 'Receitas na Brasa', ordem: 0, ativa: true }, { pagina: 'products', secao: 'Carnes Bovinas', ordem: 0, ativa: true }],
+      'Receitas por Seção': [{ pagina: 'home', secao: 'Destaques da Semana', receita: 'Picanha na Brasa', ordem: 0 }, { pagina: 'home', secao: 'Direto da Churrasqueira', receita: 'Picanha na Brasa', ordem: 0 }, { pagina: 'recipes', secao: 'Receitas na Brasa', receita: 'Picanha na Brasa', ordem: 0 }],
+      'Produtos por Seção': [{ pagina: 'products', secao: 'Carnes Bovinas', produto: 'Picanha', ordem: 0 }],
+    };
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, produtosSheet, 'Produtos');
-    XLSX.utils.book_append_sheet(wb, receitasSheet, 'Receitas');
-    XLSX.utils.book_append_sheet(wb, categoriasSheet, 'Categorias');
+    Object.entries(sheets).forEach(([name, data]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), name));
     XLSX.writeFile(wb, 'modelo-yourcipe.xlsx');
   };
 
   onImportFileChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const extension = String(file.name || '').toLowerCase();
-    if (!/\.(xlsx|xls)$/.test(extension)) { this.setState({ importParseError: 'Formato inválido. Envie o modelo .xlsx ou um arquivo .xls.' }); return; }
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    if (!/\.(xlsx|xls)$/i.test(file.name || '')) { this.setState({ importParseError: 'Formato inválido. Envie o modelo .xlsx ou .xls.' }); return; }
     if (file.size > 10 * 1024 * 1024) { this.setState({ importParseError: 'Arquivo maior que 10 MB. Divida a importação em lotes menores.' }); return; }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = new Uint8Array(ev.target.result);
-        const wb = XLSX.read(data, { type: 'array' });
-        this.processImportWorkbook(wb, file.name);
-      } catch (err) {
-        this.setState({ importParseError: 'Não foi possível ler o arquivo. Verifique se é um .xlsx válido.' });
-      }
-    };
-    reader.readAsArrayBuffer(file);
+    const reader = new FileReader(); reader.onload = (ev) => { try { this.processImportWorkbook(XLSX.read(new Uint8Array(ev.target.result), { type: 'array' }), file.name); } catch { this.setState({ importParseError: 'Não foi possível ler o arquivo. Verifique se é um .xlsx válido.' }); } }; reader.readAsArrayBuffer(file);
   };
-
   normalizeImportText = (value) => String(value || '').trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   normalizeImportSlug = (value) => this.normalizeImportText(value).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   splitImportList = (value) => String(value || '').split(';').map(x => x.trim()).filter(Boolean);
 
   processImportWorkbook = (wb, fileName) => {
     if (this.state.authRole !== 'admin') return;
-    const normKey = (txt) => this.normalizeImportText(txt).replace(/[^a-z0-9]+/g, '');
-    const get = (row, names) => { const map = Object.fromEntries(Object.keys(row).map(k => [normKey(k), row[k]])); for (const name of names) if (Object.prototype.hasOwnProperty.call(map, normKey(name))) return map[normKey(name)]; return ''; };
-    const rows = (sheet) => { const name = wb.SheetNames.find(n => this.normalizeImportText(n) === sheet); return name ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' }) : []; };
-    const requiredSheets = ['categorias', 'produtos', 'receitas'];
-    const missingSheets = requiredSheets.filter(sheet => !wb.SheetNames.some(name => this.normalizeImportText(name) === sheet));
-    const categoryRows = rows('categorias'), productRows = rows('produtos'), recipeRows = rows('receitas');
-    const errors = missingSheets.length ? [`Abas obrigatórias ausentes: ${missingSheets.join(', ')}.`] : [], warnings = [], parsedCategories = [], parsedProducts = [], parsedRecipes = [];
-    const categoryKeys = new Set((this.state.siteCategories || []).filter(c => c.active !== false).map(c => `${c.type}:${this.normalizeImportSlug(c.name)}`));
-    const seenCategories = new Map();
-    categoryRows.forEach((row, i) => {
-      const typeRaw = this.normalizeImportText(get(row, ['tipo', 'type']));
-      const type = typeRaw;
-      const name = String(get(row, ['nome', 'name', 'categoria']) || '').trim();
-      const key = `${type}:${this.normalizeImportSlug(name)}`;
-      if (!['proteina', 'receita', 'secao_home', 'secao_receita', 'secao_produto'].includes(type)) errors.push(`Categorias, linha ${i + 2}: tipo inválido "${typeRaw}".`);
-      if (!name) errors.push(`Categorias, linha ${i + 2}: campo nome ausente.`);
-      else if (seenCategories.has(key)) {
-        const first = seenCategories.get(key);
-        const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : type === 'secao_home' ? 'seção da home' : type === 'secao_receita' ? 'seção de receitas' : 'seção de produtos';
-        warnings.push(`Categorias, linhas ${first.line} ("${first.name}") e ${i + 2} ("${name}"): são equivalentes como ${typeLabel}; a primeira ocorrência será usada e a duplicada não impedirá a importação.`);
-      } else {
-        seenCategories.set(key, { line: i + 2, name });
-        categoryKeys.add(key);
-        parsedCategories.push({ type, name, source_line: i + 2 });
-      }
-    });
-
-    if (categoryRows.length + productRows.length + recipeRows.length > 5000) errors.push('A planilha excede o limite seguro de 5.000 linhas. Divida-a em lotes menores.');
-
-    const productNames = new Set((this.state.siteProducts || []).filter(p => p.active !== false).map(p => this.normalizeImportText(p.name)));
-    const seenProducts = new Set();
-    const seenSwiftUrls = new Map();
-    const seenSwiftSkus = new Map();
-    productRows.forEach((row, i) => {
-      const name = String(get(row, ['nome', 'name', 'produto']) || '').trim();
-      const key = this.normalizeImportText(name);
-      const existingProduct = (this.state.siteProducts || []).find(p => this.normalizeImportText(p.name) === key);
-      const category = String(get(row, ['categoria', 'category']) || (existingProduct && existingProduct.category && existingProduct.category.name) || '').trim();
-      const unit = this.normalizeImportText(get(row, ['unidade', 'unit']) || (existingProduct && existingProduct.unit));
-      const rawPrice = String(get(row, ['preco', 'preço', 'price'])).trim();
-      const price = rawPrice === '' ? null : Number(rawPrice.replace(',', '.'));
-      const imageUrl = String(get(row, ['imagem', 'image_url', 'url da imagem']) || (existingProduct && existingProduct.image_url) || '').trim();
-      const swiftUrlRaw = String(get(row, ['swift_url', 'url swift', 'pagina swift', 'página swift']) || (existingProduct && existingProduct.swift_product_url) || '').trim();
-      const swiftSku = String(get(row, ['swift_sku', 'sku swift', 'sku']) || (existingProduct && existingProduct.swift_sku) || '').trim();
-      let swiftUrl = '';
-      if (swiftUrlRaw) {
-        try {
-          const parsed = new URL(swiftUrlRaw);
-          if (parsed.protocol !== 'https:' || !['swift.com.br', 'www.swift.com.br'].includes(parsed.hostname.toLowerCase()) || parsed.pathname === '/' || parsed.search || parsed.hash) throw new Error('invalid');
-          swiftUrl = `https://www.swift.com.br${parsed.pathname.replace(/\/+$/, '')}`;
-        } catch { errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): swift_url deve ser uma página de produto HTTPS da Swift, sem parâmetros.`); }
-      }
-      if (!existingProduct && !swiftUrl) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): swift_url é obrigatória para integrar o preço.`);
-      const swiftUrlKey = swiftUrl.toLowerCase(), swiftSkuKey = swiftSku.toLowerCase();
-      if (swiftUrlKey && seenSwiftUrls.has(swiftUrlKey)) errors.push(`Produtos, linhas ${seenSwiftUrls.get(swiftUrlKey)} e ${i + 2}: mesma página Swift usada por mais de um produto.`); else if (swiftUrlKey) seenSwiftUrls.set(swiftUrlKey, i + 2);
-      if (swiftSkuKey && seenSwiftSkus.has(swiftSkuKey)) errors.push(`Produtos, linhas ${seenSwiftSkus.get(swiftSkuKey)} e ${i + 2}: mesmo SKU Swift usado por mais de um produto.`); else if (swiftSkuKey) seenSwiftSkus.set(swiftSkuKey, i + 2);
-      if (!name) errors.push(`Produtos, linha ${i + 2}: campo nome ausente.`);
-      else if (seenProducts.has(key)) errors.push(`Produtos, linha ${i + 2} ("${name}"): produto duplicado.`);
-      else seenProducts.add(key);
-      if (!categoryKeys.has(`proteina:${this.normalizeImportSlug(category)}`)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
-      if (!['kg', 'un', 'pacote', 'caixa', 'pote'].includes(unit)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): unidade inválida.`);
-      if (price !== null && (!Number.isFinite(price) || price < 0)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): preço legado inválido.`);
-      if (!swiftUrl && price === null) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): informe swift_url ou um preço legado.`);
-      if (!/^https?:\/\/\S+$/i.test(imageUrl)) errors.push(`Produtos, linha ${i + 2} ("${name || 'sem nome'}"): URL de imagem ausente ou inválida.`);
-      parsedProducts.push({ name, category, unit, price: Number.isFinite(price) ? price : null, image_url: imageUrl, swift_product_url: swiftUrl || null, swift_sku: swiftSku || null });
-      productNames.add(key);
-    });
-
-    const recipeCategoryNames = new Set([...categoryKeys].filter(k => k.startsWith('receita:')).map(k => k.slice(8)));
-    const sectionKeys = new Set([
-      ...SECTION_DEFS.map(section => section.key),
-      ...[...categoryKeys].filter(k => k.startsWith('secao_home:')).map(k => k.slice(11)),
-      ...[...categoryKeys].filter(k => k.startsWith('secao_receita:')).map(k => k.slice(15)),
-    ]);
-    const seenRecipes = new Set();
-    recipeRows.forEach((row, i) => {
-      const line = i + 2, name = String(get(row, ['nome', 'name', 'receita']) || '').trim();
-      const category = String(get(row, ['categoria', 'categoria da receita']) || '').trim();
-      const prepTime = parseInt(get(row, ['tempo', 'tempo de preparo', 'prep_time']), 10);
-      const servings = parseInt(get(row, ['porcoes', 'porções', 'servings']), 10);
-      const difficulty = String(get(row, ['dificuldade', 'difficulty']) || '').trim() || 'Fácil';
-      const ingredientsRaw = String(get(row, ['ingredientes', 'ingredients']) || '').trim();
-      const instructionsRaw = String(get(row, ['modoPreparo', 'modo de preparo', 'instrucoes', 'instruções', 'instructions']) || '').trim();
-      const tagsRaw = String(get(row, ['tags', 'secoes', 'seções']) || '').trim();
-      const key = this.normalizeImportText(name);
-      if (!name) errors.push(`Receitas, linha ${line}: campo nome ausente.`); else if (seenRecipes.has(key)) errors.push(`Receitas, linha ${line} ("${name}"): receita duplicada.`); else seenRecipes.add(key);
-      if (!recipeCategoryNames.has(this.normalizeImportSlug(category))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): categoria não cadastrada nem declarada na aba Categorias: "${category}".`);
-      if (!Number.isFinite(prepTime) || prepTime < 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): tempo inválido.`);
-      if (!Number.isFinite(servings) || servings < 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): porções inválidas.`);
-      if (!DIFICULDADES.includes(difficulty)) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): dificuldade inválida.`);
-      const ingredients = [];
-      this.splitImportList(ingredientsRaw).forEach(part => { const sep = part.lastIndexOf(':'); const product = sep < 0 ? part : part.slice(0, sep).trim(); const quantity = sep < 0 ? NaN : parseFloat(part.slice(sep + 1).replace(',', '.')); if (!productNames.has(this.normalizeImportText(product))) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): produto não cadastrado nem declarado na aba Produtos: "${product}".`); if (!Number.isFinite(quantity) || quantity <= 0) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): quantidade inválida para "${product}".`); ingredients.push({ product, quantity }); });
-      if (!ingredients.length) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): ingredientes ausentes.`);
-      if (!instructionsRaw) errors.push(`Receitas, linha ${line} ("${name || 'sem nome'}"): modo de preparo ausente.`);
-      const normalizedTags = tagsRaw.split(',').map(x => ({ raw: x.trim(), key: this.normalizeImportSlug(x) })).filter(x => x.raw);
-      const sections = normalizedTags.filter(x => x.key !== 'destaque').filter(x => { const ok = NATIVE_RECIPE_TAGS.has(x.key) || sectionKeys.has(x.key); if (!ok) warnings.push(`Receitas, linha ${line}: seção "${x.raw}" não cadastrada; será ignorada.`); return ok; }).map(x => x.key);
-      parsedRecipes.push({ name, category, prep_time: prepTime || 0, servings: servings || 0, difficulty, image_url: String(get(row, ['imagem', 'image_url']) || '').trim(), featured: normalizedTags.some(x => x.key === 'destaque'), ingredients, sections, extras: this.splitImportList(get(row, ['extras', 'descricao', 'descrição'])), instructions: this.splitImportList(instructionsRaw), tips: this.splitImportList(get(row, ['dicas', 'tips'])) });
-    });
-    if (!categoryRows.length && !productRows.length && !recipeRows.length) errors.push('Arquivo sem dados nas abas Categorias, Produtos ou Receitas.');
-    const isPriceOnlyUpdate = productRows.length > 0 && !categoryRows.length && !recipeRows.length && productRows.every(row => {
-      const category = get(row, ['categoria', 'category']);
-      const unit = get(row, ['unidade', 'unit']);
-      const image = get(row, ['imagem', 'image_url', 'url da imagem']);
-      const swiftUrl = get(row, ['swift_url', 'url swift', 'pagina swift', 'página swift']);
-      const swiftSku = get(row, ['swift_sku', 'sku swift', 'sku']);
-      return !category && !unit && !image && !swiftUrl && !swiftSku;
-    });
-    const importModes = isPriceOnlyUpdate ? { ...this.state.importModes, products: 'upsert' } : this.state.importModes;
-    this.setState({ importStep: 'result', importFileName: fileName, importParseError: '', importParsedCategories: parsedCategories, importParsedProducts: parsedProducts, importParsedRecipes: parsedRecipes, importErrors: errors, importWarnings: warnings, importResult: null, importModes }, () => this.recomputeImportSummary());
+    const nk = x => this.normalizeImportText(x).replace(/[^a-z0-9]+/g, '');
+    const get = (row, names) => { const m = Object.fromEntries(Object.keys(row).map(k => [nk(k), row[k]])); return names.map(n => m[nk(n)]).find(v => v !== undefined) ?? ''; };
+    const rows = name => { const found = wb.SheetNames.find(n => this.normalizeImportText(n) === this.normalizeImportText(name)); return found ? XLSX.utils.sheet_to_json(wb.Sheets[found], { defval: '' }) : []; };
+    const required = ['Categorias', 'Produtos', 'Receitas', 'Seções', 'Receitas por Seção', 'Produtos por Seção'];
+    const missing = required.filter(x => !wb.SheetNames.some(n => this.normalizeImportText(n) === this.normalizeImportText(x)));
+    const errors = missing.length ? [`Abas obrigatórias ausentes: ${missing.join(', ')}.`] : [], warnings = [];
+    const cr=rows('Categorias'), pr=rows('Produtos'), rr=rows('Receitas'), sr=rows('Seções'), rsr=rows('Receitas por Seção'), psr=rows('Produtos por Seção');
+    if (cr.length+pr.length+rr.length+sr.length+rsr.length+psr.length > 5000) errors.push('A planilha excede o limite seguro de 5.000 linhas.');
+    const categories=[], products=[], recipes=[], sections=[], recipeSections=[], productSections=[];
+    const categoryKeys=new Set((this.state.siteCategories||[]).filter(x=>x.active!==false && ['receita','proteina'].includes(x.type)).map(x=>`${x.type}:${this.normalizeImportSlug(x.name)}`));
+    const seenCat=new Set(); cr.forEach((row,i)=>{ const line=i+2,type=this.normalizeImportText(get(row,['tipo'])),name=String(get(row,['nome'])).trim(),key=`${type}:${this.normalizeImportSlug(name)}`; if (!['receita','proteina'].includes(type)) errors.push(`Categorias, linha ${line} ("${name||'sem nome'}"): tipo inválido "${type}"; use somente receita ou proteina. O formato legado secao_* não é suportado.`); if(!name) errors.push(`Categorias, linha ${line}: campo nome ausente.`); if(seenCat.has(key)) errors.push(`Categorias, linha ${line} ("${name}"): categoria duplicada.`); else {seenCat.add(key);categoryKeys.add(key);categories.push({type,name,source_line:line});} });
+    const productNames=new Set((this.state.siteProducts||[]).filter(x=>x.active!==false).map(x=>this.normalizeImportText(x.name))), seenProducts=new Set(), seenSwiftUrls=new Set(), seenSwiftSkus=new Set();
+    pr.forEach((row,i)=>{ const line=i+2,name=String(get(row,['nome'])).trim(), key=this.normalizeImportText(name), existing=(this.state.siteProducts||[]).find(x=>this.normalizeImportText(x.name)===key), category=String(get(row,['categoria'])||(existing?.category?.name)||'').trim(), unit=this.normalizeImportText(get(row,['unidade'])||existing?.unit), image=String(get(row,['imagem'])||existing?.image_url||'').trim(), swift=String(get(row,['swift_url'])||existing?.swift_product_url||'').trim(), sku=String(get(row,['swift_sku'])||existing?.swift_sku||'').trim(); if(!name)errors.push(`Produtos, linha ${line}: campo nome ausente.`); if(seenProducts.has(key))errors.push(`Produtos, linha ${line} ("${name}"): produto duplicado.`);seenProducts.add(key); if(!categoryKeys.has(`proteina:${this.normalizeImportSlug(category)}`))errors.push(`Produtos, linha ${line} ("${name}"): categoria inexistente "${category}".`); if(!['kg','un','pacote','caixa','pote'].includes(unit))errors.push(`Produtos, linha ${line} ("${name}"): unidade inválida.`); if(!/^https?:\/\/\S+$/i.test(image))errors.push(`Produtos, linha ${line} ("${name}"): URL de imagem ausente ou inválida.`); if(!existing && !/^https:\/\/(www\.)?swift\.com\.br\/[^?#]+$/i.test(swift))errors.push(`Produtos, linha ${line} ("${name}"): swift_url obrigatória ou inválida.`); if(swift&&seenSwiftUrls.has(swift.toLowerCase()))errors.push(`Produtos, linha ${line}: swift_url duplicada.`);seenSwiftUrls.add(swift.toLowerCase());if(sku&&seenSwiftSkus.has(sku.toLowerCase()))errors.push(`Produtos, linha ${line}: swift_sku duplicado.`);if(sku)seenSwiftSkus.add(sku.toLowerCase());products.push({name,category,unit,price:null,image_url:image,swift_product_url:swift||null,swift_sku:sku||null,source_line:line});productNames.add(key); });
+    const recipeNames=new Set((this.state.siteRecipes||[]).map(x=>this.normalizeImportText(x.name))), seenRecipes=new Set(); rr.forEach((row,i)=>{const line=i+2,name=String(get(row,['nome'])).trim(),key=this.normalizeImportText(name),category=String(get(row,['categoria'])).trim(),ingredients=[];if(Object.keys(row).some(k=>nk(k)==='tags')&&String(get(row,['tags'])).trim())errors.push(`Receitas, linha ${line} ("${name}"): a coluna tags não posiciona conteúdo; use destaque e a aba Receitas por Seção.`);if(!name)errors.push(`Receitas, linha ${line}: campo nome ausente.`);if(seenRecipes.has(key))errors.push(`Receitas, linha ${line} ("${name}"): receita duplicada.`);seenRecipes.add(key);if(!categoryKeys.has(`receita:${this.normalizeImportSlug(category)}`))errors.push(`Receitas, linha ${line} ("${name}"): categoria inexistente "${category}".`);this.splitImportList(get(row,['ingredientes'])).forEach(part=>{const pos=part.lastIndexOf(':'),product=part.slice(0,pos).trim(),quantity=Number(part.slice(pos+1).replace(',','.'));if(pos<0||!productNames.has(this.normalizeImportText(product)))errors.push(`Receitas, linha ${line} ("${name}"): produto inexistente "${product||part}".`);if(!(quantity>0))errors.push(`Receitas, linha ${line} ("${name}"): quantidade inválida para "${product}".`);ingredients.push({product,quantity});});const prep=Number(get(row,['tempo'])),servings=Number(get(row,['porcoes','porções'])),difficulty=String(get(row,['dificuldade'])||'Fácil').trim(),instructions=this.splitImportList(get(row,['modoPreparo','modo de preparo']));if(!ingredients.length)errors.push(`Receitas, linha ${line} ("${name}"): ingredientes ausentes.`);if(!Number.isInteger(prep)||prep<0)errors.push(`Receitas, linha ${line} ("${name}"): tempo inválido.`);if(!Number.isInteger(servings)||servings<0)errors.push(`Receitas, linha ${line} ("${name}"): porções inválidas.`);if(!DIFICULDADES.includes(difficulty))errors.push(`Receitas, linha ${line} ("${name}"): dificuldade inválida.`);if(!instructions.length)errors.push(`Receitas, linha ${line} ("${name}"): modo de preparo ausente.`);recipes.push({name,category,prep_time:prep,servings,difficulty,image_url:String(get(row,['imagem'])).trim(),featured:['true','sim','1'].includes(this.normalizeImportText(get(row,['destaque']))),ingredients,sections:[],extras:this.splitImportList(get(row,['extras'])),instructions,tips:this.splitImportList(get(row,['dicas'])),source_line:line});recipeNames.add(key);});
+    const existingSections=new Set(); const structure=this.state.catalogStructure||{pages:[],sections:[]}; for(const sec of structure.sections||[]){const page=(structure.pages||[]).find(p=>p.id===sec.page_id);if(page)existingSections.add(`${page.key}:${sec.slug||this.normalizeImportSlug(sec.name)}`)} const declared=new Set(), validPages=new Set(['home','recipes','products']); sr.forEach((row,i)=>{const line=i+2,page=this.normalizeImportText(get(row,['pagina'])),name=String(get(row,['secao','seção'])).trim(),slug=this.normalizeImportSlug(name),order=Number(get(row,['ordem'])),rawActive=this.normalizeImportText(get(row,['ativa']));if(!validPages.has(page))errors.push(`Seções, linha ${line} ("${name||'sem seção'}"): página inválida "${page}".`);if(!name)errors.push(`Seções, linha ${line}: nome da seção ausente.`);if(!Number.isInteger(order)||order<0)errors.push(`Seções, linha ${line} ("${name}"): ordem inválida.`);if(!['true','false','sim','nao','não','1','0'].includes(rawActive))errors.push(`Seções, linha ${line} ("${name}"): ativa deve ser sim/não ou true/false.`);const key=`${page}:${slug}`;if(declared.has(key))errors.push(`Seções, linha ${line} ("${name}"): seção duplicada na página ${page}.`);declared.add(key);sections.push({page, name, slug, sort_order:order, active:['true','sim','1'].includes(rawActive),source_line:line});});
+    const validateLinks=(data,kind,out)=>{const seen=new Set();data.forEach((row,i)=>{const line=i+2,page=this.normalizeImportText(get(row,['pagina'])),section=String(get(row,['secao','seção'])).trim(),item=String(get(row,[kind])).trim(),order=Number(get(row,['ordem'])),key=`${page}:${this.normalizeImportSlug(section)}:${this.normalizeImportText(item)}`;if(!validPages.has(page))errors.push(`${kind==='receita'?'Receitas':'Produtos'} por Seção, linha ${line} ("${item}"): página inválida "${page}".`);if(kind==='receita'&&page==='products')errors.push(`Receitas por Seção, linha ${line} ("${item}"): receitas não podem ser vinculadas à página products.`);if(kind==='produto'&&page!=='products')errors.push(`Produtos por Seção, linha ${line} ("${item}"): produtos não podem ser vinculados à página ${page}.`);if(!declared.has(`${page}:${this.normalizeImportSlug(section)}`)&&!existingSections.has(`${page}:${this.normalizeImportSlug(section)}`))errors.push(`${kind==='receita'?'Receitas':'Produtos'} por Seção, linha ${line} ("${item}"): seção inexistente "${section}" na página ${page}.`);const names=kind==='receita'?recipeNames:productNames;if(!names.has(this.normalizeImportText(item)))errors.push(`${kind==='receita'?'Receitas':'Produtos'} por Seção, linha ${line}: ${kind} inexistente "${item}".`);if(!Number.isInteger(order)||order<0)errors.push(`${kind==='receita'?'Receitas':'Produtos'} por Seção, linha ${line} ("${item}"): ordem inválida.`);if(seen.has(key))errors.push(`${kind==='receita'?'Receitas':'Produtos'} por Seção, linha ${line} ("${item}"): vínculo duplicado.`);seen.add(key);out.push({page,section,[kind]:item,sort_order:order,source_line:line});});};validateLinks(rsr,'receita',recipeSections);validateLinks(psr,'produto',productSections);
+    if(!cr.length&&!pr.length&&!rr.length&&!sr.length&&!rsr.length&&!psr.length)errors.push('Arquivo sem dados nas seis abas.');
+    this.setState({importStep:'result',importFileName:fileName,importParseError:'',importParsedCategories:categories,importParsedProducts:products,importParsedRecipes:recipes,importParsedSections:sections,importParsedRecipeSections:recipeSections,importParsedProductSections:productSections,importErrors:errors,importWarnings:warnings,importResult:null},()=>this.recomputeImportSummary());
   };
 
-  recomputeImportSummary = () => {
-    const norm = x => this.normalizeImportText(x);
-    const entities = [
-      ['categories', this.state.importParsedCategories || [], this.state.siteCategories || []],
-      ['products', this.state.importParsedProducts || [], this.state.siteProducts || []],
-      ['recipes', this.state.importParsedRecipes || [], this.state.siteRecipes || []],
-    ];
-    const details = {};
-    entities.forEach(([kind, imported, existing]) => { const existingKeys = new Set(existing.map(x => kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))); const importedKeys = new Set(imported.map(x => kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))); const equivalent = imported.filter(x => existingKeys.has(kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))).length; const mode = this.state.importModes[kind]; details[kind] = { total: imported.length, newCount: imported.length - equivalent, replaceCount: mode === 'add' ? 0 : equivalent, ignoredCount: mode === 'add' ? equivalent : 0, removedCount: mode === 'replace_all' ? existing.filter(x => !importedKeys.has(kind === 'categories' ? `${x.type}:${norm(x.name)}` : norm(x.name))).length : 0 }; });
-    this.setState({ importSummary: { details, totalRows: entities.reduce((n, x) => n + x[1].length, 0), invalid: this.state.importErrors.length } });
-  };
-
-  formatImportFailure = (error) => {
-    const message = String((error && error.message) || '');
-    const details = String((error && error.details) || '');
-    if (message.includes('categories_site_slug_uk')) {
-      const collision = details.match(/\((proteina|receita|secao_home|secao_receita|secao_produto),\s*([^\)]+)\)/i);
-      const type = collision && collision[1].toLowerCase();
-      const slug = collision && collision[2].trim();
-      const matches = (this.state.importParsedCategories || []).filter(category =>
-        (!type || category.type === type) && (!slug || this.normalizeImportSlug(category.name) === slug)
-      );
-      const imported = matches.map(category => `linha ${category.source_line || '?'} ("${category.name}")`).join(' e ');
-      const typeLabel = type === 'proteina' ? 'categoria de produto' : type === 'receita' ? 'categoria de receita' : type === 'secao_home' ? 'seção da home' : type === 'secao_receita' ? 'seção de receitas' : type === 'secao_produto' ? 'seção de produtos' : 'categoria';
-      return imported
-        ? `Conflito na aba Categorias: ${imported} coincide com outra ${typeLabel} pelo nome simplificado${slug ? ` "${slug}"` : ''}. Procure esse nome na planilha, mantenha apenas uma versão e envie o arquivo novamente. Nenhuma alteração foi aplicada.`
-        : `Conflito na aba Categorias: já existe outra ${typeLabel} com o mesmo nome simplificado${slug ? ` ("${slug}")` : ''}. Remova ou renomeie a categoria equivalente na planilha e tente novamente. Nenhuma alteração foi aplicada.`;
-    }
-    const categoryFailure = message.match(/(?:category_not_found|active_category_not_found):\s*(.+)/i);
-    if (categoryFailure) return `Categoria não encontrada: "${categoryFailure[1]}". Confira se ela foi cadastrada na aba Categorias com o tipo correspondente e se o nome usado na planilha é o mesmo. Nenhuma alteração foi aplicada.`;
-    const swiftFailure = message.match(/(swift_url_required|invalid_swift_product_url|swift_identity_conflict|duplicate_swift_(?:url|sku)_in_payload):?\s*(.*)/i);
-    if (swiftFailure) return `Origem Swift inválida ou duplicada${swiftFailure[2] ? ` para "${swiftFailure[2]}"` : ''} (${swiftFailure[1]}). Confira swift_url e swift_sku; nenhum preço foi confirmado e nenhuma alteração foi aplicada.`;
-    const productFailure = message.match(/product_not_found:\s*(.+)/i);
-    if (productFailure) return `Produto usado como ingrediente não encontrado: "${productFailure[1]}". Cadastre-o na aba Produtos ou corrija o nome no campo ingredientes. Nenhuma alteração foi aplicada.`;
-    const sectionFailure = message.match(/section_not_found:\s*(.+)/i);
-    if (sectionFailure) return `Seção de receita não encontrada: "${sectionFailure[1]}". Cadastre-a na aba Categorias com o tipo "secao_receita" ou "secao_home", ou corrija a tag da receita. Nenhuma alteração foi aplicada.`;
-    const invalidFailure = message.match(/(invalid_[a-z_]+|ingredients_required|duplicate_recipe_name_in_payload)(?::| at item)?\s*(.*)/i);
-    if (invalidFailure) return `A validação do servidor rejeitou os dados${invalidFailure[2] ? ` relacionados a "${invalidFailure[2]}"` : ''} (${invalidFailure[1]}). Revise essa linha da planilha e tente novamente. Nenhuma alteração foi aplicada.`;
-    const diagnostic = [message, details].filter(Boolean).join(' — ').slice(0, 240);
-    return diagnostic
-      ? `Não foi possível concluir a importação. Detalhe técnico: ${diagnostic}. Nenhuma alteração foi aplicada.`
-      : 'Não foi possível concluir a importação. O servidor não informou o motivo. Tente novamente e, se persistir, contate o suporte. Nenhuma alteração foi aplicada.';
-  };
-
-  onConfirmImport = async () => {
-    const s = this.state;
-    if (s.authRole !== 'admin' || s.importBusy || s.importErrors.length) return;
-    if (Object.values(s.importModes).includes('replace_all') && !window.confirm('Substituir tudo desativará os itens públicos ausentes da planilha nas seções selecionadas. Receitas pessoais não serão alteradas. Deseja continuar?')) return;
-    this.setState({ importBusy: true, importParseError: '', importResult: null });
-    const { data, error } = await catalog.adminImportPublicCatalog(s.importModes, s.importParsedCategories, s.importParsedProducts, s.importParsedRecipes);
-    this.setState({ importBusy: false });
-    if (error) { this.setState({ importParseError: this.formatImportFailure(error) }); return; }
-    this.refreshAdminCatalog();
-    const total = ['categories', 'products', 'recipes'].reduce((acc, kind) => { const item = data[kind] || {}; acc.added += item.added || 0; acc.replaced += item.replaced || 0; acc.ignored += item.ignored || 0; acc.removed += item.removed || 0; return acc; }, { added: 0, replaced: 0, ignored: 0, removed: 0 });
-    const msg = `Importação concluída: ${total.added} adicionada(s), ${total.replaced} substituída(s), ${total.ignored} ignorada(s), ${total.removed} desativada(s).`;
-    this.setState({ importResult: msg, adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 5000);
-  };
+  recomputeImportSummary = () => { const entities=[['categories',this.state.importParsedCategories],['products',this.state.importParsedProducts],['recipes',this.state.importParsedRecipes],['sections',this.state.importParsedSections],['recipeSections',this.state.importParsedRecipeSections],['productSections',this.state.importParsedProductSections]];const details={};entities.forEach(([key,list])=>details[key]={total:(list||[]).length});this.setState({importSummary:{details,totalRows:entities.reduce((n,x)=>n+(x[1]||[]).length,0),invalid:this.state.importErrors.length}}); };
+  formatImportFailure = error => { const diagnostic=String(error?.message||error?.details||'').slice(0,240);if(/section_not_found/.test(diagnostic))return `Seção não encontrada. Confira pagina + secao nas abas relacionais. Nenhuma alteração foi aplicada.`;if(/legacy_import_format/.test(diagnostic))return 'Formato legado não suportado: remova secao_* de Categorias e tags de posicionamento. Nenhuma alteração foi aplicada.';return diagnostic?`A validação do servidor rejeitou os dados: ${diagnostic}. Nenhuma alteração foi aplicada.`:'Não foi possível concluir a importação. Nenhuma alteração foi aplicada.'; };
+  onConfirmImport = async () => {const s=this.state;if(s.authRole!=='admin'||s.importBusy||s.importErrors.length)return;if(Object.values(s.importModes).includes('replace_all')&&!window.confirm('Substituir tudo afeta somente a entidade e a página correspondentes. Deseja continuar?'))return;this.setState({importBusy:true,importParseError:'',importResult:null});const {data,error}=await catalog.adminImportPublicCatalog(s.importModes,s.importParsedCategories,s.importParsedProducts,s.importParsedRecipes,s.importParsedSections,s.importParsedRecipeSections,s.importParsedProductSections);this.setState({importBusy:false});if(error){this.setState({importParseError:this.formatImportFailure(error)});return;}this.refreshAdminCatalog();const total=['categories','products','recipes','sections','recipe_sections','product_sections'].reduce((a,k)=>{const x=data[k]||{};for(const n of ['added','replaced','ignored','removed'])a[n]+=(x[n]||0);return a;},{added:0,replaced:0,ignored:0,removed:0});const msg=`Importação concluída: ${total.added} adicionada(s), ${total.replaced} substituída(s), ${total.ignored} ignorada(s), ${total.removed} removida(s).`;this.setState({importResult:msg,adminFlash:msg});};
 
   computeViewModel() {
     const s = this.state;
@@ -4508,10 +4344,10 @@ class App extends Component {
       importStepInstructions: s.importStep === 'instructions', importStepResult: s.importStep === 'result',
       onDownloadTemplate: this.onDownloadTemplate, onImportFileChange: this.onImportFileChange, onConfirmImport: this.onConfirmImport, importSummary: s.importSummary, importBusy: s.importBusy, importResult: s.importResult, importFileInputKey: s.importFileInputKey,
       importParseError: s.importParseError, hasImportParseError: !!s.importParseError,
-      importFileName: s.importFileName, importCategoriesCount: s.importParsedCategories.length, importProductsCount: s.importParsedProducts.length, importRecipesCount: s.importParsedRecipes.length,
+      importFileName: s.importFileName, importCategoriesCount: s.importParsedCategories.length, importProductsCount: s.importParsedProducts.length, importRecipesCount: s.importParsedRecipes.length, importSectionsCount: s.importParsedSections.length, importRecipeSectionsCount: s.importParsedRecipeSections.length, importProductSectionsCount: s.importParsedProductSections.length,
       importErrors: s.importErrors, hasImportErrors: s.importErrors.length > 0,
       importWarnings: s.importWarnings, hasImportWarnings: s.importWarnings.length > 0,
-      importCanProceed: s.importStep === 'result' && s.importErrors.length === 0 && (s.importParsedCategories.length + s.importParsedProducts.length + s.importParsedRecipes.length) > 0,
+      importCanProceed: s.importStep === 'result' && s.importErrors.length === 0 && (s.importParsedCategories.length + s.importParsedProducts.length + s.importParsedRecipes.length + s.importParsedSections.length + s.importParsedRecipeSections.length + s.importParsedProductSections.length) > 0,
       importModes: s.importModes,
       onSetImportMode: this.onSetImportMode,
       categoriasProdutoList: s.productCategories.filter(c => c.enabled).map(c => c.label).join(', '), categoriasReceitaList: CATEGORIAS_RECEITA.join(', '),
