@@ -1,68 +1,28 @@
-# Fluxo unificado de importação do catálogo (V0.43)
+# Importação unificada e normalizada do catálogo (V0.50)
 
-A importação administrativa usa **um único arquivo** e **uma única chamada RPC
-transacional**. A planilha deve conter as abas `Categorias`, `Produtos` e
-`Receitas` (abas sem alterações podem permanecer vazias). O modelo baixado pela
-tela é a fonte de verdade para os nomes das colunas.
+A importação administrativa é uma única chamada transacional à RPC `admin_import_public_catalog`. O arquivo possui **seis abas obrigatórias** (uma aba sem alterações pode ficar vazia):
 
-## 1. Preparação
+| Aba | Colunas exatas | Regras principais |
+|---|---|---|
+| `Categorias` | `tipo`, `nome` | `tipo`: somente `receita` ou `proteina` |
+| `Produtos` | `nome`, `categoria`, `unidade`, `imagem`, `swift_url`, `swift_sku` | categoria `proteina`; unidade `kg`, `un`, `pacote`, `caixa` ou `pote` |
+| `Receitas` | `nome`, `categoria`, `tempo`, `porcoes`, `dificuldade`, `imagem`, `destaque`, `ingredientes`, `extras`, `modoPreparo`, `dicas` | `destaque` é booleano e não posiciona em seção |
+| `Seções` | `pagina`, `secao`, `ordem`, `ativa` | página: `home`, `recipes` ou `products`; identidade = página + slug normalizado |
+| `Receitas por Seção` | `pagina`, `secao`, `receita`, `ordem` | página somente `home` ou `recipes` |
+| `Produtos por Seção` | `pagina`, `secao`, `produto`, `ordem` | página somente `products` |
 
-1. Baixe o modelo na tela administrativa.
-2. Em `Categorias`, declare categorias de produto (`proteina`), de receita
-   (`receita`) e seções (`secao`) ainda inexistentes.
-3. Em `Produtos`, preencha nome, categoria, unidade, imagem e `swift_url`. A URL identifica a página oficial que o sincronizador consulta;
-   `swift_sku` é recomendado como segunda chave de identidade.
-4. Em `Receitas`, os ingredientes referenciam produtos pelo nome e as tags
-   referenciam seções. Assim, categorias e produtos do mesmo arquivo já podem
-   ser usados pelas abas seguintes.
+`ingredientes` usa `Produto:quantidade`, separado por `;`. Campos de lista (`extras`, `modoPreparo`, `dicas`) também usam `;`. URLs Swift continuam identificando a origem oficial; preço confirmado nunca é substituído pela planilha.
 
-O modelo baixável para produtos Swift **não possui a coluna `price`**. Ela foi
-removida porque o valor oficial só pode vir do provider. O importador ainda
-aceita `price` como coluna opcional para compatibilidade com arquivos antigos e
-produtos sem integração, mas esse valor é apenas legado: não cria histórico,
-não preenche `price_last_success_at`, não define `CURRENT` e não sobrescreve um
-preço Swift já confirmado. Para alterar a origem Swift, inclua `swift_url` e
-`swift_sku` junto com os dados completos do produto.
+## Exemplo
 
-> Para produtos vinculados à Swift, não é necessário informar o preço. O
-> Yourcipe consulta automaticamente a página oficial da Swift e confirma o
-> preço após a importação.
+Declare `Destaques da Semana` e `Direto da Churrasqueira` em `home`, `Receitas na Brasa` em `recipes` e `Carnes Bovinas` em `products`. Vincule `Picanha na Brasa` às duas seções Home e à seção Recipes; vincule `Picanha` apenas à seção Products. O modelo baixável contém exatamente esse cenário e categorias taxonômicas separadas.
 
-## 2. Validação antes da confirmação
+## Validação, modos e atomicidade
 
-O navegador aceita apenas `.xlsx`/`.xls`, até 10 MB e 5.000 linhas. Ele valida
-as três abas, campos obrigatórios, referências entre abas, tipos, URLs e
-colisões por nome, URL Swift ou SKU Swift. A URL é canonicalizada para HTTPS no
-host `www.swift.com.br` e não pode conter consulta ou fragmento.
+Navegador e servidor validam página, ordem não negativa, ativo booleano, referências a seção/conteúdo e vínculos duplicados. Seções com o mesmo slug em páginas diferentes são válidas. Todas as referências podem apontar para registros existentes ou declarados no arquivo.
 
-A prévia não grava nada. Ela mostra erros bloqueantes, avisos e o impacto de
-cada modo: adicionar, substituir equivalentes ou substituir tudo.
+Cada grupo possui `add`, `upsert` e `replace_all`: categorias, produtos, receitas, seções, vínculos de receita e vínculos de produto. Em `replace_all`, seções são comparadas somente dentro de cada página presente; vínculos são removidos somente da página/tipo pertinente. As páginas fixas nunca são desativadas. Autenticação, `is_admin()`, `security definer`, `search_path` vazio e grants mínimos protegem a RPC. Qualquer exceção reverte todos os seis grupos.
 
-## 3. Confirmação atômica no servidor
+## Migração do legado
 
-O cliente envia categorias, produtos e receitas juntos a
-`admin_import_public_catalog`. O servidor repete as validações sensíveis,
-confirma que o usuário é administrador e restringe todas as alterações ao
-catálogo público (`scope='site'`, sem proprietário). Qualquer erro aborta a
-transação completa; não existe catálogo parcialmente importado.
-
-Categorias são resolvidas por tipo e nome/slug normalizado, produtos por nome
-normalizado e receitas pelo fluxo único da mesma RPC. Índices únicos impedem
-que importações concorrentes ou edições manuais associem uma URL ou SKU Swift
-a dois produtos públicos.
-
-## 4. Integração de preço Swift
-
-Ao cadastrar ou alterar uma origem, o produto fica `STALE`, com preço legado zero quando ainda não houve confirmação. O sincronizador
-`swift-price-sync` consulta somente a URL permitida, compara nome/SKU, confirma
-mudanças suspeitas, grava valores monetários em centavos e mantém histórico.
-Falhas preservam o último preço confirmado. Campos observados pelo provedor
-(preço, promoção, região, hash e datas) não são aceitos da planilha: somente a
-Edge Function com service role pode gravá-los.
-
-## 5. Resultado e recuperação
-
-Após o commit, a tela informa quantos itens foram adicionados, substituídos,
-ignorados ou desativados e recarrega o catálogo. Em falha, a mensagem indica a
-linha ou a chave conflitante e reforça que nenhuma alteração foi aplicada.
-Corrija a planilha e execute uma nova importação.
+`secao_home`, `secao_receita` e `secao_produto` não são mais categorias. A coluna `tags` não posiciona receitas. Planilhas legadas são rejeitadas explicitamente, pois uma conversão silenciosa seria ambígua. Mova cada seção para `Seções`, cada associação para a aba relacional correta e converta somente `destaque` para a coluna booleana. A organização visual passa exclusivamente por `catalog_sections`, `catalog_section_recipes` e `catalog_section_products`.

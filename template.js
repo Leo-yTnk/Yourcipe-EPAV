@@ -2460,59 +2460,25 @@ function renderImportModal(app, v) {
         </div>
 
         ${v.importStepInstructions && html`
-          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:18px">Use um único arquivo <strong>.xlsx</strong> com as três abas obrigatórias: <strong>Categorias</strong>, <strong>Produtos</strong> e <strong>Receitas</strong>. Veja o modelo esperado abaixo antes de enviar.</div>
-
-          <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:12px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Produtos"</div>
-            <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
-              <strong>nome</strong> — obrigatório<br/>
-              Para produtos vinculados à Swift, não é necessário informar o preço. O Yourcipe consulta automaticamente a página oficial da Swift e confirma o preço após a importação.<br/>
-              <strong>categoria</strong> — obrigatória para produtos novos, uma de: ${v.categoriasProdutoList}<br/>
-              <strong>unidade</strong> — obrigatória para produtos novos: kg, un, pacote, caixa, pote<br/>
-              <strong>preco</strong> — opcional e apenas legado. Não confirma nem substitui preços Swift (ex: 34.90)<br/>
-              <strong>imagem</strong> — obrigatória para produtos novos, URL completa da foto (http ou https)<br/>
-              <strong>swift_url</strong> — obrigatória para produtos novos: página oficial HTTPS em www.swift.com.br, sem parâmetros<br/>
-              <strong>swift_sku</strong> — recomendado: código/SKU exibido pela Swift para confirmar a identidade do produto
-            </div>
+          <div style="font-size:14px;color:var(--neutral-600);margin-bottom:18px">Use um arquivo <strong>.xlsx</strong> com seis abas obrigatórias (podem ficar vazias): <strong>Categorias</strong>, <strong>Produtos</strong>, <strong>Receitas</strong>, <strong>Seções</strong>, <strong>Receitas por Seção</strong> e <strong>Produtos por Seção</strong>.</div>
+          <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:12px;font-size:13px;line-height:1.8">
+            <strong>Categorias</strong>: <strong>tipo</strong>, <strong>nome</strong>. Tipo aceita somente <code>receita</code> ou <code>proteina</code>; categorias classificam conteúdo e não são seções.<br/>
+            <strong>Produtos</strong>: nome, categoria, unidade, imagem, swift_url e swift_sku. Para produtos vinculados à Swift, não é necessário informar o preço; <strong>imagem</strong> é obrigatória para produtos novos.<br/>
+            <strong>Receitas</strong>: nome, categoria, tempo, porcoes, dificuldade, imagem, <strong>destaque</strong>, ingredientes, extras, modoPreparo e dicas. Destaque é booleano; não use <code>tags</code> para posicionamento.<br/>
+            <strong>Seções</strong>: <strong>pagina</strong>, <strong>secao</strong>, <strong>ordem</strong>, <strong>ativa</strong>. Página aceita somente <code>home</code>, <code>recipes</code> ou <code>products</code>. O mesmo slug pode existir em páginas diferentes.<br/>
+            <strong>Receitas por Seção</strong>: pagina, secao, receita, ordem (somente home/recipes).<br/>
+            <strong>Produtos por Seção</strong>: pagina, secao, produto, ordem (somente products). Os vínculos são explícitos e permitem várias seções com ordenação independente.
           </div>
-          <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Receitas"</div>
-            <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
-              <strong>nome</strong> — obrigatório<br/>
-              <strong>categoria</strong> — obrigatório: ${v.categoriasReceitaList}<br/>
-              <strong>tempo</strong> — minutos (número), obrigatório<br/>
-              <strong>porcoes</strong> — número, obrigatório<br/>
-              <strong>dificuldade</strong> — Fácil, Médio ou Difícil<br/>
-              <strong>imagem</strong> — URL da foto (opcional)<br/>
-              <strong>tags</strong> — opcional, separadas por vírgula: destaque, recomendado, pratico, ocasiao, rapido, churrasco, petisco<br/>
-              <strong>ingredientes</strong> — obrigatório. Nome do produto e quantidade, separados por dois-pontos; itens separados por ponto e vírgula. Ex: <em>Picanha:1.5; Sal Grosso:0.2</em><br/>
-              <strong>extras</strong> — opcional, itens separados por ponto e vírgula<br/>
-              <strong>modoPreparo</strong> — obrigatório, passos separados por ponto e vírgula<br/>
-              <strong>dicas</strong> — opcional, itens separados por ponto e vírgula
-            </div>
-          </div>
-          <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:8px">Aba "Categorias" (obrigatória; pode ficar sem linhas)</div>
-            <div style="font-size:13px;color:var(--neutral-800);line-height:1.8">
-              <strong>tipo</strong> — obrigatório: "proteina" (categoria de produto), "receita" (categoria de receita), "secao_home" (seção da Home), "secao_receita" (seção de Receitas) ou "secao_produto" (seção de Produtos)<br/>
-              <strong>nome</strong> — obrigatório, nome da nova categoria ou seção<br/>
-              Use esta aba para declarar as categorias/seções que ainda não existem no app antes de referenciá-las nas abas Produtos e Receitas.
-            </div>
-          </div>
+          <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);border-radius:var(--radius-md);padding:12px;margin-bottom:16px;font-size:13px">Planilhas legadas com <code>secao_*</code> em Categorias ou <code>tags</code> de posicionamento são rejeitadas; migre os dados para as três novas abas.</div>
           <div onClick=${v.onDownloadTemplate} style="text-align:center;padding:12px;border-radius:var(--radius-md);border:1.5px solid var(--brand-500);color:var(--brand-700);font-weight:700;font-size:14px;cursor:pointer;margin-bottom:18px">Baixar modelo (.xlsx)</div>
-
-          <label style="display:block;border:2px dashed var(--neutral-200);border-radius:var(--radius-md);padding:24px;text-align:center;cursor:pointer;color:var(--neutral-600);font-size:14px">
-            Clique para selecionar o arquivo .xlsx ou .xls (máximo 10 MB / 5.000 linhas)
-            <input key=${v.importFileInputKey} type="file" accept=".xlsx,.xls" onChange=${v.onImportFileChange} style="display:none"/>
-          </label>
-          ${v.hasImportParseError && html`<div style="color:var(--red-600);font-size:13px;margin-top:10px;font-weight:600">${v.importParseError}</div>`}
+          <label style="display:block;border:2px dashed var(--neutral-200);border-radius:var(--radius-md);padding:24px;text-align:center;cursor:pointer;color:var(--neutral-600);font-size:14px">Clique para selecionar o arquivo .xlsx ou .xls (máximo 10 MB / 5.000 linhas)<input key=${v.importFileInputKey} type="file" accept=".xlsx,.xls" onChange=${v.onImportFileChange} style="display:none"/></label>
+          ${v.hasImportParseError && html`<div role="alert" style="color:var(--red-600);font-size:13px;margin-top:10px;font-weight:600">${v.importParseError}</div>`}
         `}
-
         ${v.importStepResult && html`
-          <div style="font-size:14px;color:var(--neutral-800);margin-bottom:14px">Arquivo: <strong>${v.importFileName}</strong> — ${v.importCategoriesCount} categorias, ${v.importProductsCount} produtos e ${v.importRecipesCount} receitas encontrados.</div>
+          <div style="font-size:14px;color:var(--neutral-800);margin-bottom:14px">Arquivo: <strong>${v.importFileName}</strong> — ${v.importCategoriesCount} categorias, ${v.importProductsCount} produtos, ${v.importRecipesCount} receitas, ${v.importSectionsCount} seções, ${v.importRecipeSectionsCount} vínculos de receita e ${v.importProductSectionsCount} vínculos de produto.</div>
           ${v.importSummary && html`
             <div style="background:var(--neutral-50);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--neutral-800)">
-              <strong>Resumo:</strong> ${v.importSummary.totalRows} linha(s) nas três abas; ${v.importSummary.invalid} erro(s) de validação.
+              <strong>Resumo:</strong> ${v.importSummary.totalRows} linha(s) nas seis abas; ${v.importSummary.invalid} erro(s) de validação.
             </div>
           `}
           ${v.importResult && html`<div style="background:rgba(52,178,62,0.1);border:1px solid var(--green-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--green-600);font-weight:700">${v.importResult}</div>`}
@@ -2532,7 +2498,7 @@ function renderImportModal(app, v) {
 
           ${v.hasImportWarnings && html`
             <div style="background:rgba(207,176,23,0.12);border:1px solid var(--yellow-500);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:14px;max-height:180px;overflow-y:auto">
-              <div style="font-weight:700;font-size:14px;color:var(--yellow-600);margin-bottom:6px">Avisos — seções não cadastradas usadas em receitas e validação preventiva</div>
+              <div style="font-weight:700;font-size:14px;color:var(--yellow-600);margin-bottom:6px">Avisos de validação preventiva</div>
               ${v.importWarnings.map((warn, i) => html`<div key=${i} style="font-size:13px;color:var(--neutral-800);margin-bottom:4px">• ${warn}</div>`)}
             </div>
           `}
@@ -2543,6 +2509,9 @@ function renderImportModal(app, v) {
               ['categories', 'Categorias', v.importCategoriesCount],
               ['products', 'Produtos', v.importProductsCount],
               ['recipes', 'Receitas', v.importRecipesCount],
+              ['sections', 'Seções', v.importSectionsCount],
+              ['recipeSections', 'Vínculos de receitas', v.importRecipeSectionsCount],
+              ['productSections', 'Vínculos de produtos', v.importProductSectionsCount],
             ].map(([key, label, count]) => html`
               <div key=${key} style="display:grid;grid-template-columns:minmax(100px,1fr) minmax(220px,2fr);gap:12px;align-items:center;padding:12px 14px;border:1.5px solid var(--neutral-200);border-radius:var(--radius-md);margin-bottom:10px">
                 <div><strong>${label}</strong><div style="font-size:12px;color:var(--neutral-600)">${count} item(ns)</div></div>

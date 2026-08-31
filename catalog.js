@@ -699,9 +699,15 @@ export async function adminImportPublicRecipes(mode, recipes) {
   return unwrap(await supabase.rpc('admin_import_public_recipes', { p_mode: mode, p_recipes: recipes }), 'adminImportPublicRecipes');
 }
 
-export async function adminImportPublicCatalog(modes, categories, products, recipes) {
+export async function adminImportPublicCatalog(modes, categories, products, recipes, sections, recipeSections, productSections) {
   return unwrap(await supabase.rpc('admin_import_public_catalog', {
-    p_modes: modes, p_categories: categories, p_products: products, p_recipes: recipes,
+    p_modes: modes,
+    p_categories: categories,
+    p_products: products,
+    p_recipes: recipes,
+    p_sections: sections,
+    p_recipe_section_links: recipeSections,
+    p_product_section_links: productSections,
   }), 'adminImportPublicCatalog');
 }
 
