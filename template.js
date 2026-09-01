@@ -1591,36 +1591,29 @@ function renderSiteProductsTab(app, v) {
 
 function renderSiteCategoriesTab(app, v) {
   return html`
-    <div style="padding:8px 40px 24px">
-      <p style="color:var(--neutral-600);font-size:14px;margin:0 0 14px">Categorias classificam receitas e produtos. A organização por página e seção é gerenciada separadamente no Editor visual abaixo.</p>
-      <div onClick=${v.onNewSiteCategory} style="display:flex;align-items:center;justify-content:center;gap:8px;background:var(--brand-700);color:#F4F2F1;border-radius:var(--radius-md);padding:14px;font-weight:600;font-size:15px;cursor:pointer;margin-bottom:18px;transition:transform 0.15s ease">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F4F2F1" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>
-        Nova Categoria no Catálogo
-      </div>
+    <div className="yc-category-editor">
+      <header className="yc-category-editor-head">
+        <div><span className="yc-category-editor-eyebrow">Organização do catálogo</span><h2>Categorias</h2><p>Classifique receitas e produtos aqui. As seções exibidas em cada página são gerenciadas separadamente no Editor visual.</p></div>
+        <button type="button" onClick=${v.onNewSiteCategory} className="yc-category-new"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>Nova categoria</button>
+      </header>
       ${adminSearchBar(v)}
       ${!v.categorySelectionMode && beginSelectionButton(v.onBeginSiteCategorySelection)}
-      ${v.siteCatalogLoading && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Carregando...</div>`}
+      ${v.siteCatalogLoading && html`<div className="yc-category-state">Carregando...</div>`}
       ${v.categorySelectionMode && v.categorySelectionScope === 'site' && selectionBar(v.selectedCategoryCountLabel, v.onBulkDeleteCategoriesAsk, v.onCancelCategorySelection, bulkStatusActions(v.onBulkCategoriesActivate, v.onBulkCategoriesDeactivate))}
-      ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div style="text-align:center;color:var(--neutral-600);font-size:14px;padding:20px 0">Nenhuma categoria no catálogo público ainda.</div>`}
-      ${v.siteCategoryGroups.map(group => html`<section className="yc-category-group" key=${group.type}>
-        <h3 style="font-size:14px;color:var(--brand-700);margin:22px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--neutral-100)">${group.label} <span style="color:var(--neutral-500);font-weight:500">(${group.rows.length})</span></h3>
-        ${group.rows.map((row) => html`
-        <div key=${row.id} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick} style=${`display:flex;align-items:center;gap:14px;background:${row.selected ? 'rgba(178,64,25,0.08)' : 'var(--neutral-0)'};border:1px solid ${row.selected ? 'var(--brand-500)' : 'var(--neutral-100)'};border-radius:var(--radius-md);padding:12px 16px;margin-bottom:10px`} >${row.showCheckbox && html`<span className="yc-row-checkbox">${row.selected ? '✓' : ''}</span>`}
-          <div style="flex:1">
-            <div style="font-size:15px;font-weight:600">${row.name} <span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div>
-            <div style="font-size:12px;color:var(--neutral-600)">${row.typeLabel} · ${row.code}${row.updatedAtLabel ? ` · atualizado em ${row.updatedAtLabel}` : ''}</div>
+      ${!v.siteCatalogLoading && !v.hasSiteCategoryRows && html`<div className="yc-category-state">Nenhuma categoria no catálogo público ainda.</div>`}
+      <div className="yc-category-groups">${v.siteCategoryGroups.map(group => html`<section className="yc-category-group" key=${group.type}>
+        <h3><span>${group.label}</span><small>${group.rows.length} ${group.rows.length === 1 ? 'item' : 'itens'}</small></h3>
+        ${group.rows.map(row => html`<article key=${row.id} className=${`yc-category-row ${row.selected ? 'is-selected' : ''}`} onMouseDown=${row.onPressStart} onMouseUp=${row.onPressEnd} onMouseLeave=${row.onPressEnd} onTouchStart=${row.onPressStart} onTouchEnd=${row.onPressEnd} onClick=${row.onRowClick}>
+          ${row.showCheckbox && html`<span className="yc-row-checkbox">${row.selected ? '✓' : ''}</span>`}
+          <div className="yc-category-row-info"><div><strong>${row.name}</strong><span style=${row.statusBadgeStyle}>${row.statusLabel}</span></div><p><code>${row.code}</code>${row.updatedAtLabel ? ` · Atualizada em ${row.updatedAtLabel}` : ''}</p></div>
+          <div className="yc-category-row-actions">
+            <button type="button" onClick=${row.onToggleActive} className="yc-category-status-action">${row.toggleActiveLabel}</button>
+            <button type="button" onClick=${row.onEdit} className="yc-category-icon-action" aria-label=${`Editar ${row.name}`} title="Editar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg></button>
+            <button type="button" onClick=${row.onDelete} className="yc-category-icon-action is-danger" aria-label=${`Excluir ${row.name} permanentemente`} title="Excluir permanentemente"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg></button>
           </div>
-          <div onClick=${row.onToggleActive} style="font-size:12px;font-weight:700;color:var(--brand-700);cursor:pointer;border:1.5px solid var(--brand-500);padding:8px 12px;border-radius:var(--radius-full);white-space:nowrap">${row.toggleActiveLabel}</div>
-          <div onClick=${row.onEdit} style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
-          </div>
-          <div onClick=${row.onDelete} title="Excluir permanentemente" style="width:36px;height:36px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C33D22" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg>
-          </div>
-        </div>
-        `)}
-      </section>`)}
-      ${v.hasSiteCategoryError && html`<div style="background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;margin-top:8px">${v.siteCategoryError}</div>`}
+        </article>`)}
+      </section>`)}</div>
+      ${v.hasSiteCategoryError && html`<div className="yc-danger-error" role="alert">${v.siteCategoryError}</div>`}
       ${renderLocalHomeCustomization(app, v)}
     </div>
   `;
@@ -1677,11 +1670,11 @@ function renderAdmin(app, v) {
     ${v.isAdminRole && v.isAdminProductsTab && renderSiteProductsTab(app, v)}
     ${v.isAdminRole && v.isAdminRequestsInboxTab && renderRequestsInboxTab(app, v)}
     ${v.isAdminRole && html`
-      <section className="yc-danger-zone" aria-label="Zona de perigo"><div><strong>Zona de perigo</strong><span>Elimina permanentemente todos os Produtos e Receitas, pessoais e públicos. Categorias e demais dados são preservados.</span></div><button type="button" onClick=${v.onOpenDestructiveCatalog}>Eliminar Produtos e Receitas</button></section>
+      <section className="yc-danger-zone" aria-label="Zona de perigo"><div className="yc-danger-copy"><strong>Zona de perigo</strong><span>Operações permanentes de limpeza do catálogo. Revise cuidadosamente antes de confirmar.</span></div><div className="yc-danger-buttons"><button type="button" className="is-secondary" onClick=${v.onOpenInactiveCatalogCleanup}>Eliminar itens inativos</button><button type="button" onClick=${v.onOpenDestructiveCatalog}>Eliminar Produtos e Receitas</button></div></section>
     `}
     ${v.isAdminRole && v.destructiveCatalogOpen && html`
       <div className="yc-modal-overlay"><div className="yc-danger-dialog" role="dialog" aria-modal="true" aria-label="Eliminar todos os produtos e receitas">
-        <h2>Eliminar tudo?</h2><p>Esta ação permanente elimina <strong>todos os Produtos e Receitas</strong>, inclusive dados pessoais de usuários. Categorias e outros registros serão preservados.</p>
+        <h2>${v.destructiveCatalogMode === 'inactive' ? 'Eliminar itens inativos?' : 'Eliminar tudo?'}</h2><p>${v.destructiveCatalogMode === 'inactive' ? html`Esta ação elimina permanentemente todas as <strong>receitas arquivadas e categorias e produtos inativos</strong>, pessoais e públicos. Seus vínculos também serão removidos.` : html`Esta ação permanente elimina <strong>todos os Produtos e Receitas</strong>, inclusive dados pessoais de usuários. Categorias e outros registros serão preservados.`}</p>
         <label>Digite a senha administrativa para confirmar<input type="password" autocomplete="off" value=${v.destructiveCatalogPassword} onInput=${v.onDestructiveCatalogPassword} disabled=${v.destructiveCatalogBusy}/></label>
         ${v.destructiveCatalogError && html`<div className="yc-danger-error" role="alert">${v.destructiveCatalogError}</div>`}
         <div className="yc-danger-actions"><button type="button" onClick=${v.onCloseDestructiveCatalog} disabled=${v.destructiveCatalogBusy}>Cancelar</button><button type="button" onClick=${v.onConfirmDestructiveCatalog} disabled=${v.destructiveCatalogBusy || !v.destructiveCatalogPassword}>${v.destructiveCatalogBusy ? 'Eliminando…' : 'Eliminar permanentemente'}</button></div>

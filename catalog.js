@@ -730,6 +730,10 @@ export async function adminDeleteAllProductsAndRecipes(password) {
   return unwrap(await supabase.rpc('admin_delete_all_products_and_recipes', { p_password: password }), 'adminDeleteAllProductsAndRecipes');
 }
 
+export async function adminDeleteInactiveCatalogItems(password) {
+  return unwrap(await supabase.rpc('admin_delete_inactive_catalog_items', { p_password: password }), 'adminDeleteInactiveCatalogItems');
+}
+
 export async function adminReorderHomeSections(sections) {
   return unwrap(await supabase.rpc('admin_reorder_home_sections', { p_sections: sections }), 'adminReorderHomeSections');
 }
