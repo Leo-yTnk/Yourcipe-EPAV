@@ -227,7 +227,7 @@ class App extends Component {
       productSectionDragKey: null,
       homeSectionOrderBusy: false,
       adminFlash: '',
-      destructiveCatalogOpen: false, destructiveCatalogPassword: '', destructiveCatalogError: '', destructiveCatalogBusy: false,
+      destructiveCatalogOpen: false, destructiveCatalogMode: 'all', destructiveCatalogPassword: '', destructiveCatalogError: '', destructiveCatalogBusy: false,
       swiftSyncReport: null, swiftSyncDetailsOpen: false,
       session: null,
       authRole: null,
@@ -1180,9 +1180,9 @@ class App extends Component {
   setAdminTabSharedRecipes = () => { this.setState({ adminTab: 'sharedRecipes', adminSearchQuery: '' }); if (this.state.session) this.loadSharedLibrary(this.state.session.user.id); };
 
   flashAdmin = (msg) => { this.setState({ adminFlash: msg }); setTimeout(() => this.setState({ adminFlash: '' }), 4000); };
-  openDestructiveCatalog = () => {
+  openDestructiveCatalog = (mode = 'all') => {
     if (this.state.authRole !== 'admin') return;
-    this.setState({ destructiveCatalogOpen: true, destructiveCatalogPassword: '', destructiveCatalogError: '' });
+    this.setState({ destructiveCatalogOpen: true, destructiveCatalogMode: mode, destructiveCatalogPassword: '', destructiveCatalogError: '' });
   };
   closeDestructiveCatalog = () => {
     if (this.state.destructiveCatalogBusy) return;
@@ -1195,11 +1195,16 @@ class App extends Component {
       this.setState({ destructiveCatalogError: 'Senha incorreta.' }); return;
     }
     this.setState({ destructiveCatalogBusy: true, destructiveCatalogError: '' });
-    const { data, error } = await catalog.adminDeleteAllProductsAndRecipes(this.state.destructiveCatalogPassword);
+    const inactiveOnly = this.state.destructiveCatalogMode === 'inactive';
+    const { data, error } = inactiveOnly
+      ? await catalog.adminDeleteInactiveCatalogItems(this.state.destructiveCatalogPassword)
+      : await catalog.adminDeleteAllProductsAndRecipes(this.state.destructiveCatalogPassword);
     if (error) { this.setState({ destructiveCatalogBusy: false, destructiveCatalogError: 'Não foi possível eliminar os dados. Nenhum item foi removido.' }); return; }
     this.setState({ destructiveCatalogBusy: false, destructiveCatalogOpen: false, destructiveCatalogPassword: '', selectedRecipeIds: [], selectedProductIds: [], selectionMode: false, productSelectionMode: false });
     await Promise.all([this.loadSiteCatalogData('admin'), this.loadPublicCatalog(), this.loadMyCreationData(this.state.session.user.id)]);
-    this.flashAdmin(`${data?.recipes_deleted || 0} receita(s) e ${data?.products_deleted || 0} produto(s) eliminados.`);
+    this.flashAdmin(inactiveOnly
+      ? `${data?.recipes_deleted || 0} receita(s), ${data?.products_deleted || 0} produto(s) e ${data?.categories_deleted || 0} categoria(s) inativos eliminados.`
+      : `${data?.recipes_deleted || 0} receita(s) e ${data?.products_deleted || 0} produto(s) eliminados.`);
   };
   flashShare = (msg) => { this.setState({ shareFlash: msg }); setTimeout(() => this.setState({ shareFlash: '' }), 3500); };
 
@@ -4083,9 +4088,9 @@ class App extends Component {
       altModalOpen, altModalIngredientNome, altOptions, altOptionsEmpty, onCloseAltModal: this.closeAltModal,
       onBackFromAdmin: this.onBackFromAdmin, adminTab: s.adminTab, isAdminRecipesTab: s.adminTab === 'recipes', isAdminProductsTab: s.adminTab === 'products', isAdminCategoriesTab: s.adminTab === 'categories',
       isAdminRole: s.authRole === 'admin',
-      destructiveCatalogOpen: s.destructiveCatalogOpen, destructiveCatalogPassword: s.destructiveCatalogPassword,
+      destructiveCatalogOpen: s.destructiveCatalogOpen, destructiveCatalogMode: s.destructiveCatalogMode, destructiveCatalogPassword: s.destructiveCatalogPassword,
       destructiveCatalogBusy: s.destructiveCatalogBusy, destructiveCatalogError: s.destructiveCatalogError,
-      onOpenDestructiveCatalog: this.openDestructiveCatalog, onCloseDestructiveCatalog: this.closeDestructiveCatalog,
+      onOpenDestructiveCatalog: () => this.openDestructiveCatalog('all'), onOpenInactiveCatalogCleanup: () => this.openDestructiveCatalog('inactive'), onCloseDestructiveCatalog: this.closeDestructiveCatalog,
       onDestructiveCatalogPassword: this.onDestructiveCatalogPassword, onConfirmDestructiveCatalog: this.confirmDestructiveCatalog,
       isAdminMyRecipesTab: s.adminTab === 'myRecipes', isAdminMyProductsTab: s.adminTab === 'myProducts', isAdminMyCategoriesTab: s.adminTab === 'myCategories',
       onSetAdminTabMyRecipes: this.setAdminTabMyRecipes, onSetAdminTabMyProducts: this.setAdminTabMyProducts, onSetAdminTabMyCategories: this.setAdminTabMyCategories,
