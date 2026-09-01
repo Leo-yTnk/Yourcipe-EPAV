@@ -428,3 +428,92 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
 @media (max-width:900px) and (min-width:601px) {
   .yc-admin-product-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* Creation workspace ------------------------------------------------------
+   A quieter, editorial surface for every authoring tab. Functionality stays
+   with the existing components; this layer only establishes hierarchy. */
+.yc-creation-header {
+  position:relative;padding-top:28px !important;padding-bottom:20px !important;
+  background:linear-gradient(110deg,color-mix(in srgb,var(--brand-500) 9%,var(--neutral-0)),var(--neutral-0) 58%);
+  border-bottom:1px solid var(--neutral-100);
+}
+.yc-creation-header::after { content:"";position:absolute;right:5%;top:0;width:180px;height:100%;pointer-events:none;opacity:.5;background:radial-gradient(circle at 50% 15%,color-mix(in srgb,var(--brand-500) 18%,transparent),transparent 65%); }
+.yc-creation-back { flex:0 0 40px;border:1px solid var(--neutral-100);box-shadow:var(--shadow-sm);z-index:1; }
+.yc-creation-title { display:grid;gap:2px;z-index:1; }
+.yc-creation-title>span { color:var(--brand-700);font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase; }
+.yc-creation-title>div { color:var(--neutral-950);line-height:1.15; }
+.yc-creation-title>small { color:var(--neutral-600);font-size:12px;line-height:1.4; }
+.yc-creation-nav {
+  position:relative;padding-top:14px !important;padding-bottom:14px !important;gap:7px !important;
+  background:var(--neutral-0);border-bottom:1px solid var(--neutral-100);box-shadow:0 5px 16px rgba(28,24,23,.035);
+}
+.yc-creation-primary,.yc-creation-admin { gap:6px; }
+.yc-creation-nav :is(.yc-creation-primary,.yc-creation-admin)>div {
+  border:1px solid transparent;border-radius:var(--radius-full) !important;padding-left:14px !important;padding-right:14px !important;
+  font-size:12px !important;font-weight:700 !important;letter-spacing:-.005em;white-space:nowrap;
+}
+.yc-creation-nav :is(.yc-creation-primary,.yc-creation-admin)>div[style*="background:var(--brand-700)"] { box-shadow:0 4px 10px color-mix(in srgb,var(--brand-700) 22%,transparent); }
+.yc-creation-admin { padding-left:10px;border-left:1px solid var(--neutral-100); }
+.yc-creation-admin::before { content:"CATÁLOGO";align-self:center;margin-right:3px;color:var(--neutral-400);font-size:9px;font-weight:800;letter-spacing:.1em; }
+
+/* Tabs use the same clean content rhythm, regardless of their data type. */
+.yc-creation-nav ~ div[style*="padding:8px 40px 24px"] { padding-top:22px !important; }
+.yc-creation-nav ~ div[style*="padding:8px 40px 24px"] > div:first-child[style*="background:var(--brand-700)"],
+.yc-creation-nav ~ div[style*="padding:8px 40px 24px"] > div:first-child[style*="display:grid"] {
+  border-radius:var(--radius-lg) !important;box-shadow:var(--shadow-sm);overflow:hidden;
+}
+.yc-admin-recipe-card { border-color:var(--neutral-100) !important;box-shadow:0 1px 0 rgba(28,24,23,.025); }
+@media (hover:hover) { .yc-admin-recipe-card:hover { border-color:color-mix(in srgb,var(--brand-500) 45%,var(--neutral-100)) !important;box-shadow:var(--shadow-sm);transform:translateY(-1px); } }
+
+/* Catalog visual editor — styled as a purposeful canvas rather than another
+   admin card, while retaining the public catalog's typography and imagery. */
+.yc-catalog-editor { margin-top:34px;padding:0;border:1px solid var(--neutral-100);border-radius:22px;background:var(--neutral-0);box-shadow:0 8px 30px rgba(28,24,23,.07);overflow:hidden; }
+.yc-editor-heading { margin:0;padding:25px 26px 20px;align-items:flex-start;background:linear-gradient(120deg,color-mix(in srgb,var(--brand-500) 8%,var(--neutral-0)),var(--neutral-0) 64%);border-bottom:1px solid var(--neutral-100); }
+.yc-editor-heading-copy { display:grid;gap:4px;min-width:0; }
+.yc-editor-heading-copy .yc-editor-eyebrow { margin:0 0 2px;color:var(--brand-700);font-size:10px;font-weight:850;letter-spacing:.12em;text-transform:uppercase; }
+.yc-editor-heading strong { color:var(--neutral-950);font-size:23px;letter-spacing:-.025em;line-height:1.2; }
+.yc-editor-heading span { margin:0;line-height:1.5; }
+.yc-cloud-status { display:inline-flex !important;align-items:center;gap:7px;padding:7px 11px !important;border:1px solid color-mix(in srgb,var(--green-500) 25%,transparent);font-size:11px !important;font-weight:750; }
+.yc-cloud-status i { width:7px;height:7px;border-radius:50%;background:var(--green-500);box-shadow:0 0 0 3px color-mix(in srgb,var(--green-500) 15%,transparent); }
+.yc-editor-tabs { gap:4px;margin:0;padding:12px 26px;background:var(--neutral-0);border-bottom:1px solid var(--neutral-100); }
+.yc-editor-tab { height:38px;min-height:38px;padding:0 16px;background:transparent;border:1px solid transparent;color:var(--neutral-600); }
+.yc-editor-tab:hover { background:var(--neutral-50);color:var(--neutral-900); }
+.yc-editor-tab.is-active { background:color-mix(in srgb,var(--brand-500) 11%,var(--neutral-0));border-color:color-mix(in srgb,var(--brand-500) 24%,transparent);color:var(--brand-700);box-shadow:none; }
+.yc-editor-canvas { margin:0;padding:26px 30px 32px;border:0;border-radius:0;background:color-mix(in srgb,var(--neutral-50) 72%,var(--neutral-0)); }
+.yc-editor-preview-bar { display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-4px 0 24px;padding-bottom:12px;border-bottom:1px solid var(--neutral-100);color:var(--neutral-600); }
+.yc-editor-preview-bar span { display:flex;align-items:center;gap:7px;font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase; }
+.yc-editor-preview-bar i { width:7px;height:7px;border-radius:50%;background:var(--brand-500); }
+.yc-editor-preview-bar small { color:var(--neutral-400);font-size:11px;font-weight:650; }
+.yc-editor-page-title { margin:0 0 22px;font-size:30px;line-height:1.15; }
+.yc-editor-section { margin-bottom:14px;padding:20px;border-color:var(--neutral-100);box-shadow:0 2px 8px rgba(28,24,23,.035);transition:border-color var(--motion-base) var(--ease-out),box-shadow var(--motion-base) var(--ease-out),transform var(--motion-base) var(--ease-out); }
+.yc-editor-section:hover { border-color:color-mix(in srgb,var(--brand-500) 50%,var(--neutral-100));box-shadow:0 7px 20px rgba(28,24,23,.07);transform:translateY(-1px); }
+.yc-editor-section-toolbar { top:10px;right:12px;padding:5px 9px;border-radius:var(--radius-full);background:var(--neutral-800); }
+.yc-drag-handle { display:flex;align-items:center;gap:5px;font-size:15px; }
+.yc-drag-handle small { font-size:9px;font-weight:750;letter-spacing:.04em;text-transform:uppercase; }
+.yc-editor-section-head { padding-right:88px; }
+.yc-editor-section-head>button { min-height:38px;padding:0 13px;border-style:solid;border-width:1px;border-radius:var(--radius-full);background:color-mix(in srgb,var(--brand-500) 7%,transparent);font-size:12px; }
+.yc-editor-cards article img { background:var(--neutral-50); }
+.yc-editor-empty { padding:30px;border-radius:var(--radius-md);background:color-mix(in srgb,var(--neutral-50) 45%,transparent);line-height:1.5; }
+.yc-editor-picker { border-left:1px solid var(--neutral-100);box-shadow:-18px 0 45px rgba(28,24,23,.16); }
+.yc-picker-head b { font-size:18px;letter-spacing:-.015em; }
+.yc-picker-list button:hover { border-color:var(--brand-500);background:color-mix(in srgb,var(--brand-500) 6%,var(--neutral-0)); }
+
+@media(max-width:800px){
+  .yc-creation-admin { width:100%;padding:11px 0 0;border-left:0;border-top:1px solid var(--neutral-100); }
+  .yc-creation-admin::before { display:none; }
+}
+@media(max-width:600px){
+  .yc-creation-header { padding-top:20px !important;padding-bottom:17px !important; }
+  .yc-creation-title>small { display:none; }
+  .yc-creation-nav { padding-top:10px !important;padding-bottom:8px !important; }
+  .yc-catalog-editor { margin-top:26px;border-radius:var(--radius-lg); }
+  .yc-editor-heading { padding:20px;flex-direction:column; }
+  .yc-cloud-status { align-self:flex-start; }
+  .yc-editor-tabs { padding:10px 14px;overflow-x:auto; }
+  .yc-editor-canvas { padding:20px 14px 24px; }
+  .yc-editor-preview-bar { margin-top:0; }
+  .yc-editor-page-title { font-size:26px; }
+  .yc-editor-section { padding:16px; }
+  .yc-editor-section-head { align-items:flex-start;gap:10px;padding-right:0; }
+  .yc-editor-section-toolbar { position:static;margin:-2px 0 12px auto; }
+}
