@@ -6,7 +6,7 @@
 --yellow-500:#CFB017;--yellow-600:#AD961F;
 --red-500:#C33D22;--red-600:#8F3624;
 --text-primary:var(--neutral-900);--text-secondary:var(--neutral-600);--text-tertiary:var(--neutral-400);--text-strong:var(--neutral-950);--text-disabled:var(--neutral-400);--text-inverse:var(--neutral-0);--text-brand:var(--brand-700);--text-danger:var(--red-600);--text-success:var(--green-600);--text-info:var(--blue-600);
---surface-canvas:var(--neutral-0);--surface-primary:var(--neutral-0);--surface-secondary:var(--neutral-50);--surface-tertiary:var(--neutral-100);--surface-disabled:var(--neutral-100);--surface-selected:var(--brand-100);--surface-inverse:var(--neutral-900);--surface-inverse-strong:var(--neutral-950);
+--surface-canvas:#F1EEEC;--surface-primary:#F8F7F6;--surface-raised:#FFFFFF;--surface-secondary:#E8E4E3;--surface-tertiary:#DCD7D5;--surface-disabled:var(--neutral-100);--surface-selected:var(--brand-100);--surface-inverse:var(--neutral-900);--surface-inverse-strong:var(--neutral-950);
 --border-subtle:var(--neutral-100);--border-default:var(--neutral-200);--border-strong:var(--neutral-400);--border-inverse:var(--neutral-600);--border-focus:var(--blue-500);--border-brand:var(--brand-500);--border-danger:var(--red-500);
 --button-bg-default:var(--brand-700);--button-bg-hover:var(--brand-900);--button-bg-pressed:var(--brand-900);--button-bg-disabled:var(--neutral-100);
 --button-content-default:var(--neutral-0);--button-content-hover:var(--neutral-0);--button-content-pressed:var(--neutral-0);--button-content-disabled:var(--neutral-400);

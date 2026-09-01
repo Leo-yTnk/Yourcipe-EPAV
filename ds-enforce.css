@@ -48,8 +48,11 @@
   --text-info: var(--blue-600);
 
   /* Semantic Surface Tokens */
-  --surface-canvas: var(--neutral-0);
-  --surface-primary: var(--neutral-0);
+  /* Canvas, content and floating elements deliberately use separate tones.
+     The difference is quiet, but keeps hierarchy visible without heavy borders. */
+  --surface-canvas: #F1EEEC;
+  --surface-primary: #F8F7F6;
+  --surface-raised: #FFFFFF;
   --surface-secondary: var(--neutral-50);
   --surface-tertiary: var(--neutral-100);
   --surface-disabled: var(--neutral-100);
@@ -205,6 +208,17 @@
   --neutral-800: #E9E4E2;
   --neutral-900: #F5F2F0;
   --neutral-950: #FFFFFF;
+  /* Dark surfaces need luminance steps rather than light-mode shadows. */
+  --surface-canvas: #171311;
+  --surface-primary: #211C1A;
+  --surface-raised: #2A2421;
+  --surface-secondary: #302925;
+  --surface-tertiary: #3A322D;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.14);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(255, 255, 255, 0.025);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.30), 0 0 0 1px rgba(255, 255, 255, 0.035);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.045);
 }
 
 /* UTILITIES: Typography ---------------------------------------------------- */
@@ -700,7 +714,7 @@
 
 /* COMPONENTS: Card --------------------------------------------------------- */
 .ds-card {
-  background: var(--surface-primary);
+  background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
