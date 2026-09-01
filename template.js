@@ -1482,15 +1482,16 @@ function adminSearchBar(v) {
 
 // Supabase-backed visual authoring surface for the three catalog pages.
 function renderLocalHomeCustomization(app, v) {
-  const tab = (key, label, click) => html`<button onClick=${click} className=${v.catalogEditorPage === key ? 'yc-editor-tab is-active' : 'yc-editor-tab'}>${label}</button>`;
+  const tab = (key, label, click) => html`<button type="button" onClick=${click} className=${v.catalogEditorPage === key ? 'yc-editor-tab is-active' : 'yc-editor-tab'} aria-pressed=${v.catalogEditorPage === key}>${label}</button>`;
   return html`<div className="yc-catalog-editor">
-    <div className="yc-editor-heading"><div><strong>Editor visual do catálogo</strong><span>Arraste seções, edite títulos e insira conteúdo na prévia real.</span></div><span className="yc-cloud-status">● Salvo no Supabase</span></div>
-    <div className="yc-editor-tabs">${tab('home','Home',v.onCatalogEditorHome)}${tab('recipes','Receitas',v.onCatalogEditorRecipes)}${tab('products','Produtos',v.onCatalogEditorProducts)}</div>
+    <div className="yc-editor-heading"><div className="yc-editor-heading-copy"><span className="yc-editor-eyebrow">Personalização da vitrine</span><strong>Editor visual do catálogo</strong><span>Organize as seções e escolha o conteúdo exibido em cada página.</span></div><span className="yc-cloud-status"><i aria-hidden="true"></i> Alterações salvas</span></div>
+    <div className="yc-editor-tabs" aria-label="Página da prévia">${tab('home','Home',v.onCatalogEditorHome)}${tab('recipes','Receitas',v.onCatalogEditorRecipes)}${tab('products','Produtos',v.onCatalogEditorProducts)}</div>
     <div className="yc-editor-canvas" aria-busy=${v.catalogEditorLoading}>
+      <div className="yc-editor-preview-bar"><span><i aria-hidden="true"></i> Prévia da página</span><small>${v.catalogEditorPage === 'home' ? 'Página inicial' : v.catalogEditorPage === 'recipes' ? 'Catálogo de receitas' : 'Catálogo de produtos'}</small></div>
       <div className="yc-editor-page-title">${v.catalogEditorPage === 'home' ? 'O que vamos cozinhar hoje?' : v.catalogEditorPage === 'recipes' ? 'Receitas' : 'Produtos'}</div>
       ${v.catalogEditorLoading && html`<div className="yc-editor-loading" role="status" aria-live="polite"><span></span>Carregando a prévia do catálogo...</div>`}
       ${!v.catalogEditorLoading && v.catalogEditorSections.map(sec => html`<section key=${sec.id} className="yc-editor-section" draggable="true" onDragStart=${sec.onDragStart} onDragOver=${sec.onDragOver} onDrop=${sec.onDrop}>
-        <div className="yc-editor-section-toolbar"><span className="yc-drag-handle">⠿</span></div>
+        <div className="yc-editor-section-toolbar"><span className="yc-drag-handle" title="Arraste para reordenar">⠿ <small>Reordenar</small></span></div>
         <div className="yc-editor-section-head"><h3>${sec.name}</h3><button onClick=${sec.onAdd}>＋ Adicionar</button></div>
         <div className=${v.catalogEditorLayout === 'grid' ? 'yc-editor-cards is-grid' : 'yc-editor-cards'}>${sec.items.map(item => html`<article><img loading="lazy" decoding="async" src=${item.image} alt=${item.name}/><b>${item.name}</b>${item.detail && html`<small>${item.detail}</small>`}</article>`)}${!sec.items.length && html`<div className="yc-editor-empty">Use “Adicionar” para preencher esta seção</div>`}</div>
       </section>`)}
@@ -1621,11 +1622,11 @@ function renderSiteCategoriesTab(app, v) {
 
 function renderAdmin(app, v) {
   return html`
-    <div style="padding:32px 40px 16px;display:flex;align-items:center;gap:16px">
-      <div onClick=${v.onBackFromAdmin} style="width:40px;height:40px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.15s ease">
+    <div className="yc-creation-header" style="padding:32px 40px 16px;display:flex;align-items:center;gap:16px">
+      <div className="yc-creation-back" onClick=${v.onBackFromAdmin} style="width:40px;height:40px;border-radius:var(--radius-full);background:var(--neutral-50);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.15s ease">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--neutral-900)" stroke-width="2.2"><path d="M15 18l-6-6 6-6"></path></svg>
       </div>
-      <div style="font-size:26px;font-weight:700;letter-spacing:-0.02em">Modo de Criação</div>
+      <div className="yc-creation-title"><span>Área de trabalho</span><div style="font-size:26px;font-weight:700;letter-spacing:-0.02em">Modo de Criação</div><small>Crie, organize e publique seu catálogo.</small></div>
     </div>
 
     <nav className="yc-creation-nav" aria-label="Seções do Modo de Criação" style="padding:0 40px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
