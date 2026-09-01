@@ -2905,7 +2905,7 @@ class App extends Component {
       id: r.id, nome: r.nome, imagem: r.imagem, categoria: r.categoria, dificuldade: r.dificuldade,
       tempoLabel: r.tempo + ' min', porcoesLabel: r.porcoes + ' porções',
       carouselStyle: `flex:0 0 ${this.state.deviceMode === 'desktop' ? 280 : (this.state.deviceMode === 'tablet' ? 260 : 240)}px;cursor:pointer;transition:transform 0.18s ease,flex-basis 0.2s ease;scroll-snap-align:start;${rise}`,
-      gridCardStyle: `position:relative;cursor:pointer;background:var(--neutral-0);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--neutral-100);transition:transform 0.18s ease,box-shadow 0.18s ease;${rise}`,
+      gridCardStyle: `position:relative;cursor:pointer;background:var(--surface-raised);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--border-subtle);transition:transform 0.18s ease,box-shadow 0.18s ease;${rise}`,
       onOpen: () => { this.setState({ previousDetailScreen: fromScreen }); this.selectRecipe(r.id); },
       onToggleFavorite: () => this.toggleFavorite(r.id),
     };
@@ -2919,7 +2919,7 @@ class App extends Component {
       priceLabel: this.formatBRL(p.preco),
       tempoLabel: this.formatBRL(p.preco), dificuldade: p.unidade,
       carouselStyle: `flex:0 0 ${this.state.deviceMode === 'desktop' ? 280 : (this.state.deviceMode === 'tablet' ? 260 : 240)}px;cursor:pointer;transition:transform 0.18s ease,flex-basis 0.2s ease;scroll-snap-align:start;${rise}`,
-      gridCardStyle: `position:relative;cursor:pointer;background:var(--neutral-0);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--neutral-100);transition:transform 0.18s ease,box-shadow 0.18s ease;${rise}`,
+      gridCardStyle: `position:relative;cursor:pointer;background:var(--surface-raised);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--border-subtle);transition:transform 0.18s ease,box-shadow 0.18s ease;${rise}`,
       onOpen: () => this.openProductDetail(p.id),
     };
   };
