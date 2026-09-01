@@ -38,7 +38,7 @@ const MULTI_SELECT_LONG_PRESS_MS = 480;
 // adminTab values that require role==='admin'. Never inferred from
 // "has a session"/"creationMode is open"/etc — see applySessionProfile and
 // renderAdmin's tab dispatch in template.js, both of which gate on this.
-const ADMIN_ONLY_TABS = ['recipes', 'products', 'categories', 'requestsInbox'];
+const ADMIN_ONLY_TABS = ['recipes', 'products', 'categories', 'requestsInbox', 'dangerZone'];
 // Tags documented by the spreadsheet format are part of the application
 // vocabulary, not user-created category rows. Keep this list independent of
 // the catalog response: an inactive/missing seed row must not make a native
@@ -1169,6 +1169,7 @@ class App extends Component {
   setAdminTabRecipes = () => this.setState({ adminTab: 'recipes', adminSearchQuery: '' });
   setAdminTabProducts = () => this.setState({ adminTab: 'products', adminSearchQuery: '' });
   setAdminTabCategories = () => this.setState({ adminTab: 'categories', adminSearchQuery: '' });
+  setAdminTabDangerZone = () => this.setState({ adminTab: 'dangerZone', adminSearchQuery: '', destructiveCatalogOpen: false, destructiveCatalogPassword: '', destructiveCatalogError: '' });
   setAdminTabMyRecipes = () => this.setState({ adminTab: 'myRecipes', adminSearchQuery: '' });
   setAdminTabMyProducts = () => this.setState({ adminTab: 'myProducts', adminSearchQuery: '' });
   setAdminTabMyCategories = () => this.setState({ adminTab: 'myCategories', adminSearchQuery: '' });
@@ -1199,7 +1200,11 @@ class App extends Component {
     const { data, error } = inactiveOnly
       ? await catalog.adminDeleteInactiveCatalogItems(this.state.destructiveCatalogPassword)
       : await catalog.adminDeleteAllProductsAndRecipes(this.state.destructiveCatalogPassword);
-    if (error) { this.setState({ destructiveCatalogBusy: false, destructiveCatalogError: 'Não foi possível eliminar os dados. Nenhum item foi removido.' }); return; }
+    if (error) {
+      const denied = error.code === '42501';
+      this.setState({ destructiveCatalogBusy: false, destructiveCatalogError: denied ? 'Senha incorreta ou sessão administrativa expirada.' : 'Não foi possível eliminar os dados. A operação foi desfeita e nenhum item foi removido.' });
+      return;
+    }
     this.setState({ destructiveCatalogBusy: false, destructiveCatalogOpen: false, destructiveCatalogPassword: '', selectedRecipeIds: [], selectedProductIds: [], selectionMode: false, productSelectionMode: false });
     await Promise.all([this.loadSiteCatalogData('admin'), this.loadPublicCatalog(), this.loadMyCreationData(this.state.session.user.id)]);
     this.flashAdmin(inactiveOnly
@@ -4087,6 +4092,7 @@ class App extends Component {
       ingredientRows, extrasList, hasExtras, modoPreparoList, dicasList, totalABuyLabel, totalAllLabel,
       altModalOpen, altModalIngredientNome, altOptions, altOptionsEmpty, onCloseAltModal: this.closeAltModal,
       onBackFromAdmin: this.onBackFromAdmin, adminTab: s.adminTab, isAdminRecipesTab: s.adminTab === 'recipes', isAdminProductsTab: s.adminTab === 'products', isAdminCategoriesTab: s.adminTab === 'categories',
+      isAdminDangerZoneTab: s.adminTab === 'dangerZone',
       isAdminRole: s.authRole === 'admin',
       destructiveCatalogOpen: s.destructiveCatalogOpen, destructiveCatalogMode: s.destructiveCatalogMode, destructiveCatalogPassword: s.destructiveCatalogPassword,
       destructiveCatalogBusy: s.destructiveCatalogBusy, destructiveCatalogError: s.destructiveCatalogError,
@@ -4213,9 +4219,11 @@ class App extends Component {
       redeemCode: s.redeemCode, redeemBusy: s.redeemBusy, hasRedeemMessage: !!s.redeemMessage, redeemMessage: s.redeemMessage, redeemMessageIsError: s.redeemMessageKind === 'error',
       onRedeemCodeChange: this.onRedeemCodeChange, onRedeemSubmit: this.onRedeemSubmit,
       onSetAdminTabRecipes: this.setAdminTabRecipes, onSetAdminTabProducts: this.setAdminTabProducts, onSetAdminTabCategories: this.setAdminTabCategories,
+      onSetAdminTabDangerZone: this.setAdminTabDangerZone,
       adminTabRecipesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'recipes' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'recipes' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabProductsStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'products' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'products' ? '#F4F2F1' : 'var(--neutral-800)'}`,
       adminTabCategoriesStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'categories' ? 'var(--brand-700)' : 'var(--neutral-50)'};color:${s.adminTab === 'categories' ? '#F4F2F1' : 'var(--neutral-800)'}`,
+      adminTabDangerZoneStyle: `padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s ease,transform 0.15s ease;background:${s.adminTab === 'dangerZone' ? 'var(--red-600)' : 'var(--neutral-50)'};color:${s.adminTab === 'dangerZone' ? '#fff' : 'var(--red-600)'}`,
       sectionToggleRows, proteinToggleRows, destaqueRecipeRows, newSectionLabel: s.newSectionLabel, onNewSectionLabelChange: this.onNewSectionLabelChange, onAddSection: this.addHomeSection,
       newSectionIcon: s.newSectionIcon, onPickSectionIcon: this.onPickSectionIcon,
       productSectionToggleRows, newProductSectionLabel: s.newProductSectionLabel, onNewProductSectionLabelChange: this.onNewProductSectionLabelChange, onAddProductSection: this.addProductSection,

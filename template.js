@@ -1643,6 +1643,7 @@ function renderAdmin(app, v) {
         <div onClick=${v.onSetAdminTabProducts} style=${v.adminTabProductsStyle}>Catálogo: Produtos</div>
         <div onClick=${v.onSetAdminTabCategories} style=${v.adminTabCategoriesStyle}>Catálogo: Categorias</div>
         <div onClick=${v.onSetAdminTabRequestsInbox} style=${v.adminTabRequestsInboxStyle}>Solicitações Recebidas${v.hasPendingRequestsBadge ? html` (${v.pendingRequestsCount})` : ''}</div>
+        <div onClick=${v.onSetAdminTabDangerZone} style=${v.adminTabDangerZoneStyle}>Danger Zone</div>
         </div>
       `}
     </nav>
@@ -1670,8 +1671,8 @@ function renderAdmin(app, v) {
     ${v.isAdminRole && v.isAdminCategoriesTab && renderSiteCategoriesTab(app, v)}
     ${v.isAdminRole && v.isAdminProductsTab && renderSiteProductsTab(app, v)}
     ${v.isAdminRole && v.isAdminRequestsInboxTab && renderRequestsInboxTab(app, v)}
-    ${v.isAdminRole && html`
-      <section className="yc-danger-zone" aria-label="Zona de perigo"><div className="yc-danger-copy"><strong>Zona de perigo</strong><span>Operações permanentes de limpeza do catálogo. Revise cuidadosamente antes de confirmar.</span></div><div className="yc-danger-buttons"><button type="button" className="is-secondary" onClick=${v.onOpenInactiveCatalogCleanup}>Eliminar itens inativos</button><button type="button" onClick=${v.onOpenDestructiveCatalog}>Eliminar Produtos e Receitas</button></div></section>
+    ${v.isAdminRole && v.isAdminDangerZoneTab && html`
+      <section className="yc-danger-zone" aria-label="Zona de perigo"><div className="yc-danger-copy"><strong>Danger Zone</strong><span>Operações permanentes de limpeza do catálogo. Revise cuidadosamente antes de confirmar.</span></div><div className="yc-danger-buttons"><button type="button" className="is-secondary" onClick=${v.onOpenInactiveCatalogCleanup}>Eliminar itens inativos</button><button type="button" onClick=${v.onOpenDestructiveCatalog}>Eliminar Produtos e Receitas</button></div></section>
     `}
     ${v.isAdminRole && v.destructiveCatalogOpen && html`
       <div className="yc-modal-overlay"><div className="yc-danger-dialog" role="dialog" aria-modal="true" aria-label="Eliminar todos os produtos e receitas">

@@ -5,6 +5,7 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const app = read('../../app.js');
 const template = read('../../template.js');
 const migration = read('../../supabase/035_admin_inactive_catalog_cleanup.sql');
+const repair = read('../../supabase/036_repair_admin_catalog_cleanup.sql');
 
 describe('inactive catalog cleanup', () => {
   it('is admin/password protected and deletes dependencies in a safe order', () => {
@@ -17,5 +18,15 @@ describe('inactive catalog cleanup', () => {
     expect(template).toContain('Eliminar itens inativos');
     expect(template).toContain('onOpenInactiveCatalogCleanup');
     expect(app).toContain('adminDeleteInactiveCatalogItems');
+  });
+  it('places the danger zone in its own admin-only tab', () => {
+    expect(app).toContain("'dangerZone'");
+    expect(template).toContain('v.isAdminRole && v.isAdminDangerZoneTab');
+    expect(template).toContain('onSetAdminTabDangerZone');
+  });
+  it('retains referenced inactive categories instead of rolling back cleanup', () => {
+    expect(repair).toContain('not exists (select 1 from public.recipes r where r.category_id = c.id)');
+    expect(repair).toContain('not exists (select 1 from public.products p where p.category_id = c.id)');
+    expect(repair).toContain('get diagnostics v_category_count = row_count');
   });
 });
