@@ -517,3 +517,89 @@ body { margin: 0; font-family: "Inter", sans-serif !important; -webkit-tap-highl
   .yc-editor-section-head { align-items:flex-start;gap:10px;padding-right:0; }
   .yc-editor-section-toolbar { position:static;margin:-2px 0 12px auto; }
 }
+
+/* Creation mode comfort pass ---------------------------------------------
+   These overrides deliberately target the existing authoring markup only.
+   They add depth and more generous interaction spacing without changing the
+   component tree, event handlers, or any catalogue behaviour. */
+.yc-creation-header {
+  box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--neutral-950) 5%,transparent);
+}
+.yc-creation-back {
+  background:color-mix(in srgb,var(--neutral-0) 86%,var(--neutral-50)) !important;
+  box-shadow:0 1px 2px rgba(28,24,23,.08),0 6px 18px rgba(28,24,23,.07);
+}
+.yc-creation-nav {
+  z-index:2;box-shadow:0 1px 0 rgba(28,24,23,.04),0 8px 24px rgba(28,24,23,.055);
+}
+.yc-creation-nav :is(.yc-creation-primary,.yc-creation-admin)>div {
+  min-height:40px;padding-inline:16px !important;border-color:color-mix(in srgb,var(--neutral-200) 48%,transparent);
+  background:color-mix(in srgb,var(--neutral-50) 62%,var(--neutral-0));
+  box-shadow:inset 0 1px 0 color-mix(in srgb,#fff 38%,transparent),0 1px 2px rgba(28,24,23,.035);
+}
+.yc-creation-nav :is(.yc-creation-primary,.yc-creation-admin)>div[style*="background:var(--brand-700)"] {
+  border-color:color-mix(in srgb,var(--brand-900) 38%,transparent);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 5px 14px color-mix(in srgb,var(--brand-700) 27%,transparent);
+}
+@media (hover:hover) {
+  .yc-creation-nav :is(.yc-creation-primary,.yc-creation-admin)>div:hover { transform:translateY(-1px);box-shadow:0 4px 12px rgba(28,24,23,.08); }
+}
+
+/* Give every tab a calm canvas and turn its primary action into a raised,
+   clearly discoverable control. Attribute selectors are scoped beneath the
+   creation navigation so identical legacy inline styles elsewhere are safe. */
+.yc-creation-nav ~ div[style*="padding:8px 40px 24px"] {
+  min-height:calc(100% - 170px);padding-top:26px !important;padding-bottom:36px !important;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--neutral-50) 48%,var(--neutral-0)),var(--neutral-0) 260px);
+}
+.yc-creation-nav ~ div[style*="padding:8px 40px 24px"] > div:first-child[style*="background:var(--brand-700)"] {
+  min-height:52px;margin-bottom:22px !important;border:1px solid color-mix(in srgb,var(--brand-900) 50%,transparent);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--brand-500) 90%,#fff),var(--brand-700)) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 7px 18px color-mix(in srgb,var(--brand-700) 22%,transparent);
+}
+.yc-admin-card,.yc-admin-recipe-card,.yc-admin-product-card {
+  min-height:68px;margin-bottom:12px !important;padding:14px 16px !important;
+  border-color:color-mix(in srgb,var(--neutral-200) 62%,transparent) !important;border-radius:var(--radius-lg) !important;
+  box-shadow:0 1px 2px rgba(28,24,23,.05),0 5px 16px rgba(28,24,23,.035);
+  transition:transform var(--motion-base) var(--ease-out),box-shadow var(--motion-base) var(--ease-out),border-color var(--motion-base) var(--ease-out);
+}
+.yc-admin-product-image { width:44px !important;height:44px !important;border-radius:11px !important;box-shadow:0 2px 8px rgba(28,24,23,.14); }
+.yc-admin-edit,.yc-admin-delete { width:40px !important;height:40px !important;border:1px solid color-mix(in srgb,var(--neutral-200) 48%,transparent);box-shadow:0 1px 2px rgba(28,24,23,.05); }
+.yc-admin-primary-action,.yc-admin-request { min-height:38px;display:inline-flex;align-items:center;padding-inline:14px !important;background:color-mix(in srgb,var(--neutral-50) 44%,var(--neutral-0)); }
+.yc-admin-request { background:color-mix(in srgb,var(--brand-500) 7%,var(--neutral-0)); }
+.yc-admin-price input { min-height:38px;box-shadow:inset 0 1px 2px rgba(28,24,23,.055); }
+@media (hover:hover) {
+  .yc-admin-card:hover { transform:translateY(-2px);border-color:color-mix(in srgb,var(--brand-500) 42%,var(--neutral-100)) !important;box-shadow:0 2px 4px rgba(28,24,23,.05),0 10px 24px rgba(28,24,23,.075); }
+  .yc-admin-edit:hover,.yc-admin-delete:hover { background:var(--neutral-100) !important;box-shadow:0 4px 10px rgba(28,24,23,.08); }
+}
+
+/* Forms and catalogue editors share softer wells, clearer focus and layered
+   surfaces, reducing glare while keeping the established palette intact. */
+.yc-modal-overlay { backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px); }
+.yc-modal-overlay > div { border:1px solid color-mix(in srgb,var(--neutral-200) 62%,transparent);box-shadow:0 24px 70px rgba(14,12,11,.24),0 6px 18px rgba(14,12,11,.12) !important; }
+.yc-modal-overlay :is(input,textarea),.yc-editor-picker>input {
+  background:color-mix(in srgb,var(--neutral-50) 35%,var(--neutral-0)) !important;
+  box-shadow:inset 0 1px 2px rgba(28,24,23,.045);
+}
+.yc-modal-overlay :is(input,textarea):focus,.yc-editor-picker>input:focus {
+  background:var(--neutral-0) !important;box-shadow:0 0 0 3px color-mix(in srgb,var(--brand-500) 14%,transparent),inset 0 1px 2px rgba(28,24,23,.035);
+}
+.yc-category-editor-head,.yc-category-group,.yc-catalog-editor {
+  box-shadow:0 2px 5px rgba(28,24,23,.045),0 12px 32px rgba(28,24,23,.055);
+}
+.yc-category-group { padding:20px; }
+.yc-category-row { min-height:62px; }
+.yc-editor-canvas { background:linear-gradient(145deg,color-mix(in srgb,var(--neutral-50) 82%,var(--neutral-0)),color-mix(in srgb,var(--neutral-100) 28%,var(--neutral-0))); }
+.yc-editor-section { box-shadow:0 2px 4px rgba(28,24,23,.045),0 8px 20px rgba(28,24,23,.045); }
+
+@media(max-width:800px){
+  .yc-creation-nav :is(.yc-creation-primary,.yc-creation-admin)>div { min-height:44px; }
+  .yc-admin-product-card { align-items:flex-start !important;flex-wrap:wrap; }
+  .yc-admin-product-card .yc-admin-card-info { min-width:calc(100% - 74px) !important; }
+}
+@media(max-width:600px){
+  .yc-creation-nav ~ div[style*="padding:8px 40px 24px"] { padding-top:18px !important; }
+  .yc-creation-nav ~ div[style*="padding:8px 40px 24px"] > div:first-child[style*="background:var(--brand-700)"] { min-height:50px;margin-bottom:18px !important; }
+  .yc-admin-card { padding:13px !important; }
+  .yc-admin-primary-action,.yc-admin-request { min-height:42px; }
+}
