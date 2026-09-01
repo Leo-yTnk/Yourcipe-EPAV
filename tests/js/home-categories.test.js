@@ -58,7 +58,7 @@ describe('Home sections use the public ordering from Supabase', () => {
 
   it('renders Home sections only inside renderHome instead of an unconditional root dispatcher block', () => {
     expect(templateJs).toMatch(/\$\{v\.homeSectionBlocks\.map\(\(sec\) => carouselSection/);
-    const dispatcher = templateJs.slice(templateJs.indexOf('${v.notLoaded'), templateJs.indexOf('</div>\n        </div>'));
+    const dispatcher = templateJs.slice(templateJs.indexOf('${v.notLoaded'), templateJs.indexOf('</main>'));
     expect(dispatcher).not.toMatch(/renderCustomSections|homeSectionBlocks\.map/);
   });
 });

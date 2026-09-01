@@ -17,7 +17,7 @@ import { describe, it, expect, vi } from 'vitest';
 // fn refs exist before vi.mock's factory (itself hoisted above all imports)
 // runs, per Vitest's documented pattern for this exact situation.
 const { mockRpc, mockFrom } = vi.hoisted(() => ({ mockRpc: vi.fn(), mockFrom: vi.fn() }));
-vi.mock('../../supabase-client.js?v=20260831-4', () => ({ supabase: { rpc: mockRpc, from: mockFrom } }));
+vi.mock('../../supabase-client.js?v=20260901-1', () => ({ supabase: { rpc: mockRpc, from: mockFrom } }));
 
 const catalogModule = await import('../../catalog.js');
 const {
