@@ -1,5 +1,5 @@
-import { html } from './vendor/htm-preact-standalone.js?v=20260831-4';
-import { CustomSelect } from './custom-select.js?v=20260831-4';
+import { html } from './vendor/htm-preact-standalone.js?v=20260901-1';
+import { CustomSelect } from './custom-select.js?v=20260901-1';
 
 // Shared "label above control" wrapper for every form redesigned per the
 // Modo de Criação form-consistency requirement: a visible label above the
@@ -103,16 +103,16 @@ export function renderApp(app) {
 
 function recipeCard(item) {
   return html`
-    <div className=${item.grid ? 'yc-recipe-card is-grid' : 'yc-recipe-card'} key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
-      <div className="yc-recipe-card__image" style="position:relative;border-radius:var(--radius-lg);overflow:hidden;height:160px;box-shadow:var(--shadow-sm)">
-        <img loading="lazy" decoding="async" src=${item.imagem} alt=${item.nome} style="width:100%;height:100%;object-fit:cover"/>
-        <div style="position:absolute;top:10px;left:10px;background:rgba(14,12,11,0.55);color:#F4F2F1;padding:5px 11px;border-radius:var(--radius-full);font-size:11px;font-weight:600">${item.tempoLabel}</div>
+    <button type="button" className=${item.grid ? 'yc-content-card yc-recipe-card is-grid' : 'yc-content-card yc-recipe-card'} key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle} aria-label=${`Abrir receita ${item.nome}`}>
+      <div className="yc-content-card__media yc-recipe-card__image">
+        <img loading="lazy" decoding="async" src=${item.imagem} alt=""/>
+        <span className="yc-content-card__media-label">${item.tempoLabel}</span>
       </div>
-      <div className="yc-recipe-card__content">
-        <div style="font-size:15px;font-weight:600;color:var(--neutral-900)">${item.nome}</div>
-        <div style="font-size:13px;color:var(--neutral-600);margin-top:2px">${item.categoria} · ${item.dificuldade}</div>
+      <div className="yc-content-card__body yc-recipe-card__content">
+        <strong>${item.nome}</strong>
+        <span className="yc-content-card__meta">${item.categoria} · ${item.dificuldade}</span>
       </div>
-    </div>
+    </button>
   `;
 }
 
@@ -120,15 +120,15 @@ function carouselSection(icon, title, list, onSeeAll, layout) {
   if (layout === 'grid') return recipeGridSection(icon, title, list, onSeeAll);
   if (!list.length) return null;
   return html`
-    <section className="yc-carousel-section" style="padding:18px 0 18px">
-      <div className="yc-section-heading" style="display:flex;align-items:center;justify-content:space-between;padding:0 40px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:8px">
+    <section className="yc-content-section yc-carousel-section">
+      <div className="yc-section-heading">
+        <div className="yc-section-heading__title">
           ${icon}
-          <div style="font-size:20px;font-weight:700;letter-spacing:-0.01em">${title}</div>
+          <h2>${title}</h2>
         </div>
-        <div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div>
+        <button type="button" className="yc-section-action" onClick=${onSeeAll}>Ver todos</button>
       </div>
-      <div className="yc-scroll yc-card-strip" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
+      <div className="yc-scroll yc-card-strip">
         ${list.map(recipeCard)}
       </div>
     </section>
@@ -136,7 +136,7 @@ function carouselSection(icon, title, list, onSeeAll, layout) {
 }
 function recipeGridSection(icon, title, list, onSeeAll) {
   if (!list.length) return null;
-  return html`<section className="yc-grid-section" style="padding:18px 40px"><div className="yc-section-heading" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="display:flex;align-items:center;gap:8px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div onClick=${onSeeAll} style="font-size:13px;font-weight:600;color:var(--brand-700);cursor:pointer">Ver todos</div></div><div className="yc-product-grid">${list.map(item => recipeCard({ ...item, grid: true, carouselStyle: item.gridCardStyle }))}</div></section>`;
+  return html`<section className="yc-content-section yc-grid-section"><div className="yc-section-heading"><div className="yc-section-heading__title">${icon}<h2>${title}</h2></div><button type="button" className="yc-section-action" onClick=${onSeeAll}>Ver todos</button></div><div className="yc-product-grid">${list.map(item => recipeCard({ ...item, grid: true, carouselStyle: item.gridCardStyle }))}</div></section>`;
 }
 
 // Shared "Receita do Dia" hero carousel — used by both renderHome (Receitas)
@@ -145,73 +145,63 @@ function recipeGridSection(icon, title, list, onSeeAll) {
 // screen simultaneously), so sharing the ref here is safe.
 function heroSection(app, v) {
   return html`
-    <section className="yc-hero" style="padding:24px 40px 8px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="#B24019"><path d="M12 2c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 4.4-3.6 8-8 8s-8-3.6-8-8c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.8 5-7.5z"></path></svg>
-        <div style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--brand-700)">Receita do Dia</div>
+    <section className="yc-hero" aria-labelledby="yc-featured-title">
+      <div className="yc-hero__eyebrow">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c1 3-1 4-1 6 0 1.5 1 2 2 2 1.5 0 2-1.5 1.5-3 2.5 1.5 4 4.5 4 7.5 0 4.4-3.6 8-8 8s-8-3.6-8-8c0-3 1.5-5.8 3.5-7.8-.3 1.3.2 2.3 1 2.8.3-3 1.7-5.8 5-7.5z"></path></svg>
+        <h2 id="yc-featured-title">Receita do dia</h2>
       </div>
-      <div style="position:relative;padding-bottom:20px">
-        <div ref=${(el) => { app.heroRef.current = el; }} onScroll=${v.onHeroScroll} className="yc-scroll" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:var(--radius-xl);box-shadow:var(--shadow-lg)">
+      <div className="yc-hero__frame">
+        <div ref=${(el) => { app.heroRef.current = el; }} onScroll=${v.onHeroScroll} className="yc-scroll yc-hero__track">
           ${v.heroRecipes.map((hero) => html`
-            <div className="yc-hero-slide" key=${hero.id} onClick=${hero.onOpen} style="position:relative;flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;height:400px;cursor:pointer">
-              <img loading="lazy" decoding="async" src=${hero.imagem} alt=${hero.nome} style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0"/>
-              <div style="position:absolute;inset:0;background:linear-gradient(180deg, rgba(14,12,11,0.05) 20%, rgba(14,12,11,0.92) 100%)"></div>
-              <div style="position:absolute;top:20px;left:20px;background:var(--overlay-strong);backdrop-filter:blur(8px);padding:8px 16px;border-radius:var(--radius-full);font-size:12px;font-weight:700;color:var(--brand-700)">Sugestão de hoje</div>
-              <div style="position:absolute;left:28px;right:28px;bottom:26px;color:#F4F2F1">
-                <div style="font-size:30px;font-weight:700;letter-spacing:-0.02em;margin-bottom:6px">${hero.nome}</div>
-                <div style="font-size:14px;opacity:0.85;margin-bottom:16px">Uma receita pensada para reunir todo mundo à mesa hoje.</div>
-                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-                  <div style="display:flex;gap:10px;flex-wrap:wrap">
-                    <span style="background:rgba(244,242,241,0.18);border:1px solid rgba(244,242,241,0.4);padding:6px 14px;border-radius:var(--radius-full);font-size:13px;font-weight:600">${hero.tempoLabel}</span>
-                    <span style="background:rgba(244,242,241,0.18);border:1px solid rgba(244,242,241,0.4);padding:6px 14px;border-radius:var(--radius-full);font-size:13px;font-weight:600">${hero.porcoesLabel}</span>
-                    <span style="background:rgba(244,242,241,0.18);border:1px solid rgba(244,242,241,0.4);padding:6px 14px;border-radius:var(--radius-full);font-size:13px;font-weight:600">${hero.dificuldade}</span>
-                  </div>
-                  <div style="background:var(--brand-700);padding:10px 20px;border-radius:var(--radius-full);font-size:14px;font-weight:700;white-space:nowrap;transition:transform 0.15s ease">Ver receita →</div>
-                </div>
-              </div>
-            </div>
+            <button type="button" className="yc-hero-slide" key=${hero.id} onClick=${hero.onOpen} aria-label=${`Abrir receita em destaque: ${hero.nome}`}>
+              <img loading="lazy" decoding="async" src=${hero.imagem} alt=""/>
+              <span className="yc-hero-slide__scrim" aria-hidden="true"></span>
+              <span className="yc-hero-slide__content">
+                <span className="yc-hero-slide__kicker">Sugestão de hoje</span>
+                <strong>${hero.nome}</strong>
+                <span className="yc-hero-slide__description">Uma receita pensada para reunir todo mundo à mesa hoje.</span>
+                <span className="yc-hero-slide__footer">
+                  <span className="yc-hero-slide__meta">${hero.tempoLabel}<i aria-hidden="true">•</i>${hero.porcoesLabel}<i aria-hidden="true">•</i>${hero.dificuldade}</span>
+                  <span className="yc-hero-slide__cta">Ver receita <span aria-hidden="true">→</span></span>
+                </span>
+              </span>
+            </button>
           `)}
         </div>
         ${v.heroHasMultiple && html`
-          <div onClick=${v.onHeroPrev} style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:var(--radius-full);background:var(--overlay-strong);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.15s ease;box-shadow:var(--shadow-sm)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="2.4"><path d="M15 18l-6-6 6-6"></path></svg>
-          </div>
-          <div onClick=${v.onHeroNext} style="position:absolute;right:12px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:var(--radius-full);background:var(--overlay-strong);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 0.15s ease;box-shadow:var(--shadow-sm)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--brand-700)" stroke-width="2.4"><path d="M9 18l6-6-6-6"></path></svg>
-          </div>
-          <div style="position:absolute;left:0;right:0;bottom:0px;display:flex;justify-content:center;gap:6px">
-            ${v.heroDots.map((dot) => html`<div key=${dot.key} onClick=${dot.onClick} style=${dot.style}></div>`)}
-          </div>
+          <button type="button" className="yc-hero-control is-prev" onClick=${v.onHeroPrev} aria-label="Receita anterior"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>
+          <button type="button" className="yc-hero-control is-next" onClick=${v.onHeroNext} aria-label="Próxima receita"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg></button>
+          <div className="yc-hero-dots" aria-label="Selecionar receita em destaque">${v.heroDots.map((dot, index) => html`<button type="button" key=${dot.key} onClick=${dot.onClick} style=${dot.style} aria-label=${`Ir para destaque ${index + 1}`}></button>`)}</div>
         `}
       </div>
     </section>
   `;
 }
 
+function catalogNotice(v) {
+  if (!v.hasPublicCatalogFallback) return null;
+  return html`<div className="yc-catalog-notice" role="status"><span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span><button type="button" onClick=${v.onRetryPublicCatalog}>Tentar novamente</button></div>`;
+}
+
+function pageHeader({ eyebrow, title, description, initial, children }) {
+  return html`<header className="yc-page-header">
+    <div className="yc-page-header__row"><div className="yc-page-header__copy"><span className="yc-page-header__eyebrow">${eyebrow}</span><h1>${title}</h1>${description && html`<p>${description}</p>`}</div>${initial && html`<span className="yc-profile-initial" aria-hidden="true">${initial}</span>`}</div>
+    ${children}
+  </header>`;
+}
+
 function renderHome(app, v) {
   return html`
-    <div style="padding:40px 40px 8px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:14px;color:var(--neutral-600);font-weight:500">Olá, ${v.userGreetingName}</div>
-          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;color:var(--neutral-950)">O que vamos cozinhar hoje?</div>
-        </div>
-        <div style="width:52px;height:52px;border-radius:var(--radius-full);background:var(--brand-100);display:flex;align-items:center;justify-content:center;font-weight:700;color:#F4F2F1;font-size:20px">${v.profileInitial}</div>
-      </div>
-      ${v.hasPublicCatalogFallback && html`
-        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
-          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
-        </div>
-      `}
+    <${pageHeader} eyebrow=${`Olá, ${v.userGreetingName}`} title="O que vamos cozinhar hoje?" description="Descubra sabores escolhidos para o seu momento." initial=${v.profileInitial}>
+      ${catalogNotice(v)}
       ${catalogSearchInput(v.recipeSearchQuery, v.onRecipeSearchChange, 'Buscar receitas...', 'Pesquisar receitas')}
-    </div>
+    <//>
 
     ${!v.recipeSearchActive && heroSection(app, v)}
 
-    <div style="padding:20px 0 4px">
-      <div className="yc-scroll" style="display:flex;gap:10px;overflow-x:auto;padding:0 40px">
-        ${v.homeCategoryChips.map((chip) => html`<div key=${chip.label} onClick=${chip.onClick} style="flex-shrink:0;padding:10px 20px;border-radius:var(--radius-full);background:var(--neutral-50);border:1px solid var(--neutral-100);font-size:13px;font-weight:600;color:var(--neutral-800);cursor:pointer;white-space:nowrap">${chip.label}</div>`)}
+    <div className="yc-category-area">
+      <div className="yc-scroll yc-category-strip" aria-label="Categorias de receitas">
+        ${v.homeCategoryChips.map((chip) => html`<button type="button" key=${chip.label} onClick=${chip.onClick}>${chip.label}</button>`)}
       </div>
       ${v.homeCategoriesEmpty && html`
         <div style="margin:4px 40px 0;font-size:12px;color:var(--neutral-600)">Nenhuma categoria pública cadastrada ainda.</div>
@@ -229,22 +219,10 @@ function renderHome(app, v) {
 // results grid is never duplicated here.
 function renderInicio(app, v) {
   return html`
-    <div style="padding:40px 40px 8px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:14px;color:var(--neutral-600);font-weight:500">Olá, ${v.userGreetingName}</div>
-          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;color:var(--neutral-950)">O que vamos cozinhar hoje?</div>
-        </div>
-        <div style="width:52px;height:52px;border-radius:var(--radius-full);background:var(--brand-100);display:flex;align-items:center;justify-content:center;font-weight:700;color:#F4F2F1;font-size:20px">${v.profileInitial}</div>
-      </div>
-      ${v.hasPublicCatalogFallback && html`
-        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
-          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
-        </div>
-      `}
+    <${pageHeader} eyebrow=${`Olá, ${v.userGreetingName}`} title="O que vamos cozinhar hoje?" description="Descubra sabores escolhidos para o seu momento." initial=${v.profileInitial}>
+      ${catalogNotice(v)}
       ${catalogSearchInput(v.homeSearchQuery, v.onHomeSearchChange, 'Buscar produtos e receitas...', 'Pesquisar produtos e receitas')}
-    </div>
+    <//>
 
     ${!v.homeSearchActive && heroSection(app, v)}
     ${v.homeSearchActive ? html`
@@ -327,56 +305,45 @@ function resolveSectionIcon(iconKey, fallbackKey, isProduct) {
 // productPageBlocks assembly in computeViewModel.
 function productCard(item) {
   return html`
-    <div className="yc-recipe-card" key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle}>
-      <div style="position:relative;border-radius:var(--radius-lg);overflow:hidden;height:160px;box-shadow:var(--shadow-sm)">
-        <img loading="lazy" decoding="async" src=${item.imagem} alt=${item.nome} style="width:100%;height:100%;object-fit:cover"/>
-        <div style="position:absolute;top:10px;left:10px;background:rgba(14,12,11,0.55);color:#F4F2F1;padding:5px 11px;border-radius:var(--radius-full);font-size:11px;font-weight:600">${item.tempoLabel}</div>
+    <button type="button" className="yc-content-card yc-product-card" key=${item.id} onClick=${item.onOpen} style=${item.carouselStyle} aria-label=${`Ver produto ${item.nome}, ${item.tempoLabel}`}>
+      <div className="yc-content-card__media yc-product-card__media">
+        <img loading="lazy" decoding="async" src=${item.imagem} alt=""/>
       </div>
-      <div style="font-size:15px;font-weight:600;margin-top:10px;color:var(--neutral-900)">${item.nome}</div>
-      <div style="font-size:13px;color:var(--neutral-600);margin-top:2px">${item.categoria} · ${item.dificuldade}</div>
-    </div>
+      <div className="yc-content-card__body"><span className="yc-content-card__meta">${item.categoria} · ${item.dificuldade}</span><strong>${item.nome}</strong><b className="yc-product-card__price">${item.tempoLabel}</b></div>
+    </button>
   `;
 }
 
 function productCarouselSection(icon, title, list) {
   if (!list.length) return null;
   return html`
-    <div style="padding:18px 0 18px">
-      <div style="display:flex;align-items:center;gap:8px;padding:0 40px;margin-bottom:14px">
-        ${icon}
-        <div style="font-size:20px;font-weight:700;letter-spacing:-0.01em">${title}</div>
-      </div>
-      <div className="yc-scroll yc-card-strip" style="display:flex;gap:16px;overflow-x:auto;padding:0 40px 8px">
+    <section className="yc-content-section yc-carousel-section yc-product-section">
+      <div className="yc-section-heading"><div className="yc-section-heading__title">${icon}<h2>${title}</h2></div></div>
+      <div className="yc-scroll yc-card-strip">
         ${list.map(productCard)}
       </div>
-    </div>
+    </section>
   `;
 }
 
 function productGridSection(icon, title, list) {
   if (!list.length) return null;
-  return html`<div style="padding:18px 40px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">${icon}<div style="font-size:20px;font-weight:700">${title}</div></div><div className="yc-product-grid">${list.map(productCard)}</div></div>`;
+  return html`<section className="yc-content-section yc-grid-section yc-product-section"><div className="yc-section-heading"><div className="yc-section-heading__title">${icon}<h2>${title}</h2></div></div><div className="yc-product-grid">${list.map(productCard)}</div></section>`;
 }
 
 function renderProducts(app, v) {
   return html`
-    <div style="padding:40px 40px 8px">
-      <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;color:var(--neutral-950)">Produtos</div>
-      ${v.hasPublicCatalogFallback && html`
-        <div style="margin-top:16px;background:rgba(195,61,34,0.1);border:1px solid var(--red-500);color:var(--red-600);border-radius:var(--radius-md);padding:12px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-          <span>Não foi possível carregar o catálogo do servidor. Mostrando um catálogo de exemplo. ${v.publicCatalogError}</span>
-          <button onClick=${v.onRetryPublicCatalog} style="background:var(--red-600);color:#F4F2F1;border:none;border-radius:var(--radius-full);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">Tentar novamente</button>
-        </div>
-      `}
+    <${pageHeader} eyebrow="Catálogo Yourcipe" title="Produtos" description="Compare opções e encontre o ingrediente certo para a sua mesa.">
+      ${catalogNotice(v)}
       <div className="yc-product-tools">
         ${catalogSearchInput(v.productSearchQuery, v.onProductSearchChange, 'Buscar produtos...', 'Pesquisar produtos')}
         <button type="button" className="yc-filter-button" aria-expanded=${v.productFiltersOpen} onClick=${v.onToggleProductFilters}>☷ Filtros</button>
       </div>
-    </div>
+    <//>
 
     ${v.productFiltersOpen && html`<div className="yc-product-filters" aria-label="Filtros de produtos">
-      <div className="yc-scroll" style="display:flex;gap:10px;overflow-x:auto;padding:0 40px">
-        ${v.productCategoryChips.map((chip) => html`<div key=${chip.label} onClick=${chip.onClick} style=${chip.style}>${chip.label}</div>`)}
+      <div className="yc-scroll yc-category-strip" aria-label="Categorias de produtos">
+        ${v.productCategoryChips.map((chip) => html`<button type="button" key=${chip.label} onClick=${chip.onClick} style=${chip.style}>${chip.label}</button>`)}
       </div>
     </div>`}
 

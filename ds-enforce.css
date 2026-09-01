@@ -56,6 +56,10 @@
   --surface-selected: var(--brand-100);
   --surface-inverse: var(--neutral-900);
   --surface-inverse-strong: var(--neutral-950);
+  /* Public content planes: canvas → grouped content → selectable object. */
+  --surface-content: color-mix(in srgb, var(--neutral-50) 56%, var(--neutral-0));
+  --surface-card: var(--neutral-0);
+  --surface-product-media: color-mix(in srgb, var(--neutral-50) 78%, var(--neutral-0));
 
   /* Semantic Border Tokens */
   --border-subtle: var(--neutral-100);
@@ -182,6 +186,7 @@
   --shadow-sm: 0 1px 2px rgba(28, 24, 23, 0.06), 0 1px 1px rgba(28, 24, 23, 0.04);
   --shadow-md: 0 4px 12px rgba(28, 24, 23, 0.08), 0 2px 4px rgba(28, 24, 23, 0.04);
   --shadow-lg: 0 12px 32px rgba(28, 24, 23, 0.12), 0 4px 8px rgba(28, 24, 23, 0.06);
+  --shadow-card: 0 1px 2px rgba(28, 24, 23, 0.04), 0 8px 24px rgba(28, 24, 23, 0.045);
 
   /* Motion */
   --motion-fast: 120ms;
