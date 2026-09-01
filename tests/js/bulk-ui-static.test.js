@@ -10,6 +10,15 @@ describe('connected bulk-selection UI', () => {
     expect(template).toContain("v.categorySelectionMode && v.categorySelectionScope === 'site'");
     expect(template).toContain('v.saleSelectionMode && selectionBar');
   });
+  it('passes recipe and product selection scopes to the template view model', () => {
+    expect(app).toContain('selectionMode: s.selectionMode, recipeSelectionScope: s.recipeSelectionScope');
+    expect(app).toContain('productSelectionMode: s.productSelectionMode, productSelectionScope: s.productSelectionScope');
+  });
+  it('keeps private personal recipes visible in their owner-only page', () => {
+    expect(app).toContain('myRecipes: recs.data || []');
+    expect(app).toContain("source: 'personal', sourceLabel: 'Privada'");
+    expect(template).toContain('${v.myRecipeRows.map((row) => html`');
+  });
   it('connects cancel and batch mutations', () => {
     expect(app).toContain('onCancelCategorySelection');
     expect(app).toContain('catalog.deleteCategoryResolved(id, {})');

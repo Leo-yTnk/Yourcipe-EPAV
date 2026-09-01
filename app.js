@@ -4217,11 +4217,16 @@ class App extends Component {
       newProductSectionIcon: s.newProductSectionIcon, onPickProductSectionIcon: this.onPickProductSectionIcon,
       productSectionSelectionMode: s.productSectionSelectionMode, selectedProductSectionCountLabel: `${s.selectedProductSectionKeys.length} selecionada(s)`, onBulkDeleteProductSectionsAsk: this.askBulkDeleteProductSections, onCancelProductSectionSelection: this.onCancelProductSectionSelection,
       newProteinLabel: s.newProteinLabel, onNewProteinLabelChange: this.onNewProteinLabelChange, onAddProtein: this.addProductCategory,
-      selectionMode: s.selectionMode, selectedCountLabel: `${s.selectedRecipeIds.length} selecionada(s)`,
+      // The contextual bars in template.js are scoped so a selection made
+      // in a personal list can never expose site-catalog actions (and vice
+      // versa). Keep the scope in the view model: omitting it leaves the
+      // check against `v.*SelectionScope` permanently false and hides every
+      // bulk-action menu even though the rows are selected.
+      selectionMode: s.selectionMode, recipeSelectionScope: s.recipeSelectionScope, selectedCountLabel: `${s.selectedRecipeIds.length} selecionada(s)`,
       onBulkHideAsk: this.askBulkHide, onBulkDeleteAsk: this.askBulkDelete, onCancelSelection: this.onCancelSelection,
       onBeginMyRecipeSelection: () => this.beginRecipeSelection('my'), onBeginSiteRecipeSelection: () => this.beginRecipeSelection('site'),
       onBulkRecipesActivate: () => this.setBulkRecipeStatus('published'), onBulkRecipesDeactivate: () => this.setBulkRecipeStatus('draft'),
-      productSelectionMode: s.productSelectionMode, selectedProductCountLabel: `${s.selectedProductIds.length} selecionado(s)`, onBulkDeleteProductsAsk: this.askBulkDeleteProducts, onCancelProductSelection: this.onCancelProductSelection,
+      productSelectionMode: s.productSelectionMode, productSelectionScope: s.productSelectionScope, selectedProductCountLabel: `${s.selectedProductIds.length} selecionado(s)`, onBulkDeleteProductsAsk: this.askBulkDeleteProducts, onCancelProductSelection: this.onCancelProductSelection,
       onBeginMyProductSelection: () => this.beginProductSelection('my'), onBeginSiteProductSelection: () => this.beginProductSelection('site'),
       categorySelectionMode: s.categorySelectionMode, categorySelectionScope: s.categorySelectionScope, selectedCategoryCountLabel: `${s.selectedCategoryIds.length} selecionada(s)`, onBulkDeleteCategoriesAsk: this.askBulkDeleteCategories, onCancelCategorySelection: this.onCancelCategorySelection, onBulkCategoriesActivate: () => this.setBulkCategoriesActive(true), onBulkCategoriesDeactivate: () => this.setBulkCategoriesActive(false),
       onBeginMyCategorySelection: () => this.beginCategorySelection('my'), onBeginSiteCategorySelection: () => this.beginCategorySelection('site'),
